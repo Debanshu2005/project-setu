@@ -664,17 +664,73 @@ class SetuDashboardApp {
     // 3. Sync live engine state
     await this.syncLiveEngineState();
 
+    // 4. Fetch scenarios for selector
+    this.scenarios = await SetuApi.getScenarios();
+    if (this.scenarios && this.scenarios.length > 0) {
+      this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
+        <option value="${sc.id}">${sc.name}</option>
+      `).join('');
+    }
+
+    // 5. If engine state has no nodes (e.g. offline or starting), initialize default topology so the canvas and inspector are immediately populated
+    if (this.sim.nodes.size === 0) {
+      this.initDefaultTopology();
+    }
+
     // Auto-inspect Node 1 by default so the right-side Inspector panel is immediately populated
-    const defaultNode = this.sim.nodes.get(1);
+    const defaultNode = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
     if (defaultNode) {
       this.inspector.inspectNode(defaultNode);
     }
+  }
 
-    // 4. Fetch scenarios for selector
-    this.scenarios = await SetuApi.getScenarios();
-    this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
-      <option value="${sc.id}">${sc.name}</option>
-    `).join('');
+  initDefaultTopology() {
+    this.sim.nodes.clear();
+    this.sim.links = [];
+    // 1 Hub at (150, 150)
+    this.sim.nodes.set(0, {
+      id: 0, role: 'hub', x: 150, y: 150, lat_e6: 28613900, lon_e6: 77209000,
+      battery: 100, online: true, gnss_on: true, dr_on: true, active_sos: false, acked: false, gave_up: false,
+      stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
+    });
+    // 5 Relays on a loose grid
+    const relayCoords = [[380, 200], [680, 240], [350, 480], [650, 520], [920, 380]];
+    relayCoords.forEach((c, idx) => {
+      const rid = 100 + idx;
+      this.sim.nodes.set(rid, {
+        id: rid, role: 'relay', x: c[0], y: c[1], lat_e6: 28613900 + c[0] * 10, lon_e6: 77209000 + c[1] * 10,
+        battery: 100, online: true, gnss_on: true, dr_on: true, active_sos: false, acked: false, gave_up: false,
+        stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
+      });
+    });
+    // 20 Survivors scattered
+    for (let i = 1; i <= 20; i++) {
+      const angle = (i / 20) * 2 * Math.PI;
+      const dist = 220 + (i % 5) * 110;
+      const sx = Math.round(520 + dist * Math.cos(angle));
+      const sy = Math.round(380 + dist * Math.sin(angle));
+      this.sim.nodes.set(i, {
+        id: i, role: 'survivor', x: sx, y: sy, lat_e6: 28613900 + sx * 10, lon_e6: 77209000 + sy * 10,
+        battery: 85 + (i % 16), online: true, gnss_on: true, dr_on: true, active_sos: false, acked: false, gave_up: false,
+        stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
+      });
+    }
+    // Calculate radio links based on log-distance model
+    const nodeList = Array.from(this.sim.nodes.values());
+    for (let i = 0; i < nodeList.length; ++i) {
+      for (let j = i + 1; j < nodeList.length; ++j) {
+        const na = nodeList[i];
+        const nb = nodeList[j];
+        const d = Math.hypot(na.x - nb.x, na.y - nb.y);
+        const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, d) / 10.0));
+        if (rssi >= -120.0) {
+          this.sim.links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(d * 10) / 10, blocked: false });
+        }
+      }
+    }
+    this.topo.fitToScreen();
+    this.topo.render();
+    this.updateMetrics();
   }
 
   async loadScenario(scenarioId) {

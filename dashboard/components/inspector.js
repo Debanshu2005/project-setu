@@ -19,8 +19,15 @@ export class InspectorComponent {
           this.currentNode = fresh;
           this.renderNode();
         }
+      } else if (this.sim.nodes.size > 0) {
+        const first = this.sim.nodes.get(1) || this.sim.nodes.values().next().value;
+        if (first) {
+          this.inspectNode(first);
+        }
       }
     });
+
+    this.renderNode();
   }
 
   inspectNode(node) {
@@ -40,13 +47,16 @@ export class InspectorComponent {
     }
 
     const n = this.currentNode;
-    const stats = n.stats || { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 };
-    const roleBadge = n.role === 'hub' ? 'badge-hub' : n.role === 'relay' ? 'badge-relay' : 'badge-survivor';
+    const stats = (n && n.stats) || { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 };
+    const role = (n && n.role) || 'survivor';
+    const roleBadge = role === 'hub' ? 'badge-hub' : role === 'relay' ? 'badge-relay' : 'badge-survivor';
     const statusText = n.online ? (n.active_sos ? 'EMERGENCY ACTIVE' : 'ONLINE') : 'OFFLINE (FAILED)';
     const statusClass = !n.online ? 'badge-sos' : n.active_sos ? 'badge-sos' : 'badge-hub';
 
     const lat = ((n.lat_e6 || 0) / 1e6).toFixed(6);
     const lon = ((n.lon_e6 || 0) / 1e6).toFixed(6);
+    const posX = typeof n.x === 'number' ? n.x.toFixed(1) : '0.0';
+    const posY = typeof n.y === 'number' ? n.y.toFixed(1) : '0.0';
     const posProv = n.gnss_on ? 'GNSS 3D Satellite Fix' : n.dr_on ? 'Dead-Reckoning (MPU-6050 IMU)' : 'Unknown / Signal Lost';
 
     let controlsHtml = '';
@@ -137,7 +147,7 @@ export class InspectorComponent {
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
         <div style="font-size: 14px; font-weight: 700; color: #fff;">Node ${n.id}</div>
         <div style="display:flex; gap: 6px;">
-          <span class="badge ${roleBadge}">${n.role.toUpperCase()}</span>
+          <span class="badge ${roleBadge}">${role.toUpperCase()}</span>
           <span class="badge ${statusClass}">${statusText}</span>
         </div>
       </div>
@@ -147,11 +157,11 @@ export class InspectorComponent {
       <div class="metrics-grid" style="margin-top: 8px; margin-bottom: 12px;">
         <div class="metric-card">
           <div class="metric-label">Battery Level</div>
-          <div class="metric-value">${n.battery}<span class="metric-unit">%</span></div>
+          <div class="metric-value">${n.battery !== undefined ? n.battery : 100}<span class="metric-unit">%</span></div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Airtime Used</div>
-          <div class="metric-value">${n.stats.tx * 62}<span class="metric-unit">ms</span></div>
+          <div class="metric-value">${(stats.tx || 0) * 62}<span class="metric-unit">ms</span></div>
         </div>
       </div>
 
@@ -161,7 +171,7 @@ export class InspectorComponent {
         </div>
         <table class="field-table">
           <tr><td class="field-name">Coordinates:</td><td class="field-val">${lat}°, ${lon}°</td></tr>
-          <tr><td class="field-name">Cartesian:</td><td class="field-val">X: ${n.x.toFixed(1)}m, Y: ${n.y.toFixed(1)}m</td></tr>
+          <tr><td class="field-name">Cartesian:</td><td class="field-val">X: ${posX}m, Y: ${posY}m</td></tr>
           <tr><td class="field-name">Fix Provenance:</td><td class="field-val" style="color:${n.gnss_on ? '#10b981' : '#f59e0b'}">${posProv}</td></tr>
         </table>
       </div>
@@ -171,12 +181,12 @@ export class InspectorComponent {
           <span>Radio & Protocol Telemetry</span>
         </div>
         <table class="field-table">
-          <tr><td class="field-name">Originated / Relayed TX:</td><td class="field-val">${n.stats.tx}</td></tr>
-          <tr><td class="field-name">Receptions Delivered:</td><td class="field-val">${n.stats.rx}</td></tr>
-          <tr><td class="field-name">Drops (Loss/Collision):</td><td class="field-val">${n.stats.drop}</td></tr>
-          <tr><td class="field-name">Duplicates Suppressed:</td><td class="field-val">${n.stats.dedup}</td></tr>
-          <tr><td class="field-name">Relay Backoffs Saved:</td><td class="field-val">${n.stats.suppressed}</td></tr>
-          <tr><td class="field-name">Retries Attempted:</td><td class="field-val">${n.stats.retries}</td></tr>
+          <tr><td class="field-name">Originated / Relayed TX:</td><td class="field-val">${stats.tx || 0}</td></tr>
+          <tr><td class="field-name">Receptions Delivered:</td><td class="field-val">${stats.rx || 0}</td></tr>
+          <tr><td class="field-name">Drops (Loss/Collision):</td><td class="field-val">${stats.drop || 0}</td></tr>
+          <tr><td class="field-name">Duplicates Suppressed:</td><td class="field-val">${stats.dedup || 0}</td></tr>
+          <tr><td class="field-name">Relay Backoffs Saved:</td><td class="field-val">${stats.suppressed || 0}</td></tr>
+          <tr><td class="field-name">Retries Attempted:</td><td class="field-val">${stats.retries || 0}</td></tr>
         </table>
       </div>
 
