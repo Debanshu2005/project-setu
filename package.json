@@ -6,8 +6,7 @@
   "main": "dashboard/server.js",
   "scripts": {
     "start": "node dashboard/server.js",
-    "dev": "node dashboard/server.js",
-    "build": "node -e \"console.log('Ready for Vercel deployment')\""
+    "dev": "node dashboard/server.js"
   },
   "keywords": [
     "disaster-response",
