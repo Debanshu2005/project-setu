@@ -18,6 +18,7 @@ node_modules/
 # Temporary simulation run logs
 out.jsonl
 out_test.jsonl
+scenarios/traces/sim_*.jsonl
 *.log
 
 # Editor & OS files
@@ -25,3 +26,5 @@ out_test.jsonl
 Thumbs.db
 .vscode/
 .idea/
+
+.vercel
