@@ -1,0 +1,28 @@
+{
+  "id": "long_duration_network",
+  "name": "12. Long-Duration Disaster Operations (Queues & Cache Age)",
+  "description": "Extended 60-second operational cycle with periodic SOS transmissions across multiple survivors, testing sequence wraparound protection, duplicate cache expiration, and battery consumption.",
+  "params": {
+    "survivors": 18,
+    "relays": 5,
+    "zone": 1200,
+    "seed": 1212,
+    "duration": 60000,
+    "sf": 7,
+    "loss": 0.03,
+    "path_exp": 3.2
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 2000, "label": "Wave 1: Survivor 1" },
+    { "node": 5, "kind": "long", "t": 15000, "label": "Wave 2: Survivor 5" },
+    { "node": 8, "kind": "double", "t": 30000, "label": "Wave 3: Survivor 8" },
+    { "node": 1, "kind": "short", "t": 45000, "label": "Wave 4: Survivor 1 Repeated Update" }
+  ],
+  "faults": [],
+  "expected_behavior": "Expired cache entries allow new distinct SOS episodes from same survivor to propagate without suppression. Memory remains bounded.",
+  "invariants": [
+    "distinct_episodes_delivered == 4",
+    "cache_bounded == true",
+    "memory_stable == true"
+  ]
+}

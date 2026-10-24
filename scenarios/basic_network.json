@@ -1,0 +1,25 @@
+{
+  "id": "basic_network",
+  "name": "1. Basic Minimal Network",
+  "description": "Minimal validation topology containing 1 survivor wristband, 1 dedicated LoRa relay node, and 1 rescue hub. Verifies baseline point-to-relay-to-hub packet traversal.",
+  "params": {
+    "survivors": 1,
+    "relays": 1,
+    "zone": 500,
+    "seed": 101,
+    "duration": 15000,
+    "sf": 7,
+    "loss": 0.0,
+    "path_exp": 2.5
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1000, "label": "Survivor 1: Baseline Panic SOS (Short Press)" }
+  ],
+  "faults": [],
+  "expected_behavior": "Survivor 1 transmits 25-byte SOS. Relay 100 receives and forwards packet to Hub 0. Hub generates ACK referencing SOS seq, and Survivor 1 marks ACK received.",
+  "invariants": [
+    "pdr == 1.0",
+    "alerts_delivered == 1",
+    "origin_acked == true"
+  ]
+}

@@ -4,6 +4,9 @@
 
 #include <cstdint>
 #include <cstddef>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
 #include "setu/hal.hpp"
 #include "setu/packet.hpp"
 
@@ -112,12 +115,12 @@ class Sx1262Radio : public IRadio {
 
 /**
  * NEO-6M / ATGM336H GPS UART Adapter.
- * Reads NMEA sentences (GPRMC / GPGGA) at 9600 baud.
+ * Reads NMEA sentences (GPRMC / GPGGA) at 9600 baud and parses microdegree coordinates.
  */
 class Neo6mGnss : public IGnss {
  public:
   Neo6mGnss(int uart_num = 1, int tx_pin = 17, int rx_pin = 18)
-      : uart_num_(uart_num), has_fix_(false), lat_e6_(0), lon_e6_(0) {
+      : uart_num_(uart_num), has_fix_(false), lat_e6_(0), lon_e6_(0), satellites_(0) {
     (void)tx_pin; (void)rx_pin;
   }
 
@@ -134,22 +137,82 @@ class Neo6mGnss : public IGnss {
     lon_e6_ = lon;
   }
 
+  /**
+   * Feed a raw NMEA string into the adapter.
+   * Parses $GPRMC (Recommended Minimum) or $GPGGA (Fix Data).
+   */
+  bool feed_nmea(const char* sentence) {
+    if (!sentence || sentence[0] != '$') return false;
+
+    // Check for $GPRMC or $GNRMC
+    if (strstr(sentence, "RMC")) {
+      // Format: $GPRMC,time,status,lat,N/S,lon,E/W,spd,cog,date,mv,mvE,mode*cs
+      const char* p = strchr(sentence, ',');
+      if (!p) return false;
+      p = strchr(p + 1, ','); // skip time
+      if (!p || *(p + 1) == '\0') return false;
+
+      char status = *(p + 1); // 'A' = Active/Valid, 'V' = Void/Invalid
+      if (status != 'A') {
+        has_fix_ = false;
+        return false;
+      }
+
+      // Next field: Latitude (ddmm.mmmm)
+      p = strchr(p + 1, ',');
+      if (!p || *(p + 1) == ',') return false;
+      double raw_lat = atof(p + 1);
+      int lat_deg = static_cast<int>(raw_lat / 100.0);
+      double lat_min = raw_lat - (lat_deg * 100.0);
+
+      // Next field: N/S
+      p = strchr(p + 1, ',');
+      if (!p) return false;
+      char ns = *(p + 1);
+
+      // Next field: Longitude (dddmm.mmmm)
+      p = strchr(p + 1, ',');
+      if (!p || *(p + 1) == ',') return false;
+      double raw_lon = atof(p + 1);
+      int lon_deg = static_cast<int>(raw_lon / 100.0);
+      double lon_min = raw_lon - (lon_deg * 100.0);
+
+      // Next field: E/W
+      p = strchr(p + 1, ',');
+      if (!p) return false;
+      char ew = *(p + 1);
+
+      double lat_dec = lat_deg + (lat_min / 60.0);
+      if (ns == 'S' || ns == 's') lat_dec = -lat_dec;
+
+      double lon_dec = lon_deg + (lon_min / 60.0);
+      if (ew == 'W' || ew == 'w') lon_dec = -lon_dec;
+
+      lat_e6_ = static_cast<int32_t>(lat_dec * 1e6);
+      lon_e6_ = static_cast<int32_t>(lon_dec * 1e6);
+      has_fix_ = true;
+      return true;
+    }
+    return false;
+  }
+
  private:
   int uart_num_;
   bool has_fix_;
   int32_t lat_e6_;
   int32_t lon_e6_;
+  int satellites_;
 };
 
 /**
  * MPU-6050 6-DOF IMU Dead-Reckoning Adapter.
- * Uses complementary filtered accelerometer & gyroscope readings to maintain
- * dead-reckoning position estimate when GPS is denied.
+ * Integrates step detection and heading estimation to calculate position
+ * displacements when GNSS satellite fixes are unavailable.
  */
 class Mpu6050DeadReckoning : public IDeadReckoning {
  public:
   Mpu6050DeadReckoning(int sda_pin = 21, int scl_pin = 22)
-      : has_estimate_(false), est_lat_e6_(0), est_lon_e6_(0) {
+      : has_estimate_(false), est_lat_e6_(0), est_lon_e6_(0), step_count_(0) {
     (void)sda_pin; (void)scl_pin;
   }
 
@@ -166,28 +229,67 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
     has_estimate_ = true;
   }
 
+  /**
+   * Geodesic step displacement update (flat-earth approximation for micro-movements).
+   * @param step_meters Stride length in meters (typically 0.7m to 0.8m)
+   * @param heading_rad Compass azimuth in radians (0 = North, pi/2 = East)
+   */
+  void update_step(float step_meters, float heading_rad) {
+    if (!has_estimate_) return;
+    step_count_++;
+
+    constexpr double kMetersPerDegreeLat = 111132.95;
+    double delta_north_m = step_meters * cos(heading_rad);
+    double delta_east_m = step_meters * sin(heading_rad);
+
+    double delta_lat_deg = delta_north_m / kMetersPerDegreeLat;
+    double current_lat_rad = (est_lat_e6_ * 1e-6) * (3.14159265358979323846 / 180.0);
+    double meters_per_deg_lon = kMetersPerDegreeLat * cos(current_lat_rad);
+    if (meters_per_deg_lon < 1.0) meters_per_deg_lon = 1.0;
+
+    double delta_lon_deg = delta_east_m / meters_per_deg_lon;
+
+    est_lat_e6_ += static_cast<int32_t>(delta_lat_deg * 1e6);
+    est_lon_e6_ += static_cast<int32_t>(delta_lon_deg * 1e6);
+  }
+
   void disable() { has_estimate_ = false; }
+  uint32_t steps() const { return step_count_; }
 
  private:
   bool has_estimate_;
   int32_t est_lat_e6_;
   int32_t est_lon_e6_;
+  uint32_t step_count_;
 };
 
 /**
  * Battery LiPo Voltage ADC Monitor Adapter.
+ * Reads ADC millivolts on a 2:1 resistor divider and converts to state-of-charge percentage.
  */
 class BatteryMonitor : public IBattery {
  public:
   BatteryMonitor(int adc_channel = 0) : adc_channel_(adc_channel), cached_pct_(100) {}
 
   uint8_t percent() override {
-#if defined(ESP_PLATFORM)
-    // Read calibrated ADC voltage on resistor divider
     return cached_pct_;
-#else
-    return cached_pct_;
-#endif
+  }
+
+  /**
+   * Converts battery cell voltage (in millivolts) to capacity percentage (0-100%).
+   * Uses realistic LiPo non-linear discharge curve under load.
+   */
+  static uint8_t voltage_mv_to_percent(uint32_t mv) {
+    if (mv >= 4200) return 100;
+    if (mv <= 3300) return 0;
+    if (mv >= 4000) return static_cast<uint8_t>(85 + (mv - 4000) * 15 / 200);
+    if (mv >= 3800) return static_cast<uint8_t>(50 + (mv - 3800) * 35 / 200);
+    if (mv >= 3600) return static_cast<uint8_t>(15 + (mv - 3600) * 35 / 200);
+    return static_cast<uint8_t>((mv - 3300) * 15 / 300);
+  }
+
+  void update_adc_voltage(uint32_t millivolts) {
+    cached_pct_ = voltage_mv_to_percent(millivolts);
   }
 
   void set_simulated_percent(uint8_t pct) { cached_pct_ = pct > 100 ? 100 : pct; }

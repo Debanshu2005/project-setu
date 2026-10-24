@@ -1,11 +1,14 @@
 // Project Setu - Local Simulation Bridge & Operations API Server
 // Pure Node.js (no npm dependencies needed)
 
-const http = require('node:http');
-const fs = require('node:fs');
-const path = require('node:path');
-const { spawn } = require('node:child_process');
-const url = require('node:url');
+import http from 'node:http';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PORT = process.env.PORT || 3000;
 const ROOT_DIR = path.resolve(__dirname, '..');
@@ -28,6 +31,199 @@ function findSimulator() {
 }
 
 let activeChildProcess = null;
+
+class InteractiveSimulatorManager {
+  constructor() {
+    this.process = null;
+    this.buffer = '';
+    this.eventHistory = [];
+    this.sseClients = new Set();
+    this.pendingResolvers = new Map();
+    this.isRunning = false;
+    this.simTime = 0;
+    this.continuousTimer = null;
+    this.config = {
+      survivors: 20,
+      relays: 5,
+      zone: 1200,
+      seed: 7,
+      sf: 7,
+      loss: 0.0,
+      path_exp: 3.5
+    };
+  }
+
+  ensureStarted() {
+    if (this.process) return Promise.resolve();
+    return this.spawn();
+  }
+
+  spawn() {
+    const simPath = findSimulator();
+    if (!simPath) {
+      return Promise.reject(new Error('Simulator binary (setu_sim) not found. Please build the project first.'));
+    }
+    const args = [
+      '--interactive',
+      '--survivors', String(this.config.survivors),
+      '--relays', String(this.config.relays),
+      '--zone', String(this.config.zone),
+      '--seed', String(this.config.seed),
+      '--sf', String(this.config.sf),
+      '--loss', String(this.config.loss),
+      '--path-exp', String(this.config.path_exp)
+    ];
+
+    console.log(`[Setu API] Spawning interactive simulator: ${simPath} ${args.join(' ')}`);
+    this.process = spawn(simPath, args, { cwd: ROOT_DIR });
+    this.buffer = '';
+    this.eventHistory = [];
+    this.simTime = 0;
+
+    return new Promise((resolve, reject) => {
+      let resolved = false;
+
+      this.process.stdout.on('data', chunk => {
+        this.buffer += chunk.toString();
+        let idx;
+        while ((idx = this.buffer.indexOf('\n')) !== -1) {
+          const line = this.buffer.slice(0, idx).trim();
+          this.buffer = this.buffer.slice(idx + 1);
+          if (!line) continue;
+          this.handleLine(line);
+          if (!resolved && line.includes('"cmd":"ready"')) {
+            resolved = true;
+            resolve();
+          }
+        }
+      });
+
+      this.process.stderr.on('data', chunk => {
+        console.error('[Simulator STDERR]', chunk.toString().trim());
+      });
+
+      this.process.on('close', code => {
+        console.log(`[Setu API] Simulator process closed with code ${code}`);
+        this.process = null;
+        this.pauseContinuous();
+        this.broadcastSSE('sim_closed', { code });
+        if (!resolved) {
+          resolved = true;
+          reject(new Error(`Simulator closed prematurely with code ${code}`));
+        }
+      });
+
+      this.process.on('error', err => {
+        this.process = null;
+        this.pauseContinuous();
+        if (!resolved) {
+          resolved = true;
+          reject(err);
+        }
+      });
+    });
+  }
+
+  handleLine(line) {
+    try {
+      const obj = JSON.parse(line);
+      if (obj.ev) {
+        if (typeof obj.t === 'number') this.simTime = obj.t;
+        this.eventHistory.push(obj);
+        if (this.eventHistory.length > 50000) {
+          this.eventHistory.shift();
+        }
+        this.broadcastSSE('event', obj);
+        return;
+      }
+      if (obj.cmd) {
+        if (typeof obj.t === 'number') this.simTime = obj.t;
+        const resolvers = this.pendingResolvers.get(obj.cmd);
+        if (resolvers && resolvers.length > 0) {
+          const fn = resolvers.shift();
+          fn(obj);
+        }
+        this.broadcastSSE('status', {
+          cmd: obj.cmd,
+          t: this.simTime,
+          running: this.isRunning,
+          ok: obj.ok
+        });
+      }
+    } catch {
+      // ignore non-JSON line
+    }
+  }
+
+  sendCommand(cmdObj) {
+    if (!this.process || !this.process.stdin.writable) {
+      return Promise.reject(new Error('Simulator process not running'));
+    }
+    const line = JSON.stringify(cmdObj) + '\n';
+    return new Promise((resolve, reject) => {
+      const cmd = cmdObj.cmd;
+      if (!this.pendingResolvers.has(cmd)) {
+        this.pendingResolvers.set(cmd, []);
+      }
+      this.pendingResolvers.get(cmd).push(resolve);
+      this.process.stdin.write(line, err => {
+        if (err) reject(err);
+      });
+    });
+  }
+
+  broadcastSSE(type, data) {
+    const payload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const client of this.sseClients) {
+      try {
+        client.write(payload);
+      } catch {
+        this.sseClients.delete(client);
+      }
+    }
+  }
+
+  startContinuous(stepMs = 50, wallIntervalMs = 50) {
+    if (this.continuousTimer) return;
+    this.isRunning = true;
+    this.continuousTimer = setInterval(async () => {
+      if (!this.process || !this.isRunning) {
+        this.pauseContinuous();
+        return;
+      }
+      try {
+        await this.sendCommand({ cmd: 'step', ms: stepMs });
+      } catch {
+        this.pauseContinuous();
+      }
+    }, wallIntervalMs);
+    this.broadcastSSE('playback', { isRunning: true });
+  }
+
+  pauseContinuous() {
+    this.isRunning = false;
+    if (this.continuousTimer) {
+      clearInterval(this.continuousTimer);
+      this.continuousTimer = null;
+    }
+    this.broadcastSSE('playback', { isRunning: false });
+  }
+
+  async stopAndReset() {
+    this.pauseContinuous();
+    if (this.process) {
+      try {
+        await this.sendCommand({ cmd: 'reset' });
+      } catch {
+        this.process.kill();
+        this.process = null;
+        await this.spawn();
+      }
+    }
+  }
+}
+
+const simManager = new InteractiveSimulatorManager();
 
 // Ensure traces directory exists
 if (!fs.existsSync(TRACES_DIR)) {
@@ -95,7 +291,216 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- API Endpoints ---
+  // --- Live Interactive Simulator Endpoints ---
+
+  // GET /api/events (Server-Sent Events)
+  if (req.method === 'GET' && pathname === '/api/events') {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'Access-Control-Allow-Origin': '*'
+    });
+    res.write(': connected\n\n');
+
+    // Send history if any
+    for (const ev of simManager.eventHistory) {
+      res.write(`event: event\ndata: ${JSON.stringify(ev)}\n\n`);
+    }
+
+    simManager.sseClients.add(res);
+    req.on('close', () => {
+      simManager.sseClients.delete(res);
+    });
+    return;
+  }
+
+  // POST /api/control/init
+  if (req.method === 'POST' && pathname === '/api/control/init') {
+    try {
+      const body = await parseBody(req);
+      const params = body.params || body;
+      simManager.config.survivors = Math.min(100, Math.max(1, parseInt(params.survivors, 10) || 20));
+      simManager.config.relays = Math.min(30, Math.max(1, parseInt(params.relays, 10) || 5));
+      simManager.config.zone = Math.min(5000, Math.max(200, parseFloat(params.zone) || 1200));
+      simManager.config.seed = Math.max(0, parseInt(params.seed, 10) || 7);
+      if (params.sf) simManager.config.sf = parseInt(params.sf, 10);
+      if (params.loss !== undefined) simManager.config.loss = parseFloat(params.loss);
+      if (params.path_exp) simManager.config.path_exp = parseFloat(params.path_exp);
+
+      if (!simManager.process) {
+        await simManager.spawn();
+      } else {
+        await simManager.sendCommand({
+          cmd: 'init',
+          survivors: simManager.config.survivors,
+          relays: simManager.config.relays,
+          zone: simManager.config.zone,
+          seed: simManager.config.seed,
+          sf: simManager.config.sf,
+          loss: simManager.config.loss,
+          path_exp: simManager.config.path_exp
+        });
+      }
+      return sendJson(res, 200, { success: true, config: simManager.config, t: simManager.simTime });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/start
+  if (req.method === 'POST' && pathname === '/api/control/start') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const speed = parseFloat(body.speed || 1.0);
+      const stepMs = Math.round(50 * speed);
+      simManager.startContinuous(stepMs, 50);
+      return sendJson(res, 200, { success: true, isRunning: true });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/pause
+  if (req.method === 'POST' && pathname === '/api/control/pause') {
+    simManager.pauseContinuous();
+    return sendJson(res, 200, { success: true, isRunning: false });
+  }
+
+  // POST /api/control/step
+  if (req.method === 'POST' && pathname === '/api/control/step') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const ms = Math.min(10000, Math.max(1, parseInt(body.ms, 10) || 100));
+      const result = await simManager.sendCommand({ cmd: 'step', ms });
+      return sendJson(res, 200, { success: true, result, t: simManager.simTime });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/reset
+  if (req.method === 'POST' && pathname === '/api/control/reset') {
+    try {
+      await simManager.stopAndReset();
+      return sendJson(res, 200, { success: true, t: 0 });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/trigger
+  if (req.method === 'POST' && pathname === '/api/control/trigger') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const node = parseInt(body.node, 10);
+      const kind = String(body.kind || 'short');
+      const result = await simManager.sendCommand({ cmd: 'trigger', node, kind });
+      return sendJson(res, 200, { success: true, result });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/trigger-all
+  if (req.method === 'POST' && pathname === '/api/control/trigger-all') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const kind = String(body.kind || 'short');
+      const mode = String(body.mode || 'immediate');
+      const delayMs = parseInt(body.delay_ms, 10) || 2000;
+      const result = await simManager.sendCommand({ cmd: 'trigger_all', kind, mode, delay_ms: delayMs });
+      return sendJson(res, 200, { success: true, result });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/node-state
+  if (req.method === 'POST' && pathname === '/api/control/node-state') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const cmdObj = { cmd: 'set_node', node: parseInt(body.node, 10) };
+      if (body.online !== undefined) cmdObj.online = Boolean(body.online);
+      if (body.gnss !== undefined) cmdObj.gnss = Boolean(body.gnss);
+      if (body.dr !== undefined) cmdObj.dr = Boolean(body.dr);
+      if (body.battery !== undefined) cmdObj.battery = parseInt(body.battery, 10);
+      const result = await simManager.sendCommand(cmdObj);
+      return sendJson(res, 200, { success: true, result });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/reposition
+  if (req.method === 'POST' && pathname === '/api/control/reposition') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const node = parseInt(body.node, 10);
+      const x = parseFloat(body.x);
+      const y = parseFloat(body.y);
+      const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
+      return sendJson(res, 200, { success: true, result });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // POST /api/control/block-link
+  if (req.method === 'POST' && pathname === '/api/control/block-link') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const a = parseInt(body.a, 10);
+      const b = parseInt(body.b, 10);
+      const blocked = body.blocked !== undefined ? Boolean(body.blocked) : true;
+      const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
+      return sendJson(res, 200, { success: true, result });
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // GET /api/control/state
+  if (req.method === 'GET' && pathname === '/api/control/state') {
+    try {
+      await simManager.ensureStarted();
+      const result = await simManager.sendCommand({ cmd: 'get_state' });
+      return sendJson(res, 200, result);
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // GET /api/control/summary
+  if (req.method === 'GET' && pathname === '/api/control/summary') {
+    try {
+      await simManager.ensureStarted();
+      const result = await simManager.sendCommand({ cmd: 'summary' });
+      return sendJson(res, 200, result);
+    } catch (err) {
+      return sendError(res, 500, err.message);
+    }
+  }
+
+  // GET /api/control/status
+  if (req.method === 'GET' && pathname === '/api/control/status') {
+    return sendJson(res, 200, {
+      running: simManager.isRunning,
+      t: simManager.simTime,
+      eventsCount: simManager.eventHistory.length,
+      processActive: Boolean(simManager.process),
+      config: simManager.config
+    });
+  }
+
+  // --- Standard API Endpoints ---
 
   // GET /api/status
   if (req.method === 'GET' && pathname === '/api/status') {
@@ -105,7 +510,9 @@ const server = http.createServer(async (req, res) => {
       nodeVersion: process.version,
       simulatorFound: Boolean(simPath),
       simulatorPath: simPath ? path.relative(ROOT_DIR, simPath) : null,
-      activeRun: Boolean(activeChildProcess)
+      activeRun: Boolean(activeChildProcess || simManager.process),
+      interactiveActive: Boolean(simManager.process),
+      simTime: simManager.simTime
     });
   }
 

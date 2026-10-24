@@ -1,0 +1,33 @@
+{
+  "id": "congested_disaster",
+  "name": "5. Congested Disaster with Collisions & Airtime Saturation",
+  "description": "High-density survivor cluster with elevated spreading factor (SF9, airtime ~210ms) and tight trigger dispersion, maximizing packet collisions and half-duplex blocking.",
+  "params": {
+    "survivors": 30,
+    "relays": 6,
+    "zone": 1000,
+    "seed": 505,
+    "duration": 35000,
+    "sf": 9,
+    "loss": 0.08,
+    "path_exp": 3.8
+  },
+  "triggers": [
+    { "node": 1, "kind": "long", "t": 1000 },
+    { "node": 2, "kind": "short", "t": 1020 },
+    { "node": 3, "kind": "double", "t": 1040 },
+    { "node": 4, "kind": "long", "t": 1060 },
+    { "node": 5, "kind": "short", "t": 1080 },
+    { "node": 6, "kind": "double", "t": 1100 },
+    { "node": 7, "kind": "long", "t": 1120 },
+    { "node": 8, "kind": "short", "t": 1140 },
+    { "node": 9, "kind": "double", "t": 1160 },
+    { "node": 10, "kind": "short", "t": 1180 }
+  ],
+  "faults": [],
+  "expected_behavior": "Long airtime causes collisions and queue build-up. Relays suppress duplicates and use randomized backoff.",
+  "invariants": [
+    "collisions_occurred == true",
+    "relay_suppressions_observed > 0"
+  ]
+}

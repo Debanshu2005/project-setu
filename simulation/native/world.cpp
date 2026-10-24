@@ -415,6 +415,96 @@ void World::run_until(uint32_t t_end) {
   }
 }
 
+void World::step(uint32_t ms) {
+  run_until(now_ + ms);
+}
+
+void World::reposition_node(uint16_t id, double px, double py) {
+  auto it = nodes_.find(id);
+  if (it == nodes_.end()) return;
+  it->second->x = px;
+  it->second->y = py;
+  int32_t la = 0, lo = 0;
+  xy_to_e6(px, py, la, lo);
+  if (trace_) {
+    char b[128];
+    std::snprintf(b, sizeof b, ",\"x\":%.2f,\"y\":%.2f,\"lat_e6\":%ld,\"lon_e6\":%ld",
+                  px, py, static_cast<long>(la), static_cast<long>(lo));
+    trace_event("reposition", id, b);
+    for (const auto& kv : nodes_) {
+      if (kv.first == id) continue;
+      double r = mean_rssi(id, kv.first);
+      double d = std::hypot(px - kv.second->x, py - kv.second->y);
+      *trace_ << "{\"t\":" << now_ << ",\"ev\":\"link_update\",\"a\":" << id
+              << ",\"b\":" << kv.first << ",\"rssi\":" << r << ",\"dist\":" << d
+              << ",\"in_range\":" << (r >= sens_ ? "true" : "false") << "}\n";
+    }
+  }
+}
+
+void World::trigger_all_survivors(setu::Hazard hz, uint32_t delay_spread_ms, const std::string& kind) {
+  std::vector<uint16_t> survivors;
+  for (const auto& kv : nodes_) {
+    if (kv.second->node->config().role == setu::Role::Survivor && kv.second->online) {
+      survivors.push_back(kv.first);
+    }
+  }
+  for (size_t i = 0; i < survivors.size(); ++i) {
+    uint16_t id = survivors[i];
+    uint32_t delay = 0;
+    if (delay_spread_ms > 0 && survivors.size() > 1) {
+      delay = nodes_.at(id)->rng() % (delay_spread_ms + 1);
+    }
+    uint32_t t = now_ + delay;
+    if (kind == "double" || hz == setu::Hazard::Medical) {
+      button_press(id, t, 120);
+      button_press(id, t + 300, 120);
+    } else if (kind == "long" || hz == setu::Hazard::Trapped) {
+      button_press(id, t, 1700);
+    } else if (kind == "voice-medical") {
+      wake_word(id, t);
+      voice_command(id, t + 1500, 1, setu::Hazard::Medical);
+    } else if (kind == "voice-trapped") {
+      wake_word(id, t);
+      voice_command(id, t + 1500, 1, setu::Hazard::Trapped);
+    } else {
+      button_press(id, t, 150);
+    }
+  }
+}
+
+SimNodeInfo World::get_node_info(uint16_t id) const {
+  SimNodeInfo info;
+  auto it = nodes_.find(id);
+  if (it == nodes_.end()) return info;
+  const auto& n = *it->second;
+  info.id = id;
+  info.role = n.node->config().role;
+  info.x = n.x;
+  info.y = n.y;
+  xy_to_e6(n.x, n.y, info.lat_e6, info.lon_e6);
+  info.battery = n.battery;
+  info.online = n.online;
+  info.gnss_on = n.gnss_on;
+  info.dr_on = n.dr_on;
+  info.active = n.node->sos_active();
+  info.acked = n.node->sos_acked();
+  info.gave_up = n.node->sos_gave_up();
+  info.seq = n.node->seq();
+  info.duty_used_ms = n.node->duty_used_ms();
+  info.stats = n.node->stats();
+  return info;
+}
+
+std::vector<SimNodeInfo> World::get_all_nodes_info() const {
+  std::vector<SimNodeInfo> res;
+  res.reserve(nodes_.size());
+  for (const auto& kv : nodes_) {
+    res.push_back(get_node_info(kv.first));
+  }
+  return res;
+}
+
 // ------------------------------------------------------------------ demo topology
 
 std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, const ChannelParams& ch,

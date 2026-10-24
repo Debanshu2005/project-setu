@@ -40,6 +40,16 @@
         <select class="select-input" id="scenarioSelect" style="width: 220px;" aria-label="Select disaster scenario"></select>
       </div>
 
+      <!-- Mode Switch -->
+      <button class="btn" id="btnToggleMode" style="border: 1px solid var(--cyan-main); color: var(--cyan-main);" title="Switch between Interactive Live Engine and Scenario Trace Replay">
+        ⚡ LIVE DIGITAL TWIN
+      </button>
+
+      <!-- Trigger All Survivors -->
+      <button class="btn" id="btnOpenTriggerAllModal" style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5; font-weight: 700;" title="Trigger all online survivor wristbands simultaneously">
+        🚨 Trigger All Survivors
+      </button>
+
       <!-- Action Buttons -->
       <button class="btn btn-primary" id="btnOpenRunModal">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
@@ -260,6 +270,49 @@
       <div class="modal-footer">
         <button class="btn" id="btnCancelModal">Cancel</button>
         <button class="btn btn-primary" id="btnExecuteSim">Run Simulator</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Trigger All Survivors Schedule -->
+  <div class="modal-backdrop" id="modalTriggerAll" role="dialog" aria-modal="true" aria-labelledby="modalTriggerAllTitle">
+    <div class="modal-dialog" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="modalTriggerAllTitle">Trigger All Survivor Nodes</h3>
+        <button class="modal-close-btn" id="btnCloseTriggerAllModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+          Broadcasts simultaneous emergency SOS triggers across every eligible online survivor node in the mesh network to test LoRa congestion, packet collision capture, relay queue pressure, and hub acknowledgment delivery.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div>
+            <label class="form-label"><span>Emergency Classification:</span></label>
+            <select class="form-input" id="selTriggerAllKind">
+              <option value="short" selected>Short Press (General Disaster SOS)</option>
+              <option value="double">Double Press (Urgent Medical SOS)</option>
+              <option value="long">Long Press (Trapped Under Debris SOS)</option>
+              <option value="voice">Voice Command ("Setu Rescue")</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="form-label"><span>Concurrency Schedule & Delay Jitter:</span></label>
+            <select class="form-input" id="selTriggerAllJitter">
+              <option value="0" selected>0 ms (Simultaneous Wave - Maximum Collision Stress)</option>
+              <option value="500">±500 ms (Tight Packet Burst)</option>
+              <option value="2000">±2000 ms (2-Second Evacuation Dispersion)</option>
+              <option value="5000">±5000 ms (5-Second Disaster Scenario)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnCancelTriggerAll">Cancel</button>
+        <button class="btn btn-primary" id="btnConfirmTriggerAll" style="background: #ef4444; border-color: #ef4444; color: #fff;">
+          Broadcast SOS Wave
+        </button>
       </div>
     </div>
   </div>

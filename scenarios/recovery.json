@@ -1,0 +1,28 @@
+{
+  "id": "recovery",
+  "name": "11. Dynamic Network Recovery & Post-Outage Traversal",
+  "description": "Relay 101 experiences a temporary 8-second power fault and then recovers. Validates automatic self-healing and successful delivery of deferred SOS alerts.",
+  "params": {
+    "survivors": 12,
+    "relays": 4,
+    "zone": 1000,
+    "seed": 1111,
+    "duration": 30000,
+    "sf": 7,
+    "loss": 0.02,
+    "path_exp": 3.1
+  },
+  "triggers": [
+    { "node": 4, "kind": "double", "t": 2000, "label": "Survivor 4: SOS during Outage" },
+    { "node": 4, "kind": "double", "t": 12000, "label": "Survivor 4: Follow-up Alert after Recovery" }
+  ],
+  "faults": [
+    { "kind": "kill", "target": "101", "t": 1000, "label": "Relay 101 Power Interrupted" },
+    { "kind": "recover", "target": "101", "t": 9000, "label": "Relay 101 Backup Solar/Battery Restored" }
+  ],
+  "expected_behavior": "During outage, packets fail or take high-loss paths. After recovery at t=9000ms, subsequent transmissions through Relay 101 succeed immediately.",
+  "invariants": [
+    "relay_recovered == true",
+    "post_recovery_delivery_succeeds == true"
+  ]
+}

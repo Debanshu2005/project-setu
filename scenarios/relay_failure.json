@@ -1,0 +1,27 @@
+{
+  "id": "relay_failure",
+  "name": "6. Primary Relay Structural Failure & Re-routing",
+  "description": "Active emergency alert in progress when central Relay 100 collapses at t=2000ms. Validates mesh multi-path resilience as surviving relays take over forwarding.",
+  "params": {
+    "survivors": 15,
+    "relays": 4,
+    "zone": 1000,
+    "seed": 606,
+    "duration": 25000,
+    "sf": 7,
+    "loss": 0.02,
+    "path_exp": 3.0
+  },
+  "triggers": [
+    { "node": 1, "kind": "long", "t": 1000, "label": "Survivor 1: Trapped Alert" },
+    { "node": 4, "kind": "short", "t": 4000, "label": "Survivor 4: Post-Collapse SOS" }
+  ],
+  "faults": [
+    { "kind": "kill", "target": "100", "t": 2000, "label": "Relay 100 Crushed by Secondary Collapse" }
+  ],
+  "expected_behavior": "Packets routed through Relay 100 fail during outage; retries find alternative path via Relay 101/102.",
+  "invariants": [
+    "relay_100_fails == true",
+    "delivery_via_alternate_relay == true"
+  ]
+}

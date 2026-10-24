@@ -71,6 +71,130 @@ export class SetuApi {
     return await res.json();
   }
 
+  static async startControl(options = {}) {
+    const res = await fetch(`${this.baseUrl}/api/control/start`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(options)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to start simulation`);
+    return await res.json();
+  }
+
+  static async pauseControl() {
+    const res = await fetch(`${this.baseUrl}/api/control/pause`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to pause simulation`);
+    return await res.json();
+  }
+
+  static async stepControl(ms = 100) {
+    const res = await fetch(`${this.baseUrl}/api/control/step`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ms })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to step simulation`);
+    return await res.json();
+  }
+
+  static async resetControl() {
+    const res = await fetch(`${this.baseUrl}/api/control/reset`, { method: 'POST' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to reset simulation`);
+    return await res.json();
+  }
+
+  static async triggerNode(nodeId, kind = 'short') {
+    const res = await fetch(`${this.baseUrl}/api/control/trigger`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: nodeId, kind })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to trigger node`);
+    return await res.json();
+  }
+
+  static async triggerAll(payload = {}) {
+    const res = await fetch(`${this.baseUrl}/api/control/trigger-all`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to trigger all nodes`);
+    return await res.json();
+  }
+
+  static async setNodeState(payload) {
+    const res = await fetch(`${this.baseUrl}/api/control/node-state`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to update node state`);
+    return await res.json();
+  }
+
+  static async repositionNode(nodeId, x, y) {
+    const res = await fetch(`${this.baseUrl}/api/control/reposition`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: nodeId, x, y })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to reposition node`);
+    return await res.json();
+  }
+
+  static async blockLink(a, b, blocked = true) {
+    const res = await fetch(`${this.baseUrl}/api/control/block-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ a, b, blocked })
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to toggle link block`);
+    return await res.json();
+  }
+
+  static async getControlState() {
+    const res = await fetch(`${this.baseUrl}/api/control/state`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get node state`);
+    return await res.json();
+  }
+
+  static async getControlSummary() {
+    const res = await fetch(`${this.baseUrl}/api/control/summary`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get summary`);
+    return await res.json();
+  }
+
+  static async getControlStatus() {
+    const res = await fetch(`${this.baseUrl}/api/control/status`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get control status`);
+    return await res.json();
+  }
+
+  static connectEvents(onEvent, onStatus, onError) {
+    const source = new EventSource(`${this.baseUrl}/api/events`);
+    source.addEventListener('event', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (onEvent) onEvent(data);
+      } catch (err) {
+        console.error('SSE event parse error:', err);
+      }
+    });
+    source.addEventListener('status', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (onStatus) onStatus(data);
+      } catch (err) {
+        console.error('SSE status parse error:', err);
+      }
+    });
+    source.addEventListener('error', err => {
+      if (onError) onError(err);
+    });
+    return source;
+  }
+
   static parseJsonl(text) {
     const lines = text.split('\n');
     const events = [];

@@ -43,6 +43,23 @@ struct Counters {
   uint64_t tx = 0, delivered = 0, collisions = 0, weak = 0, lost = 0, halfduplex = 0;
 };
 
+struct SimNodeInfo {
+  uint16_t id = 0;
+  setu::Role role = setu::Role::Survivor;
+  double x = 0, y = 0;
+  int32_t lat_e6 = 0, lon_e6 = 0;
+  uint8_t battery = 100;
+  bool online = true;
+  bool gnss_on = true;
+  bool dr_on = true;
+  bool active = false;
+  bool acked = false;
+  bool gave_up = false;
+  uint16_t seq = 0;
+  uint32_t duty_used_ms = 0;
+  setu::NodeStats stats;
+};
+
 class World {
  public:
   World(const ChannelParams& ch, uint32_t seed);
@@ -57,17 +74,23 @@ class World {
   void set_battery(uint16_t id, uint8_t pct);
   void block_link(uint16_t a, uint16_t b, bool blocked = true);
   void schedule(uint32_t at_ms, std::function<void()> fn);
+  void reposition_node(uint16_t id, double x, double y);
 
   // --- virtual user input (drives the real button classifier) ---
   void button_press(uint16_t id, uint32_t at_ms, uint32_t hold_ms);
   void wake_word(uint16_t id, uint32_t at_ms);
   void voice_command(uint16_t id, uint32_t at_ms, uint8_t contact, setu::Hazard hz);
+  void trigger_all_survivors(setu::Hazard hz, uint32_t delay_spread_ms = 0, const std::string& kind = "short");
 
   void run_until(uint32_t t_ms);
+  void step(uint32_t ms = 100);
   uint32_t now() const { return now_; }
 
   // --- results ---
   setu::Node& node(uint16_t id);
+  SimNodeInfo get_node_info(uint16_t id) const;
+  std::vector<SimNodeInfo> get_all_nodes_info() const;
+  const ChannelParams& channel_params() const { return ch_; }
   const std::vector<AlertRecord>& alerts() const { return alerts_; }
   // time the node first played AckReceived at/after t0 (or -1)
   int64_t first_ack_ms(uint16_t id, uint32_t t0 = 0) const;

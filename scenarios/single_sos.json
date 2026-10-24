@@ -1,0 +1,24 @@
+{
+  "id": "single_sos",
+  "name": "2. Single SOS Trace & Full ACK Cycle",
+  "description": "Trigger Node 1 individually in a 10-node mesh and follow its exact forward broadcast path, duplicate suppression across neighboring relays, hub delivery, and return ACK route.",
+  "params": {
+    "survivors": 10,
+    "relays": 3,
+    "zone": 800,
+    "seed": 202,
+    "duration": 20000,
+    "sf": 7,
+    "loss": 0.02,
+    "path_exp": 3.0
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1200, "label": "Survivor 1: General SOS (Short Press)" }
+  ],
+  "faults": [],
+  "expected_behavior": "Packet reaches Relay 100 or 101, forwards to Hub 0. Hub replies with targeted ACK. Origin accepts ACK and halts retries.",
+  "invariants": [
+    "hub_received_alert >= 1",
+    "retries_stopped_on_ack == true"
+  ]
+}

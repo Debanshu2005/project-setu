@@ -1,0 +1,43 @@
+{
+  "id": "all_survivors_sos",
+  "name": "4. All Survivors Evacuation Alarm (Full Mesh Stress)",
+  "description": "Mass disaster evacuation triggering all 20 online survivor wristbands within a 500ms window. Generates intense channel contention, test collision capture, and relay flood suppression.",
+  "params": {
+    "survivors": 20,
+    "relays": 5,
+    "zone": 1200,
+    "seed": 404,
+    "duration": 30000,
+    "sf": 7,
+    "loss": 0.05,
+    "path_exp": 3.4
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1000 },
+    { "node": 2, "kind": "short", "t": 1050 },
+    { "node": 3, "kind": "short", "t": 1100 },
+    { "node": 4, "kind": "short", "t": 1120 },
+    { "node": 5, "kind": "short", "t": 1150 },
+    { "node": 6, "kind": "short", "t": 1180 },
+    { "node": 7, "kind": "short", "t": 1200 },
+    { "node": 8, "kind": "short", "t": 1220 },
+    { "node": 9, "kind": "short", "t": 1250 },
+    { "node": 10, "kind": "short", "t": 1300 },
+    { "node": 11, "kind": "short", "t": 1320 },
+    { "node": 12, "kind": "short", "t": 1350 },
+    { "node": 13, "kind": "short", "t": 1380 },
+    { "node": 14, "kind": "short", "t": 1400 },
+    { "node": 15, "kind": "short", "t": 1420 },
+    { "node": 16, "kind": "short", "t": 1450 },
+    { "node": 17, "kind": "short", "t": 1470 },
+    { "node": 18, "kind": "short", "t": 1500 },
+    { "node": 19, "kind": "short", "t": 1520 },
+    { "node": 20, "kind": "short", "t": 1550 }
+  ],
+  "faults": [],
+  "expected_behavior": "Simultaneous bursts cause channel collisions; capture effect resolves stronger signals. Backoff delays allow retries to succeed over time.",
+  "invariants": [
+    "delivery_rate >= 0.70",
+    "collision_drops_recorded > 0"
+  ]
+}

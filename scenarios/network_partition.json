@@ -1,0 +1,29 @@
+{
+  "id": "network_partition",
+  "name": "8. Complete Network Partition & Delivery Failure",
+  "description": "Massive structural barrier blocks all radio links connecting West Zone survivors to the East Zone rescue hub. Validates honest reporting of packet retry exhaustion and SOS failure.",
+  "params": {
+    "survivors": 10,
+    "relays": 3,
+    "zone": 1400,
+    "seed": 808,
+    "duration": 25000,
+    "sf": 7,
+    "loss": 0.0,
+    "path_exp": 4.5
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1000, "label": "Survivor 1: Isolated West Sector SOS" }
+  ],
+  "faults": [
+    { "kind": "block", "target": "1-100", "t": 0, "label": "Topological Partition: Link 1-100 Severed" },
+    { "kind": "block", "target": "1-101", "t": 0, "label": "Topological Partition: Link 1-101 Severed" },
+    { "kind": "block", "target": "1-102", "t": 0, "label": "Topological Partition: Link 1-102 Severed" }
+  ],
+  "expected_behavior": "Survivor 1 transmits, receives no ACK, retries up to max_retries (3), and transitions to SOS_FAILED / EXHAUSTED state without fake delivery.",
+  "invariants": [
+    "hub_received_alert == 0",
+    "retries_exhausted == true",
+    "delivery_fabricated == false"
+  ]
+}

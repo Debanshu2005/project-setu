@@ -9,6 +9,8 @@ export class InspectorComponent {
     this.sim = simulationEngine;
     this.currentNode = null;
     this.currentPacket = null;
+    this.onTrigger = null;      // (nodeId, kind) => void
+    this.onStateChange = null;  // (nodeId, stateUpdate) => void
 
     this.sim.subscribe((engine, type) => {
       if (this.currentNode) {
@@ -46,6 +48,90 @@ export class InspectorComponent {
     const lon = (n.lon_e6 / 1e6).toFixed(6);
     const posProv = n.gnss_on ? 'GNSS 3D Satellite Fix' : n.dr_on ? 'Dead-Reckoning (MPU-6050 IMU)' : 'Unknown / Signal Lost';
 
+    let controlsHtml = '';
+    if (n.role === 'survivor') {
+      controlsHtml = `
+        <div class="wire-breakdown-card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(15, 23, 42, 0.7);">
+          <div class="wire-header" style="color: var(--cyan-main); font-weight: 700;">
+            <span>Individual SOS Triggers (Node ${n.id})</span>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+            <button class="btn btn-sos-trigger" data-kind="short" style="font-size: 10px; padding: 6px 4px; background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5;">
+              🚨 Short Press (General)
+            </button>
+            <button class="btn btn-sos-trigger" data-kind="double" style="font-size: 10px; padding: 6px 4px; background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #fcd34d;">
+              🩺 Double Press (Medical)
+            </button>
+            <button class="btn btn-sos-trigger" data-kind="long" style="font-size: 10px; padding: 6px 4px; background: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; color: #d8b4fe;">
+              🏚️ Long Press (Trapped)
+            </button>
+            <button class="btn btn-sos-trigger" data-kind="voice" style="font-size: 10px; padding: 6px 4px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #bae6fd;">
+              🎙️ Wake-Word ("Setu")
+            </button>
+            <button class="btn btn-sos-trigger" data-kind="voice_medical" style="font-size: 10px; padding: 6px 4px; background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #a7f3d0;">
+              🗣️ Voice: Medical
+            </button>
+            <button class="btn btn-sos-trigger" data-kind="voice_trapped" style="font-size: 10px; padding: 6px 4px; background: rgba(236, 72, 153, 0.2); border: 1px solid #ec4899; color: #fbcfe8;">
+              🗣️ Voice: Trapped
+            </button>
+          </div>
+
+          <div class="wire-header" style="color: #94a3b8; font-size: 10px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+            <span>Hardware Telemetry & Fault Controls</span>
+          </div>
+
+          <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Node Power State:</span>
+              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
+                ${n.online ? 'Simulate Node Failure (Go Offline)' : 'Restore Node (Bring Online)'}
+              </button>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Battery Level: <strong id="lblBatteryVal">${n.battery}%</strong></span>
+              <input type="range" id="sliderBattery" min="0" max="100" value="${n.battery}" style="width: 100px; cursor: pointer;" />
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>GNSS Satellite Receiver:</span>
+              <button id="btnToggleGnss" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.gnss_on ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}; border: 1px solid ${n.gnss_on ? '#10b981' : '#ef4444'}; color: ${n.gnss_on ? '#34d399' : '#f87171'};">
+                ${n.gnss_on ? 'GNSS Fix Active' : 'GNSS Denied (Lost)'}
+              </button>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>MPU-6050 Dead-Reckoning:</span>
+              <button id="btnToggleDr" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.dr_on ? 'rgba(56, 189, 248, 0.25)' : 'rgba(148, 163, 184, 0.25)'}; border: 1px solid ${n.dr_on ? '#38bdf8' : '#64748b'}; color: ${n.dr_on ? '#38bdf8' : '#94a3b8'};">
+                ${n.dr_on ? 'IMU DR Active' : 'IMU DR Disabled'}
+              </button>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      // Relay or Hub controls
+      controlsHtml = `
+        <div class="wire-breakdown-card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(15, 23, 42, 0.7);">
+          <div class="wire-header" style="color: var(--cyan-main); font-weight: 700;">
+            <span>${n.role.toUpperCase()} Node Controls (ID ${n.id})</span>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Radio Tower Status:</span>
+              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
+                ${n.online ? 'Disable Tower (Offline)' : 'Enable Tower (Online)'}
+              </button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Backup Battery: <strong id="lblBatteryVal">${n.battery}%</strong></span>
+              <input type="range" id="sliderBattery" min="0" max="100" value="${n.battery}" style="width: 100px; cursor: pointer;" />
+            </div>
+          </div>
+        </div>
+      `;
+    }
+
     this.nodeContainer.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
         <div style="font-size: 14px; font-weight: 700; color: #fff;">Node ${n.id}</div>
@@ -55,7 +141,9 @@ export class InspectorComponent {
         </div>
       </div>
 
-      <div class="metrics-grid" style="margin-bottom: 12px;">
+      ${controlsHtml}
+
+      <div class="metrics-grid" style="margin-top: 8px; margin-bottom: 12px;">
         <div class="metric-card">
           <div class="metric-label">Battery Level</div>
           <div class="metric-value">${n.battery}<span class="metric-unit">%</span></div>
@@ -91,6 +179,77 @@ export class InspectorComponent {
         </table>
       </div>
     `;
+
+    // Attach Interactive Event Handlers
+    this.attachNodeControlEvents(n);
+  }
+
+  attachNodeControlEvents(n) {
+    // 1. SOS Trigger Buttons
+    this.nodeContainer.querySelectorAll('.btn-sos-trigger').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const kind = btn.dataset.kind;
+        if (this.onTrigger) {
+          this.onTrigger(n.id, kind);
+        }
+      });
+    });
+
+    // 2. Online / Offline Toggle
+    const btnOnline = this.nodeContainer.querySelector('#btnToggleOnline');
+    if (btnOnline) {
+      btnOnline.addEventListener('click', () => {
+        const newOnline = !n.online;
+        n.online = newOnline;
+        if (this.onStateChange) {
+          this.onStateChange(n.id, { online: newOnline });
+        }
+        this.renderNode();
+      });
+    }
+
+    // 3. Battery Slider
+    const sliderBattery = this.nodeContainer.querySelector('#sliderBattery');
+    const lblBattery = this.nodeContainer.querySelector('#lblBatteryVal');
+    if (sliderBattery) {
+      sliderBattery.addEventListener('input', e => {
+        const val = parseInt(e.target.value, 10);
+        lblBattery.textContent = `${val}%`;
+      });
+      sliderBattery.addEventListener('change', e => {
+        const val = parseInt(e.target.value, 10);
+        n.battery = val;
+        if (this.onStateChange) {
+          this.onStateChange(n.id, { battery: val });
+        }
+      });
+    }
+
+    // 4. GNSS Toggle
+    const btnGnss = this.nodeContainer.querySelector('#btnToggleGnss');
+    if (btnGnss) {
+      btnGnss.addEventListener('click', () => {
+        const newGnss = !n.gnss_on;
+        n.gnss_on = newGnss;
+        if (this.onStateChange) {
+          this.onStateChange(n.id, { gnss_on: newGnss });
+        }
+        this.renderNode();
+      });
+    }
+
+    // 5. DR Toggle
+    const btnDr = this.nodeContainer.querySelector('#btnToggleDr');
+    if (btnDr) {
+      btnDr.addEventListener('click', () => {
+        const newDr = !n.dr_on;
+        n.dr_on = newDr;
+        if (this.onStateChange) {
+          this.onStateChange(n.id, { dr_on: newDr });
+        }
+        this.renderNode();
+      });
+    }
   }
 
   renderPacket() {

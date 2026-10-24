@@ -1,0 +1,27 @@
+{
+  "id": "multi_sos",
+  "name": "3. Multiple Simultaneous SOS Events",
+  "description": "Simultaneous emergency triggers across multiple survivors in different sectors of the disaster zone. Validates concurrent relay queue handling and deduplication.",
+  "params": {
+    "survivors": 20,
+    "relays": 5,
+    "zone": 1200,
+    "seed": 303,
+    "duration": 25000,
+    "sf": 7,
+    "loss": 0.03,
+    "path_exp": 3.2
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1000, "label": "Survivor 1: Panic Button" },
+    { "node": 5, "kind": "double", "t": 1050, "label": "Survivor 5: Medical Distress" },
+    { "node": 9, "kind": "long", "t": 1100, "label": "Survivor 9: Trapped Debris" },
+    { "node": 14, "kind": "voice", "t": 1500, "label": "Survivor 14: Voice Wake Trigger" }
+  ],
+  "faults": [],
+  "expected_behavior": "All distinct origin episodes are queued and forwarded. Deduplication prevents endless re-broadcasting.",
+  "invariants": [
+    "unique_alerts_delivered >= 3",
+    "no_queue_overflow == true"
+  ]
+}

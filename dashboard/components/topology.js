@@ -23,6 +23,12 @@ export class TopologyVisualizer {
 
     // Callbacks
     this.onNodeSelect = null;
+    this.onNodeReposition = null;
+
+    // Dragging state
+    this.isDraggingNode = false;
+    this.draggedNode = null;
+    this.showRssiLabels = true;
 
     this.initEvents();
     this.resize();
@@ -39,25 +45,52 @@ export class TopologyVisualizer {
 
   initEvents() {
     this.canvas.addEventListener('mousedown', e => {
-      this.isDragging = true;
-      this.dragStartX = e.clientX - this.panX;
-      this.dragStartY = e.clientY - this.panY;
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+      const clicked = this.getNodeAtScreenPos(mx, my);
+
+      if (clicked) {
+        this.isDraggingNode = true;
+        this.draggedNode = clicked;
+        this.selectedNodeId = clicked.id;
+        if (this.onNodeSelect) this.onNodeSelect(clicked);
+        this.render();
+      } else {
+        this.isDragging = true;
+        this.dragStartX = e.clientX - this.panX;
+        this.dragStartY = e.clientY - this.panY;
+      }
     });
 
     window.addEventListener('mousemove', e => {
-      if (this.isDragging) {
+      const rect = this.canvas.getBoundingClientRect();
+      const mx = e.clientX - rect.left;
+      const my = e.clientY - rect.top;
+
+      if (this.isDraggingNode && this.draggedNode) {
+        const wp = this.screenToWorld(mx, my);
+        this.draggedNode.x = Math.round(wp.x * 10) / 10;
+        this.draggedNode.y = Math.round(wp.y * 10) / 10;
+        this.render();
+      } else if (this.isDragging) {
         this.panX = e.clientX - this.dragStartX;
         this.panY = e.clientY - this.dragStartY;
         this.render();
       } else {
-        const rect = this.canvas.getBoundingClientRect();
-        const mx = e.clientX - rect.left;
-        const my = e.clientY - rect.top;
         this.checkHover(mx, my);
       }
     });
 
     window.addEventListener('mouseup', () => {
+      if (this.isDraggingNode && this.draggedNode) {
+        if (this.onNodeReposition) {
+          this.onNodeReposition(this.draggedNode.id, this.draggedNode.x, this.draggedNode.y);
+        }
+        this.isDraggingNode = false;
+        this.draggedNode = null;
+        this.render();
+      }
       this.isDragging = false;
     });
 
@@ -73,16 +106,6 @@ export class TopologyVisualizer {
       this.scale *= zoomFactor;
       this.render();
     }, { passive: false });
-
-    this.canvas.addEventListener('click', e => {
-      const rect = this.canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
-      const clicked = this.getNodeAtScreenPos(mx, my);
-      this.selectedNodeId = clicked ? clicked.id : null;
-      if (this.onNodeSelect) this.onNodeSelect(clicked);
-      this.render();
-    });
   }
 
   resize() {
@@ -246,6 +269,7 @@ export class TopologyVisualizer {
     const ctx = this.ctx;
     ctx.save();
 
+    // 1. Draw base links
     for (const link of this.sim.links) {
       const na = this.sim.nodes.get(link.a);
       const nb = this.sim.nodes.get(link.b);
@@ -263,15 +287,52 @@ export class TopologyVisualizer {
         ctx.strokeStyle = 'rgba(239, 68, 68, 0.4)';
         ctx.setLineDash([4, 4]);
         ctx.lineWidth = 1.5;
-      } else {
-        // Opacity proportional to RSSI
-        const norm = Math.max(0.1, Math.min(0.7, (link.rssi - this.sim.meta.sens) / 25.0));
-        ctx.strokeStyle = `rgba(6, 182, 212, ${norm.toFixed(2)})`;
+        ctx.stroke();
         ctx.setLineDash([]);
+      } else {
+        const alpha = Math.max(0.06, Math.min(0.35, (link.rssi + 135) / 75));
+        ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
         ctx.lineWidth = 1;
+        ctx.stroke();
       }
-      ctx.stroke();
     }
+
+    // 2. Draw highlighted links and RSSI badges for selected node
+    if (this.selectedNodeId !== null && this.showRssiLabels) {
+      for (const link of this.sim.links) {
+        if (link.a === this.selectedNodeId || link.b === this.selectedNodeId) {
+          const na = this.sim.nodes.get(link.a);
+          const nb = this.sim.nodes.get(link.b);
+          if (!na || !nb) continue;
+          const pa = this.worldToScreen(na.x, na.y);
+          const pb = this.worldToScreen(nb.x, nb.y);
+          const midX = (pa.x + pb.x) / 2;
+          const midY = (pa.y + pb.y) / 2;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.moveTo(pa.x, pa.y);
+          ctx.lineTo(pb.x, pb.y);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 2.5;
+          ctx.stroke();
+
+          // RSSI badge
+          ctx.font = '10px monospace';
+          ctx.fillStyle = '#0f172a';
+          ctx.fillRect(midX - 26, midY - 8, 52, 16);
+          ctx.strokeStyle = '#38bdf8';
+          ctx.lineWidth = 1;
+          ctx.strokeRect(midX - 26, midY - 8, 52, 16);
+          ctx.fillStyle = '#38bdf8';
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(`${link.rssi.toFixed(0)} dBm`, midX, midY);
+          ctx.restore();
+        }
+      }
+    }
+
     ctx.restore();
   }
 
@@ -379,9 +440,9 @@ export class TopologyVisualizer {
       ctx.lineWidth = 1.5;
       ctx.stroke();
     } else {
-      // Survivor Node: Circle (Cyan normally, Red if SOS)
+      // Survivor Node: Circle (Cyan normally, Red if SOS, Emerald if ACK confirmed)
       ctx.fillStyle = n.active_sos ? '#ef4444' : n.acked ? '#10b981' : '#06b6d4';
-      ctx.shadowColor = n.active_sos ? 'rgba(239, 68, 68, 0.8)' : 'rgba(6, 182, 212, 0.6)';
+      ctx.shadowColor = n.active_sos ? 'rgba(239, 68, 68, 0.8)' : n.acked ? 'rgba(16, 185, 129, 0.8)' : 'rgba(6, 182, 212, 0.6)';
       ctx.shadowBlur = 8;
       ctx.beginPath();
       ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
@@ -389,6 +450,28 @@ export class TopologyVisualizer {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.stroke();
+
+      // ACK Confirmed Checkmark Ring
+      if (n.acked && !n.active_sos) {
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 12, 0, Math.PI * 2);
+        ctx.strokeStyle = '#10b981';
+        ctx.lineWidth = 1.5;
+        ctx.stroke();
+      }
+    }
+
+    // Battery bar below node
+    if (n.online) {
+      const bw = 18;
+      const bh = 3;
+      const bx = p.x - bw / 2;
+      const by = p.y + 12;
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(bx, by, bw, bh);
+      const bColor = n.battery < 20 ? '#ef4444' : n.battery < 50 ? '#f59e0b' : '#10b981';
+      ctx.fillStyle = bColor;
+      ctx.fillRect(bx, by, (bw * Math.max(0, Math.min(100, n.battery))) / 100, bh);
     }
 
     // Node Label

@@ -1,0 +1,26 @@
+{
+  "id": "gps_denied_rescue",
+  "name": "7. GPS-Denied Subterranean Rescue (DR Fallback)",
+  "description": "Survivor trapped in underground basement where GNSS satellite signals are completely blocked. Tests protocol flags switching to MPU-6050 Dead-Reckoning coordinates.",
+  "params": {
+    "survivors": 12,
+    "relays": 4,
+    "zone": 1000,
+    "seed": 707,
+    "duration": 20000,
+    "sf": 8,
+    "loss": 0.03,
+    "path_exp": 3.4
+  },
+  "triggers": [
+    { "node": 3, "kind": "long", "t": 1500, "label": "Survivor 3: Trapped Underground" }
+  ],
+  "faults": [
+    { "kind": "gps-off", "target": "3", "t": 500, "label": "Survivor 3 Enters Basement (GNSS Lost, DR Enabled)" }
+  ],
+  "expected_behavior": "Packet flag bit for GPS is cleared (0), DR flag is set (1). Coordinates reflect dead-reckoning estimate.",
+  "invariants": [
+    "packet_flags_gps == false",
+    "packet_flags_dr == true"
+  ]
+}

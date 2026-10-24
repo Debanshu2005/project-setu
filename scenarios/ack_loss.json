@@ -1,0 +1,27 @@
+{
+  "id": "ack_loss",
+  "name": "10. Asymmetric ACK Drop & Retry Handling",
+  "description": "SOS packet successfully reaches Rescue Hub 0, but the returning ACK from Hub is dropped along the reverse path. Validates that wristband retries until receiving valid ACK.",
+  "params": {
+    "survivors": 8,
+    "relays": 3,
+    "zone": 800,
+    "seed": 1010,
+    "duration": 25000,
+    "sf": 7,
+    "loss": 0.0,
+    "path_exp": 3.0
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1000, "label": "Survivor 1: SOS" }
+  ],
+  "faults": [
+    { "kind": "block", "target": "100-1", "t": 1500, "label": "Asymmetric Return Link Severed (ACK Dropped)" }
+  ],
+  "expected_behavior": "Hub receives SOS and registers alert, but Survivor 1 receives no ACK and triggers retry. Hub recognizes duplicate SOS and suppresses duplicate rescue ticket.",
+  "invariants": [
+    "hub_received_alert == 1",
+    "origin_retry_triggered == true",
+    "hub_duplicate_ticket_suppressed == true"
+  ]
+}
