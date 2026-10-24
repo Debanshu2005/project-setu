@@ -17,6 +17,11 @@ class MockClock : public IClock {
   uint32_t now_ms() const override { return t_ms; }
   uint32_t unix_s() const override { return u_s + (t_ms / 1000u); }
   void advance_ms(uint32_t delta) { t_ms += delta; }
+  void discipline_unix_time(uint32_t gnss_epoch_s) {
+    if (gnss_epoch_s > 1600000000u) {
+      u_s = gnss_epoch_s - (t_ms / 1000u);
+    }
+  }
 };
 
 class MockRandom : public IRandom {

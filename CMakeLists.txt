@@ -26,6 +26,12 @@ target_link_libraries(setu_world PUBLIC setu_core)
 add_executable(setu_sim simulation/native/main.cpp)
 target_link_libraries(setu_sim PRIVATE setu_world)
 
+# Firmware entry point host verification target (ensures app_main.cpp and esp32_adapters.hpp compile cleanly)
+add_library(setu_firmware_host STATIC firmware/main/app_main.cpp)
+target_include_directories(setu_firmware_host PUBLIC shared/include firmware/esp32s3/include)
+target_link_libraries(setu_firmware_host PUBLIC setu_core)
+
+
 enable_testing()
 add_executable(setu_unit_tests
   tests/unit/test_main.cpp tests/unit/test_packet.cpp tests/unit/test_button.cpp

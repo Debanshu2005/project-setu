@@ -111,3 +111,23 @@ jobs:
 
       - name: Run automated backend test suite
         run: node tests/test_backend.mjs
+
+  # ----------------------------------------------------------------------------
+  # Job 5: ESP-IDF ESP32-S3 Target Firmware Build Verification
+  # ----------------------------------------------------------------------------
+  firmware-build-esp32s3:
+    name: ESP-IDF ESP32-S3 Firmware Build
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:release-v5.1
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compile ESP32-S3 Firmware Target
+        working-directory: firmware
+        run: |
+          . $IDF_PATH/export.sh
+          idf.py set-target esp32s3
+          idf.py build
+

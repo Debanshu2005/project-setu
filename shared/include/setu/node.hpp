@@ -16,6 +16,7 @@ enum class Role : uint8_t { Survivor, Relay, Hub };
 struct NodeConfig {
   uint16_t node_id = 1;
   Role role = Role::Survivor;
+  uint16_t initial_seq = 0;  // persistent sequence number across restarts (NVS-disciplined)
 
   // Flooding
   uint8_t max_hops = 8;

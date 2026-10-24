@@ -10,7 +10,7 @@ inline int16_t seq_diff(uint16_t a, uint16_t b) { return static_cast<int16_t>(a 
 }  // namespace
 
 Node::Node(const NodeConfig& cfg, const Hal& hal)
-    : cfg_(cfg), hal_(hal), button_(cfg.button), duty_(cfg.duty_window_ms, cfg.duty_limit_permille) {}
+    : cfg_(cfg), hal_(hal), button_(cfg.button), duty_(cfg.duty_window_ms, cfg.duty_limit_permille), seq_(cfg.initial_seq) {}
 
 uint32_t Node::duty_used_ms() const { return duty_.used_ms(hal_.clock->now_ms()); }
 
@@ -108,7 +108,12 @@ void Node::originate() {
     p.flags |= kFlagDr;
   }
   dedup_.observe(key_of(p));  // so our own packet echoing back is ignored
-  enqueue(Kind::Origin, p, 0);
+  if (!enqueue(Kind::Origin, p, 0)) {
+    // Priority 5 Fix: Queue full - do not drop originating SOS or wait full retry timeout.
+    // Schedule immediate fast re-attempt so the emergency SOS is not lost.
+    retry_at_ = now + 50;
+    return;
+  }
   last_origin_ms_ = now;
   ever_sent_ = true;
   retry_at_ = now + cfg_.retry_timeout_ms * (attempt_ + 1u);
@@ -119,8 +124,15 @@ void Node::originate() {
 }
 
 void Node::handle_ack(const Packet& p) {
+  if (p.target != cfg_.node_id) return;
   // Accept an ACK for any SOS sent during the current episode.
-  if (!(active_ || gave_up_)) return;
+  // If gave_up_, accept only within a bounded rescue window.
+  const uint32_t now = hal_.clock->now_ms();
+  if (!active_) {
+    if (!gave_up_) return;
+    const uint32_t late_window_ms = cfg_.retry_timeout_ms * (cfg_.max_retries + 2u);
+    if (!reached(last_origin_ms_ + late_window_ms, now)) return;
+  }
   if (seq_diff(p.ref_seq, episode_first_seq_) < 0 || seq_diff(seq_, p.ref_seq) < 0) return;
   stats_.acks_rx++;
   active_ = false;
@@ -169,9 +181,12 @@ void Node::on_radio_rx(const uint8_t* data, size_t len) {
   if (p.node_id == cfg_.node_id) return;  // own packet echoed back
 
   // Packet expiry check
+  // Discard packet only if both packet timestamp and local clock are non-zero,
+  // local clock is ahead of packet timestamp, and age exceeds max_packet_age_s.
+  // Packets with ts == 0 or where local clock is 0/behind are preserved (preventing false drops on unsynchronized clocks).
   if (cfg_.max_packet_age_s > 0 && p.ts > 0 && hal_.clock) {
     const uint32_t now_unix = hal_.clock->unix_s();
-    if (now_unix > p.ts && (now_unix - p.ts) > cfg_.max_packet_age_s) {
+    if (now_unix > 0 && now_unix > p.ts && (now_unix - p.ts) > cfg_.max_packet_age_s) {
       stats_.rx_expired++;
       char b[64];
       std::snprintf(b, sizeof b, ",\"origin\":%u,\"seq\":%u,\"age_s\":%u", p.node_id, p.seq, now_unix - p.ts);
@@ -266,6 +281,11 @@ void Node::service(Pending& q) {
     if (++q.attempts >= 10) {
       q.used = false;
       stats_.queue_drops++;
+      // Priority 5 Fix: If originating SOS transmission dropped due to radio fault,
+      // reschedule protocol retry promptly instead of stalling.
+      if (q.kind == Kind::Origin && active_) {
+        retry_at_ = now + 50;
+      }
     } else {
       q.due_ms = now + 10 + hal_.rng->uniform(50);
     }

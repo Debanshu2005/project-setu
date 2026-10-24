@@ -7,7 +7,7 @@ Project Setu is designed for the Espressif ESP32-S3 dual-core Xtensa microcontro
 ### Peripheral Pinout & Interface Mapping
 | Component | Module | Interface | ESP32-S3 Pins | Function | Status |
 |-----------|--------|-----------|---------------|----------|--------|
-| **LoRa Radio** | Semtech SX1262 | SPI | MOSI: 11, MISO: 13, SCK: 12, CS: 5, DIO1: 4, BUSY: 2, RST: 3 | Long-range 868/915 MHz RF packet exchange | Hardware driver adapter ready (`Sx1262Radio`) |
+| **LoRa Radio** | Semtech SX1262 | SPI | MOSI: 7, MISO: 8, SCK: 6, CS: 5, DIO1: 4, BUSY: 2, RST: 3 | Long-range 868/915 MHz RF packet exchange | Hardware driver adapter ready (`Sx1262Radio`) |
 | **Microphone** | INMP441 | I2S | BCLK: 41, WS: 42, DATA: 2 | Digital audio capture for ESP-SR WakeNet / MultiNet | Architecture & task pipeline ready |
 | **GPS / GNSS** | NEO-6M / ATGM336H | UART | TX: 17, RX: 18 (9600 baud) | 3D latitude/longitude fix & UTC time | Driver adapter ready (`Neo6mGnss`) |
 | **IMU** | MPU-6050 | I2C | SDA: 21, SCL: 22 (400 kHz) | Accelerometer/gyroscope dead-reckoning fallback | Driver adapter ready (`Mpu6050DeadReckoning`) |

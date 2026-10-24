@@ -126,3 +126,195 @@ TEST(esp32_adapters_location_fallback_pipeline) {
   CHECK(radio.transmitted[0].flags & kFlagGps); // GNSS takes priority over DR
   CHECK_EQ(radio.transmitted[0].lat_e6, 22572999);
 }
+
+TEST(sx1262_driver_init_failure_and_payload_bounds) {
+  Sx1262Radio radio(5, 4, 3, 2);
+  CHECK(!radio.is_ready());
+
+  // Successful initialization
+  CHECK(radio.init(868000000, 7, 125000, 14));
+  CHECK(radio.is_ready());
+  CHECK(radio.state() == Sx1262Radio::RadioState::Receiving);
+
+  // Send validation: null data rejected
+  CHECK(!radio.send(nullptr, 25));
+
+  // Send validation: zero length rejected
+  uint8_t payload[kPacketSize] = {0};
+  CHECK(!radio.send(payload, 0));
+
+  // Send validation: oversized length (> 25) rejected
+  CHECK(!radio.send(payload, kPacketSize + 1));
+
+  // Valid send
+  CHECK(radio.send(payload, kPacketSize));
+  CHECK_EQ(radio.tx_count(), 1u);
+
+  // Injected send failure
+  radio.set_mock_force_send_failure(true);
+  CHECK(!radio.send(payload, kPacketSize));
+  CHECK_EQ(radio.tx_count(), 1u);
+
+  // Injected init failure
+  radio.set_mock_force_init_failure(true);
+  CHECK(!radio.init());
+  CHECK(!radio.is_ready());
+}
+
+TEST(sx1262_driver_rx_fifo_packet_decoding) {
+  Sx1262Radio radio;
+  radio.init();
+
+  uint8_t dummy_pkt[kPacketSize];
+  std::memset(dummy_pkt, 0xAB, sizeof(dummy_pkt));
+  radio.inject_mock_rx_packet(dummy_pkt, sizeof(dummy_pkt), -88, 9);
+
+  uint8_t rx_buf[64] = {0};
+  size_t rx_len = 0;
+  int16_t rssi = 0;
+  int8_t snr = 0;
+
+  CHECK(radio.read_rx_packet(rx_buf, sizeof(rx_buf), rx_len, rssi, snr));
+  CHECK_EQ(rx_len, kPacketSize);
+  CHECK_EQ(rx_buf[0], 0xAB);
+  CHECK_EQ(rssi, -88);
+  CHECK_EQ(snr, 9);
+  CHECK_EQ(radio.rx_count(), 1u);
+
+  // Queue now empty
+  CHECK(!radio.read_rx_packet(rx_buf, sizeof(rx_buf), rx_len, rssi, snr));
+}
+
+TEST(neo6m_gnss_strict_checksum_and_stale_fix_expiration) {
+  Neo6mGnss gnss;
+  gnss.set_mock_system_ms(1000);
+
+  // Valid NMEA $GPRMC with correct XOR checksum (0x6A)
+  const char* valid_nmea = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A";
+  CHECK(gnss.feed_nmea(valid_nmea));
+  CHECK(gnss.has_valid_fix());
+
+  int32_t lat = 0, lon = 0;
+  CHECK(gnss.get_fix(lat, lon));
+  CHECK(lat > 0);
+  CHECK(lon > 0);
+
+  // Corrupted checksum should be rejected
+  const char* corrupted_nmea = "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*99";
+  CHECK(!gnss.feed_nmea(corrupted_nmea));
+  CHECK_EQ(gnss.checksum_errors(), 1u);
+
+  // Stale fix timeout: advance time past 10,000 ms
+  gnss.set_mock_system_ms(1000 + Neo6mGnss::kStaleTimeoutMs + 500);
+  CHECK(!gnss.get_fix(lat, lon)); // Auto-expired!
+}
+
+TEST(neo6m_gnss_rmc_epoch_clock_discipline) {
+  Neo6mGnss gnss;
+  Esp32Clock clk;
+
+  // Real NMEA sentence with date 15-May-2024: 150524, checksum 0x73
+  gnss.set_mock_system_ms(5000);
+  CHECK(gnss.feed_nmea("$GPRMC,120000,A,2230.0000,N,08820.0000,E,0.0,0.0,150524,0.0,E*73", &clk));
+  // Disciplined clock should now have disciplined epoch
+  CHECK(clk.is_disciplined());
+  CHECK(clk.unix_s() > 1700000000u);
+}
+
+TEST(mpu6050_dr_confidence_decay_and_bounds) {
+  Mpu6050DeadReckoning dr;
+  dr.set_mock_system_ms(1000);
+
+  // 1. Without GNSS anchor, estimate is not available
+  int32_t lat = 0, lon = 0;
+  CHECK(!dr.estimate(lat, lon));
+
+  // 2. Anchor GNSS fix
+  dr.anchor_last_gnss(22500000, 88400000);
+  CHECK(dr.estimate(lat, lon));
+  CHECK_EQ(lat, 22500000);
+
+  // 3. Step displacements
+  dr.update_step(0.75f, 0.0f); // 0.75m North
+  CHECK_EQ(dr.steps(), 1u);
+  CHECK(dr.estimate(lat, lon));
+  CHECK(lat > 22500000); // Displaced North
+
+  // 4. Confidence decay: after 5 minutes (300,000ms), estimate expires
+  dr.set_mock_system_ms(1000 + Mpu6050DeadReckoning::kMaxDrAgeMs + 100);
+  CHECK(!dr.estimate(lat, lon)); // Expired!
+}
+
+TEST(battery_monitor_lipo_curve_and_critical_threshold) {
+  BatteryMonitor batt;
+  batt.update_adc_voltage(4200);
+  CHECK_EQ(batt.percent(), 100);
+  CHECK(!batt.is_critical());
+
+  batt.update_adc_voltage(3800);
+  CHECK_EQ(batt.percent(), 50);
+
+  batt.update_adc_voltage(3300);
+  CHECK_EQ(batt.percent(), 0);
+  CHECK(batt.is_critical());
+}
+
+TEST(node_persistent_seq_across_reboots) {
+  MockClock clk;
+  MockRandom rng;
+  MockRadio radio;
+  Hal hal{&clk, &rng, &radio, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+
+  // Node boot 1 with initial_seq = 200 (from NVS)
+  NodeConfig cfg1;
+  cfg1.node_id = 15;
+  cfg1.initial_seq = 200;
+  Node node1(cfg1, hal);
+  CHECK_EQ(node1.seq(), 200);
+
+  // Trigger SOS -> advances sequence to 201
+  node1.on_button_edge(true);
+  clk.advance_ms(150);
+  node1.on_button_edge(false);
+  for (int i = 0; i < 700; i++) { clk.advance_ms(1); node1.tick(); }
+
+  CHECK_EQ(node1.seq(), 201);
+  CHECK_EQ(radio.transmitted.size(), 1u);
+  CHECK_EQ(radio.transmitted[0].seq, 201);
+}
+
+TEST(node_unsynchronized_clock_never_drops_emergency_sos) {
+  MockClock clk;
+  MockRandom rng;
+  MockRadio radio;
+  Hal hal{&clk, &rng, &radio, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+
+  NodeConfig relay_cfg;
+  relay_cfg.node_id = 99;
+  relay_cfg.role = Role::Relay;
+  relay_cfg.max_packet_age_s = 60; // 60-second expiry window
+  Node relay(relay_cfg, hal);
+
+  // Local clock is disciplined
+  clk.discipline_unix_time(1705000000u);
+
+  // Incoming survivor SOS from node with un-synchronized clock (ts = 0)
+  Packet p;
+  p.node_id = 4;
+  p.seq = 10;
+  p.hazard = Hazard::General;
+  p.flags = 0; // No GPS flag (unsynchronized)
+  p.ts = 0;    // Unsynchronized / unknown time
+  p.battery = 90;
+
+  uint8_t wire[kPacketSize];
+  serialize(p, wire, sizeof(wire));
+
+  // Relay receives packet
+  relay.on_radio_rx(wire, sizeof(wire));
+
+  // The emergency SOS with ts = 0 MUST NOT be dropped as expired!
+  CHECK_EQ(relay.stats().rx_expired, 0u);
+  CHECK_EQ(relay.stats().rx_total, 1u);
+}
+
