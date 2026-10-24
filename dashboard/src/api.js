@@ -2,6 +2,23 @@
 
 export class SetuApi {
   static baseUrl = '';
+  static configSource = 'unconfigured'; // 'env' | 'manual' | 'query' | 'runtime' | 'local' | 'unconfigured'
+  static configError = null;
+
+  static getSource() {
+    return this.configSource;
+  }
+
+  static getConfigError() {
+    return this.configError;
+  }
+
+  static isManualOverride() {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      return window.localStorage.getItem('setu_manual_backend_override') === 'true';
+    }
+    return false;
+  }
 
   static getBaseUrl() {
     if (this.baseUrl) return this.baseUrl;
@@ -28,13 +45,43 @@ export class SetuApi {
     return this.baseUrl || '';
   }
 
+  static requireBaseUrl() {
+    const url = this.getBaseUrl();
+    if (!url) {
+      const detail = this.configError ? ` (${this.configError})` : '';
+      throw new Error(`Project Setu backend URL is not configured${detail}. Interactive simulation requires an active connection to the Render backend.`);
+    }
+    return url;
+  }
+
   static setBaseUrl(url) {
+    this.setManualOverride(url);
+  }
+
+  static setManualOverride(url) {
     const clean = (url || '').trim().replace(/\/+$/, '');
+    if (!clean) {
+      this.clearManualOverride();
+      return;
+    }
     if (typeof window !== 'undefined' && window.localStorage) {
-      if (clean) window.localStorage.setItem('setu_backend_url', clean);
-      else window.localStorage.removeItem('setu_backend_url');
+      window.localStorage.setItem('setu_backend_url', clean);
+      window.localStorage.setItem('setu_manual_backend_override', 'true');
     }
     this.baseUrl = clean;
+    this.configSource = 'manual';
+    this.configError = null;
+  }
+
+  static async clearManualOverride() {
+    if (typeof window !== 'undefined' && window.localStorage) {
+      window.localStorage.removeItem('setu_backend_url');
+      window.localStorage.removeItem('setu_manual_backend_override');
+    }
+    this.baseUrl = '';
+    this.configSource = 'unconfigured';
+    this.configError = null;
+    return await this.resolveBaseUrl();
   }
 
   static async resolveBaseUrl() {
@@ -42,59 +89,90 @@ export class SetuApi {
     const host = isBrowser ? window.location.hostname : '';
     const isLocal = host === 'localhost' || host === '127.0.0.1';
 
-    // 1. Check URL query parameters: ?backend=https://...
+    // 1. Explicit user manual override takes precedence if set
+    if (isBrowser && window.localStorage && window.localStorage.getItem('setu_manual_backend_override') === 'true') {
+      const custom = (window.localStorage.getItem('setu_backend_url') || '').trim().replace(/\/+$/, '');
+      if (custom && /^https?:\/\//i.test(custom)) {
+        this.baseUrl = custom;
+        this.configSource = 'manual';
+        this.configError = null;
+        return this.baseUrl;
+      }
+    }
+
+    // 2. Check URL query parameters: ?backend=https://...
     if (isBrowser) {
       const params = new URLSearchParams(window.location.search);
       const paramBackend = params.get('backend');
       if (paramBackend && /^https?:\/\//i.test(paramBackend)) {
-        this.setBaseUrl(paramBackend);
-        return this.getBaseUrl();
+        this.baseUrl = paramBackend.trim().replace(/\/+$/, '');
+        this.configSource = 'query';
+        this.configError = null;
+        return this.baseUrl;
       }
     }
 
-    // 2. Check injected runtime config
+    // 3. Check injected runtime config (e.g. Docker / SSR injection)
     if (isBrowser && window.__SETU_BACKEND_URL__) {
-      this.baseUrl = window.__SETU_BACKEND_URL__.replace(/\/+$/, '');
+      this.baseUrl = window.__SETU_BACKEND_URL__.trim().replace(/\/+$/, '');
+      this.configSource = 'runtime';
+      this.configError = null;
       return this.baseUrl;
     }
 
-    // 3. If deployed on remote host (e.g. Vercel), fetch /api/config first to avoid stale localStorage hijacking
+    // 4. Remote hosting (e.g. Vercel): fetch serverless /api/config
     if (isBrowser && !isLocal) {
       try {
-        const res = await fetch('/api/config');
+        const res = await fetch('/api/config', { cache: 'no-store' });
         if (res.ok) {
           const data = await res.json();
           if (data && data.backendUrl && /^https?:\/\//i.test(data.backendUrl)) {
-            this.baseUrl = data.backendUrl.replace(/\/+$/, '');
+            this.baseUrl = data.backendUrl.trim().replace(/\/+$/, '');
+            this.configSource = 'env';
+            this.configError = null;
+            // Clean up any stale localStorage dev settings on remote domain
+            if (window.localStorage && !this.isManualOverride()) {
+              window.localStorage.removeItem('setu_backend_url');
+            }
             return this.baseUrl;
+          } else if (data && data.error) {
+            this.configError = data.error;
           }
+        } else {
+          const errData = await res.json().catch(() => ({}));
+          this.configError = errData.error || `HTTP ${res.status}`;
         }
-      } catch {
-        // Fall through to manual overrides
+      } catch (err) {
+        this.configError = err.message;
       }
 
-      // 4. Check localStorage on remote hosts only if NOT pointing to stale localhost
+      // Check localStorage only if user had manually saved a remote HTTPS url previously
       if (window.localStorage) {
         const custom = window.localStorage.getItem('setu_backend_url');
         if (custom) {
-          const cleanCustom = custom.replace(/\/+$/, '');
+          const cleanCustom = custom.trim().replace(/\/+$/, '');
           if (!cleanCustom.includes('localhost') && !cleanCustom.includes('127.0.0.1') && /^https?:\/\//i.test(cleanCustom)) {
             this.baseUrl = cleanCustom;
+            this.configSource = 'manual';
             return this.baseUrl;
           } else {
-            // Clear stale local dev URL from remote domain storage
             window.localStorage.removeItem('setu_backend_url');
           }
         }
       }
+
+      this.baseUrl = '';
+      this.configSource = 'unconfigured';
+      return '';
     }
 
-    // 5. If running locally (localhost or 127.0.0.1)
+    // 5. Local development (localhost / 127.0.0.1)
     if (isBrowser && isLocal) {
       if (window.localStorage) {
         const custom = window.localStorage.getItem('setu_backend_url');
         if (custom) {
-          this.baseUrl = custom.replace(/\/+$/, '');
+          this.baseUrl = custom.trim().replace(/\/+$/, '');
+          this.configSource = 'manual';
           return this.baseUrl;
         }
       }
@@ -104,6 +182,8 @@ export class SetuApi {
       } else {
         this.baseUrl = 'http://localhost:3000';
       }
+      this.configSource = 'local';
+      this.configError = null;
       return this.baseUrl;
     }
 
@@ -230,7 +310,7 @@ export class SetuApi {
   }
 
   static async runSimulation(payload) {
-    const res = await fetch(`${this.getBaseUrl()}/api/simulate`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/simulate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -243,12 +323,12 @@ export class SetuApi {
   }
 
   static async stopSimulation() {
-    const res = await fetch(`${this.getBaseUrl()}/api/simulate/stop`, { method: 'POST' });
+    const res = await fetch(`${this.requireBaseUrl()}/api/simulate/stop`, { method: 'POST' });
     return await res.json();
   }
 
   static async uploadTrace(content) {
-    const res = await fetch(`${this.getBaseUrl()}/api/upload-trace`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/upload-trace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
@@ -258,7 +338,7 @@ export class SetuApi {
   }
 
   static async startControl(options = {}) {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/start`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options)
@@ -268,13 +348,13 @@ export class SetuApi {
   }
 
   static async pauseControl() {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/pause`, { method: 'POST' });
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/pause`, { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to pause simulation`);
     return await res.json();
   }
 
   static async stepControl(ms = 100) {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/step`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/step`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ms })
@@ -284,14 +364,14 @@ export class SetuApi {
   }
 
   static async resetControl() {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/reset`, { method: 'POST' });
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/reset`, { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to reset simulation`);
     return await res.json();
   }
 
   static async triggerNode(nodeId, kind = 'short') {
     const cleanKind = String(kind || 'short').replace('_', '-');
-    const res = await fetch(`${this.getBaseUrl()}/api/control/trigger`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node: nodeId, kind: cleanKind })
@@ -310,7 +390,7 @@ export class SetuApi {
     const mode = delay > 0 ? 'staggered' : 'immediate';
 
     const body = { kind, mode, delay_ms: delay };
-    const res = await fetch(`${this.getBaseUrl()}/api/control/trigger-all`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/trigger-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
@@ -320,7 +400,7 @@ export class SetuApi {
   }
 
   static async setNodeState(payload) {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/node-state`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/node-state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
@@ -330,7 +410,7 @@ export class SetuApi {
   }
 
   static async repositionNode(nodeId, x, y) {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/reposition`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/reposition`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node: nodeId, x, y })
@@ -340,7 +420,7 @@ export class SetuApi {
   }
 
   static async blockLink(a, b, blocked = true) {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/block-link`, {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/block-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ a, b, blocked })
@@ -350,25 +430,26 @@ export class SetuApi {
   }
 
   static async getControlState() {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/state`);
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/state`);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get node state`);
     return await res.json();
   }
 
   static async getControlSummary() {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/summary`);
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/summary`);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get summary`);
     return await res.json();
   }
 
   static async getControlStatus() {
-    const res = await fetch(`${this.getBaseUrl()}/api/control/status`);
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/status`);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get control status`);
     return await res.json();
   }
 
   static connectEvents(onEvent, onStatus, onError) {
-    const source = new EventSource(`${this.getBaseUrl()}/api/events`);
+    const url = `${this.requireBaseUrl()}/api/events`;
+    const source = new EventSource(url, { withCredentials: true });
     source.addEventListener('event', e => {
       try {
         const data = JSON.parse(e.data);

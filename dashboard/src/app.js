@@ -362,11 +362,21 @@ class SetuDashboardApp {
     const txtBackendUrl = document.getElementById('txtBackendUrl');
     const btnTestBackend = document.getElementById('btnTestBackendConnection');
     const btnSaveBackend = document.getElementById('btnSaveBackendUrl');
+    const btnResetBackend = document.getElementById('btnResetBackendUrl');
     const lblEngineStatus = document.getElementById('lblBackendEngineStatus');
+    const lblBackendSource = document.getElementById('lblBackendSource');
 
     if (btnOpenBackend && modalBackend) {
       btnOpenBackend.addEventListener('click', () => {
         if (txtBackendUrl) txtBackendUrl.value = SetuApi.getBaseUrl();
+        if (lblBackendSource) {
+          const src = SetuApi.getSource();
+          const isOverride = SetuApi.isManualOverride();
+          lblBackendSource.textContent = `Source: ${src.toUpperCase()}${isOverride ? ' (Manual override active)' : ''}`;
+        }
+        if (lblEngineStatus) {
+          lblEngineStatus.textContent = '';
+        }
         modalBackend.classList.add('active');
         modalBackend.style.display = 'flex';
       });
@@ -378,27 +388,54 @@ class SetuDashboardApp {
 
       if (btnCloseBackend) btnCloseBackend.addEventListener('click', closeBackendModal);
 
+      if (btnResetBackend) {
+        btnResetBackend.addEventListener('click', async () => {
+          if (lblEngineStatus) {
+            lblEngineStatus.textContent = 'Restoring default configuration...';
+            lblEngineStatus.style.color = '#38bdf8';
+          }
+          const defaultUrl = await SetuApi.clearManualOverride();
+          if (txtBackendUrl) txtBackendUrl.value = defaultUrl;
+          if (lblBackendSource) {
+            lblBackendSource.textContent = `Source: ${SetuApi.getSource().toUpperCase()} (Default restored)`;
+          }
+          if (lblEngineStatus) {
+            lblEngineStatus.textContent = defaultUrl ? 'Default backend restored' : 'No default backend URL configured';
+            lblEngineStatus.style.color = defaultUrl ? '#10b981' : '#f59e0b';
+          }
+          await this.loadInitialData();
+        });
+      }
+
       if (btnTestBackend) {
         btnTestBackend.addEventListener('click', async () => {
-          lblEngineStatus.textContent = 'Testing connection...';
-          lblEngineStatus.style.color = '#38bdf8';
-          const prev = SetuApi.getBaseUrl();
-          if (txtBackendUrl) SetuApi.setBaseUrl(txtBackendUrl.value);
-          const st = await SetuApi.getStatus();
-          if (st.status === 'online') {
-            lblEngineStatus.textContent = `● Online: ${st.platform || 'Native Bridge'} (${st.version || 'FITL'})`;
-            lblEngineStatus.style.color = '#10b981';
-          } else {
-            lblEngineStatus.textContent = `× Error: ${st.error || 'Connection Failed'}`;
-            lblEngineStatus.style.color = '#ef4444';
+          if (lblEngineStatus) {
+            lblEngineStatus.textContent = 'Testing connection...';
+            lblEngineStatus.style.color = '#38bdf8';
           }
-          SetuApi.setBaseUrl(prev);
+          const candidate = (txtBackendUrl?.value || '').trim();
+          const result = await SetuApi.pingBackend(candidate);
+          if (lblEngineStatus) {
+            if (result.ok) {
+              const engine = result.data?.engine || 'FITL Simulator Core';
+              lblEngineStatus.textContent = `● Online: ${engine} (HTTP 200)`;
+              lblEngineStatus.style.color = '#10b981';
+            } else {
+              lblEngineStatus.textContent = `× Error: ${result.error || `HTTP ${result.status}`}`;
+              lblEngineStatus.style.color = '#ef4444';
+            }
+          }
         });
       }
 
       if (btnSaveBackend) {
         btnSaveBackend.addEventListener('click', async () => {
-          if (txtBackendUrl) SetuApi.setBaseUrl(txtBackendUrl.value);
+          const url = (txtBackendUrl?.value || '').trim();
+          if (url) {
+            SetuApi.setManualOverride(url);
+          } else {
+            await SetuApi.clearManualOverride();
+          }
           closeBackendModal();
           await this.loadInitialData();
         });

@@ -126,28 +126,32 @@ async function runTests() {
   }
 
   // 4. CORS Security Header Verification
-  console.log('\n[4/8] Testing CORS policy...');
+  console.log('\n[4/10] Testing CORS policy...');
   try {
     // Request from approved local origin
     const resLocal = await request('OPTIONS', '/api/status', null, {
       'Origin': 'http://localhost:3000',
       'Access-Control-Request-Method': 'GET'
     });
+    assert(resLocal.statusCode === 204, 'Approved local origin preflight returns HTTP 204');
     assert(resLocal.headers['access-control-allow-origin'] === 'http://localhost:3000', 'Approved local origin accepted in CORS');
+    assert(resLocal.headers['access-control-allow-credentials'] === 'true', 'Credentials header enabled for approved origin');
 
     // Request from approved Vercel origin
     const resVercel = await request('OPTIONS', '/api/status', null, {
-      'Origin': 'https://project-setu-preview.vercel.app',
+      'Origin': 'https://project-setu.vercel.app',
       'Access-Control-Request-Method': 'GET'
     });
-    assert(resVercel.headers['access-control-allow-origin'] === 'https://project-setu-preview.vercel.app', 'Vercel domain accepted in CORS');
+    assert(resVercel.statusCode === 204, 'Production Vercel domain preflight returns HTTP 204');
+    assert(resVercel.headers['access-control-allow-origin'] === 'https://project-setu.vercel.app', 'Vercel domain accepted in CORS');
 
     // Request from unauthorized external domain
     const resMalicious = await request('OPTIONS', '/api/status', null, {
       'Origin': 'https://attacker-domain.evil.com',
       'Access-Control-Request-Method': 'GET'
     });
-    assert(resMalicious.headers['access-control-allow-origin'] !== 'https://attacker-domain.evil.com', 'Untrusted origin NOT reflected in CORS');
+    assert(resMalicious.statusCode === 403, 'Unauthorized origin preflight rejected with HTTP 403');
+    assert(!resMalicious.headers['access-control-allow-origin'], 'Untrusted origin receives NO Access-Control-Allow-Origin header');
   } catch (err) {
     assert(false, `CORS check failed: ${err.message}`);
   }
@@ -275,10 +279,30 @@ async function runTests() {
     assert(false, `Scenarios check failed: ${err.message}`);
   }
 
-  // 8. Client-side SetuApi Unit Verification (JSONL Parsing & Error Diagnostics)
-  console.log('\n[8/9] Testing SetuApi JSONL parser unit diagnostics...');
+  // 8. Client-side SetuApi Unit Verification (Configuration, Error Diagnostics & JSONL Parsing)
+  console.log('\n[8/10] Testing SetuApi URL resolution, manual overrides & diagnostics...');
   try {
     const { SetuApi } = await import('../dashboard/src/api.js');
+
+    // requireBaseUrl throws informative error when unconfigured
+    SetuApi.baseUrl = '';
+    SetuApi.configError = 'Render backend URL missing';
+    let threw = false;
+    try {
+      SetuApi.requireBaseUrl();
+    } catch (e) {
+      threw = true;
+      assert(e.message.includes('Render backend'), 'requireBaseUrl throws informative message when unconfigured');
+    }
+    assert(threw, 'requireBaseUrl prevents unconfigured relative calls');
+
+    // setManualOverride & getSource
+    SetuApi.setManualOverride('https://project-setu-backend.onrender.com/');
+    assert(SetuApi.getBaseUrl() === 'https://project-setu-backend.onrender.com', 'setManualOverride trims trailing slashes');
+    assert(SetuApi.getSource() === 'manual', 'getSource returns "manual" after override');
+    assert(SetuApi.requireBaseUrl() === 'https://project-setu-backend.onrender.com', 'requireBaseUrl succeeds when configured');
+
+    // JSONL parser
     const validJsonl = '{"ev":"tx","node":1,"t":100}\n{"ev":"rx","node":0,"t":165}\n';
     const parsed = SetuApi.parseJsonl(validJsonl);
     assert(parsed.length === 2, `Parsed ${parsed.length}/2 valid JSONL lines`);
@@ -290,8 +314,66 @@ async function runTests() {
     assert(false, `SetuApi unit test failed: ${err.message}`);
   }
 
-  // 9. Graceful Shutdown & Child Process Cleanup
-  console.log('\n[9/9] Testing graceful shutdown (SIGTERM)...');
+  // 9. Vercel Serverless api/config.js Unit Verification
+  console.log('\n[9/10] Testing Vercel /api/config serverless handler logic...');
+  try {
+    const { default: configHandler } = await import('../api/config.js');
+
+    function createMockRes() {
+      return {
+        headers: {},
+        statusCode: 200,
+        body: null,
+        setHeader(k, v) { this.headers[k.toLowerCase()] = v; },
+        status(code) { this.statusCode = code; return this; },
+        json(data) { this.body = data; return this; },
+        end() { return this; }
+      };
+    }
+
+    // Test 1: Valid HTTPS backend in production
+    const oldEnv = { ...process.env };
+    process.env.SETU_BACKEND_URL = 'https://project-setu-backend.onrender.com/';
+    process.env.VERCEL_ENV = 'production';
+    const mockRes1 = createMockRes();
+    configHandler({ method: 'GET' }, mockRes1);
+    assert(mockRes1.body?.configured === true, 'Production HTTPS backend marked configured');
+    assert(mockRes1.body?.backendUrl === 'https://project-setu-backend.onrender.com', 'Production backend URL trailing slash normalized');
+    assert(mockRes1.headers['cache-control'].includes('no-store'), 'Config endpoint sets no-store cache header');
+
+    // Test 2: Insecure HTTP backend in production
+    process.env.SETU_BACKEND_URL = 'http://insecure-host.com';
+    process.env.VERCEL_ENV = 'production';
+    const mockRes2 = createMockRes();
+    configHandler({ method: 'GET' }, mockRes2);
+    assert(mockRes2.body?.configured === false, 'HTTP in production rejected');
+    assert(mockRes2.body?.error.includes('must use https://'), 'Rejection reports HTTPS protocol requirement');
+
+    // Test 3: Localhost in production
+    process.env.SETU_BACKEND_URL = 'https://localhost:3000';
+    process.env.VERCEL_ENV = 'production';
+    const mockRes3 = createMockRes();
+    configHandler({ method: 'GET' }, mockRes3);
+    assert(mockRes3.body?.configured === false, 'Localhost in production rejected');
+    assert(mockRes3.body?.error.includes('cannot point to localhost'), 'Rejection reports localhost prohibition');
+
+    // Test 4: Missing variable in production
+    delete process.env.SETU_BACKEND_URL;
+    delete process.env.NEXT_PUBLIC_SETU_BACKEND_URL;
+    process.env.VERCEL_ENV = 'production';
+    const mockRes4 = createMockRes();
+    configHandler({ method: 'GET' }, mockRes4);
+    assert(mockRes4.body?.configured === false, 'Missing backend URL marked unconfigured');
+    assert(mockRes4.body?.error.includes('missing'), 'Missing backend URL provides configuration instructions');
+
+    // Restore env
+    process.env = oldEnv;
+  } catch (err) {
+    assert(false, `api/config unit test failed: ${err.message}`);
+  }
+
+  // 10. Graceful Shutdown & Child Process Cleanup
+  console.log('\n[10/10] Testing graceful shutdown (SIGTERM)...');
   try {
     const shutdownPromise = new Promise(resolve => {
       serverProcess.on('exit', (code, signal) => {

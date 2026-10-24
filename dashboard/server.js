@@ -314,6 +314,7 @@ const MIME_TYPES = {
 };
 
 const DEFAULT_ALLOWED_ORIGINS = [
+  'https://project-setu.vercel.app',
   'http://localhost:3000',
   'http://localhost:5173',
   'http://localhost:4173',
@@ -337,7 +338,7 @@ function getCorsOrigin(req) {
     return origin;
   }
   const allowVercel = process.env.ALLOW_VERCEL_PREVIEWS !== 'false';
-  if (allowVercel && /^https:\/\/[a-z0-9_-]+\.vercel\.app$/i.test(origin)) {
+  if (allowVercel && /^https:\/\/([a-z0-9_-]+\.)*vercel\.app$/i.test(origin)) {
     return origin;
   }
   if (/^https:\/\/[a-z0-9_-]+\.onrender\.com$/i.test(origin)) {
@@ -353,11 +354,8 @@ function applyCorsHeaders(headers, req) {
     headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
     headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept';
     headers['Access-Control-Allow-Credentials'] = 'true';
+    headers['Access-Control-Max-Age'] = '86400';
     headers['Vary'] = 'Origin';
-  } else {
-    headers['Access-Control-Allow-Origin'] = '*';
-    headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept';
   }
 }
 
@@ -401,6 +399,12 @@ const server = http.createServer(async (req, res) => {
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
+    const origin = req.headers.origin;
+    if (origin && !getCorsOrigin(req)) {
+      res.writeHead(403, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'CORS origin not allowed' }));
+      return;
+    }
     const headers = {};
     applyCorsHeaders(headers, req);
     res.writeHead(204, headers);
