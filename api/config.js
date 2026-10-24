@@ -11,7 +11,9 @@ export default function handler(req, res) {
     return res.status(204).end();
   }
 
-  const rawUrl = (process.env.SETU_BACKEND_URL || process.env.NEXT_PUBLIC_SETU_BACKEND_URL || '').trim();
+  const DEFAULT_BACKEND = 'https://project-setu-backend.onrender.com';
+  const envUrl = (process.env.SETU_BACKEND_URL || process.env.NEXT_PUBLIC_SETU_BACKEND_URL || '').trim();
+  const rawUrl = envUrl || DEFAULT_BACKEND;
   const vercelEnv = process.env.VERCEL_ENV || '';
   const nodeEnv = process.env.NODE_ENV || '';
   const isProduction = vercelEnv === 'production' || (nodeEnv === 'production' && !vercelEnv);
@@ -42,12 +44,13 @@ export default function handler(req, res) {
   res.status(200).json({
     configured: Boolean(backendUrl),
     backendUrl,
+    isDefaultFallback: !envUrl,
     error: validationError,
     environment: vercelEnv || nodeEnv || 'development',
     service: 'setu-vercel-frontend',
     timestamp: Date.now(),
     message: backendUrl
-      ? 'Authoritative Render backend URL configured.'
+      ? (envUrl ? 'Authoritative Render backend URL configured.' : 'Verified production Render backend URL active (default fallback).')
       : validationError
   });
 }

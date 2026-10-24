@@ -2,8 +2,10 @@
 
 export class SetuApi {
   static baseUrl = '';
-  static configSource = 'unconfigured'; // 'env' | 'manual' | 'query' | 'runtime' | 'local' | 'unconfigured'
+  static configSource = 'unconfigured'; // 'env' | 'production_default' | 'manual' | 'query' | 'runtime' | 'local' | 'unconfigured'
   static configError = null;
+  static initPromise = null;
+  static DEFAULT_PROD_BACKEND = 'https://project-setu-backend.onrender.com';
 
   static getSource() {
     return this.configSource;
@@ -18,6 +20,13 @@ export class SetuApi {
       return window.localStorage.getItem('setu_manual_backend_override') === 'true';
     }
     return false;
+  }
+
+  static ensureResolved() {
+    if (!this.initPromise) {
+      this.initPromise = this.resolveBaseUrl();
+    }
+    return this.initPromise;
   }
 
   static getBaseUrl() {
@@ -41,8 +50,10 @@ export class SetuApi {
         const port = window.location.port;
         return (port === '3000' || port === '') ? window.location.origin.replace(/\/+$/, '') : 'http://localhost:3000';
       }
+      // On remote hosts (e.g. Vercel), predictable default matches resolveBaseUrl
+      return this.DEFAULT_PROD_BACKEND;
     }
-    return this.baseUrl || '';
+    return this.baseUrl || this.DEFAULT_PROD_BACKEND;
   }
 
   static requireBaseUrl() {
@@ -71,6 +82,7 @@ export class SetuApi {
     this.baseUrl = clean;
     this.configSource = 'manual';
     this.configError = null;
+    this.initPromise = Promise.resolve(clean);
   }
 
   static async clearManualOverride() {
@@ -81,7 +93,8 @@ export class SetuApi {
     this.baseUrl = '';
     this.configSource = 'unconfigured';
     this.configError = null;
-    return await this.resolveBaseUrl();
+    this.initPromise = null;
+    return await this.ensureResolved();
   }
 
   static async resolveBaseUrl() {
@@ -128,7 +141,7 @@ export class SetuApi {
           const data = await res.json();
           if (data && data.backendUrl && /^https?:\/\//i.test(data.backendUrl)) {
             this.baseUrl = data.backendUrl.trim().replace(/\/+$/, '');
-            this.configSource = 'env';
+            this.configSource = data.isDefaultFallback ? 'production_default' : 'env';
             this.configError = null;
             // Clean up any stale localStorage dev settings on remote domain
             if (window.localStorage && !this.isManualOverride()) {
@@ -161,9 +174,11 @@ export class SetuApi {
         }
       }
 
-      this.baseUrl = '';
-      this.configSource = 'unconfigured';
-      return '';
+      // 5. Default verified production Render backend URL fallback
+      this.baseUrl = this.DEFAULT_PROD_BACKEND;
+      this.configSource = 'production_default';
+      this.configError = null;
+      return this.baseUrl;
     }
 
     // 5. Local development (localhost / 127.0.0.1)
@@ -187,7 +202,9 @@ export class SetuApi {
       return this.baseUrl;
     }
 
-    return this.baseUrl || '';
+    this.baseUrl = this.DEFAULT_PROD_BACKEND;
+    this.configSource = 'production_default';
+    return this.baseUrl;
   }
 
   static async pingBackend(url = null, timeoutMs = 8000) {
@@ -210,6 +227,7 @@ export class SetuApi {
   }
 
   static async getStatus() {
+    await this.ensureResolved();
     try {
       const base = this.getBaseUrl();
       if (!base && typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
@@ -225,6 +243,7 @@ export class SetuApi {
   }
 
   static async getScenarios() {
+    await this.ensureResolved();
     const base = this.getBaseUrl();
     const primaryUrl = `${base}/api/scenarios`;
     let primaryErr = null;
@@ -430,18 +449,21 @@ export class SetuApi {
   }
 
   static async getControlState() {
+    await this.ensureResolved();
     const res = await fetch(`${this.requireBaseUrl()}/api/control/state`);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get node state`);
     return await res.json();
   }
 
   static async getControlSummary() {
+    await this.ensureResolved();
     const res = await fetch(`${this.requireBaseUrl()}/api/control/summary`);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get summary`);
     return await res.json();
   }
 
   static async getControlStatus() {
+    await this.ensureResolved();
     const res = await fetch(`${this.requireBaseUrl()}/api/control/status`);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get control status`);
     return await res.json();

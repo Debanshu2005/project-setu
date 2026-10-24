@@ -284,23 +284,37 @@ async function runTests() {
   try {
     const { SetuApi } = await import('../dashboard/src/api.js');
 
-    // requireBaseUrl throws informative error when unconfigured
-    SetuApi.baseUrl = '';
-    SetuApi.configError = 'Render backend URL missing';
-    let threw = false;
-    try {
-      SetuApi.requireBaseUrl();
-    } catch (e) {
-      threw = true;
-      assert(e.message.includes('Render backend'), 'requireBaseUrl throws informative message when unconfigured');
-    }
-    assert(threw, 'requireBaseUrl prevents unconfigured relative calls');
+    // ensureResolved() returns a shared promise
+    const p1 = SetuApi.ensureResolved();
+    const p2 = SetuApi.ensureResolved();
+    assert(p1 === p2, 'ensureResolved returns singleton shared initialization promise');
+    const resolvedUrl = await p1;
+    assert(typeof resolvedUrl === 'string' && resolvedUrl.length > 0, 'ensureResolved resolves to valid URL string');
 
     // setManualOverride & getSource
     SetuApi.setManualOverride('https://project-setu-backend.onrender.com/');
     assert(SetuApi.getBaseUrl() === 'https://project-setu-backend.onrender.com', 'setManualOverride trims trailing slashes');
     assert(SetuApi.getSource() === 'manual', 'getSource returns "manual" after override');
     assert(SetuApi.requireBaseUrl() === 'https://project-setu-backend.onrender.com', 'requireBaseUrl succeeds when configured');
+
+    // Regression Test: getScenarios() throws on network failure instead of silently converting to empty array
+    SetuApi.baseUrl = 'http://127.0.0.1:1'; // unreachable port
+    let scenarioThrew = false;
+    try {
+      await SetuApi.getScenarios();
+    } catch (err) {
+      scenarioThrew = true;
+      assert(err.message.includes('Failed to load scenarios'), 'getScenarios throws meaningful error instead of silent empty list');
+    }
+    assert(scenarioThrew, 'Scenario network failure throws without silent empty suppression');
+
+    // Regression Test: pingBackend() reports connection failures accurately
+    const deadPing = await SetuApi.pingBackend('http://127.0.0.1:1', 1000);
+    assert(deadPing.ok === false, 'pingBackend returns ok: false for unreachable backend');
+    assert(typeof deadPing.error === 'string', 'pingBackend provides descriptive error diagnostic');
+
+    // Restore valid test baseUrl
+    SetuApi.setManualOverride(BASE_URL);
 
     // JSONL parser
     const validJsonl = '{"ev":"tx","node":1,"t":100}\n{"ev":"rx","node":0,"t":165}\n';
@@ -331,14 +345,15 @@ async function runTests() {
       };
     }
 
-    // Test 1: Valid HTTPS backend in production
+    // Test 1: Explicit HTTPS backend in production
     const oldEnv = { ...process.env };
     process.env.SETU_BACKEND_URL = 'https://project-setu-backend.onrender.com/';
     process.env.VERCEL_ENV = 'production';
     const mockRes1 = createMockRes();
     configHandler({ method: 'GET' }, mockRes1);
-    assert(mockRes1.body?.configured === true, 'Production HTTPS backend marked configured');
+    assert(mockRes1.body?.configured === true, 'Explicit HTTPS backend marked configured');
     assert(mockRes1.body?.backendUrl === 'https://project-setu-backend.onrender.com', 'Production backend URL trailing slash normalized');
+    assert(mockRes1.body?.isDefaultFallback === false, 'Explicit setting marked not default fallback');
     assert(mockRes1.headers['cache-control'].includes('no-store'), 'Config endpoint sets no-store cache header');
 
     // Test 2: Insecure HTTP backend in production
@@ -357,14 +372,15 @@ async function runTests() {
     assert(mockRes3.body?.configured === false, 'Localhost in production rejected');
     assert(mockRes3.body?.error.includes('cannot point to localhost'), 'Rejection reports localhost prohibition');
 
-    // Test 4: Missing variable in production
+    // Test 4: Missing variable in production defaults safely to verified Render backend
     delete process.env.SETU_BACKEND_URL;
     delete process.env.NEXT_PUBLIC_SETU_BACKEND_URL;
     process.env.VERCEL_ENV = 'production';
     const mockRes4 = createMockRes();
     configHandler({ method: 'GET' }, mockRes4);
-    assert(mockRes4.body?.configured === false, 'Missing backend URL marked unconfigured');
-    assert(mockRes4.body?.error.includes('missing'), 'Missing backend URL provides configuration instructions');
+    assert(mockRes4.body?.configured === true, 'Missing backend URL activates verified default Render fallback');
+    assert(mockRes4.body?.isDefaultFallback === true, 'Fallback marked isDefaultFallback: true');
+    assert(mockRes4.body?.backendUrl === 'https://project-setu-backend.onrender.com', 'Default backend points to real Render service');
 
     // Restore env
     process.env = oldEnv;

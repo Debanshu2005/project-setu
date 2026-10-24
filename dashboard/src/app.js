@@ -727,6 +727,7 @@ class SetuDashboardApp {
         this.topo.fitToScreen();
         this.topo.render();
         this.updateMetrics();
+        this.sim.notify('sync');
         if (this.console && typeof this.console.populateSurvivors === 'function') {
           this.console.populateSurvivors();
         }
@@ -748,6 +749,7 @@ class SetuDashboardApp {
       }
     } catch (err) {
       console.warn('Could not sync live engine state:', err);
+      this.elStatusText.textContent = `STATE SYNC ERROR: ${err.message}`;
     }
   }
 
@@ -803,24 +805,21 @@ class SetuDashboardApp {
   }
 
   async loadInitialData() {
-    // 0. Resolve backend URL first
-    await SetuApi.resolveBaseUrl();
+    // 0. Ensure backend URL is resolved before proceeding
+    await SetuApi.ensureResolved();
 
     // 1. Fetch server status with wake-up handling for Render Free sleep
     const base = SetuApi.getBaseUrl();
     const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
 
-    if (!base && !isLocal) {
-      this.elStatusDot.style.background = '#f59e0b';
-      this.elStatusText.textContent = 'BACKEND URL REQUIRED (Click ⚡ Backend above to connect)';
-      return;
-    }
+    this.elStatusDot.style.background = '#38bdf8';
+    this.elStatusText.textContent = `CONNECTING TO SIMULATOR (${base || 'AUTO'})...`;
 
     let status = await SetuApi.getStatus();
     if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render'))) {
       this.elStatusDot.style.background = '#f59e0b';
       this.elStatusText.textContent = 'WAKING UP RENDER ENGINE... (Cold start may take ~30s)';
-      const ping = await SetuApi.pingBackend(base, 15000);
+      const ping = await SetuApi.pingBackend(base, 25000);
       if (ping.ok) {
         status = await SetuApi.getStatus();
       }
@@ -833,13 +832,17 @@ class SetuDashboardApp {
       this.elStatusDot.style.background = '#ef4444';
       this.elStatusText.textContent = status.status === 'unconfigured'
         ? 'CONFIGURE BACKEND URL (Click ⚡ Backend)'
-        : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'})`;
+        : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click ⚡ Backend to check URL.`;
     }
 
-    // 2. Connect SSE live event stream
-    this.initLiveEventStream();
+    // 2. Connect SSE live event stream (guarded so SSE failure never blocks state sync)
+    try {
+      this.initLiveEventStream();
+    } catch (sseErr) {
+      console.warn('SSE stream initialization notice:', sseErr);
+    }
 
-    // 3. Sync live engine state
+    // 3. Sync live engine state from native C++ World
     await this.syncLiveEngineState();
 
     // 4. Fetch scenarios for selector with clear diagnostics
@@ -849,9 +852,12 @@ class SetuDashboardApp {
         this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
           <option value="${sc.id}">${sc.name}</option>
         `).join('');
+      } else {
+        this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
       }
     } catch (err) {
       console.warn('Could not load scenarios list:', err.message);
+      this.elScenarioSelect.innerHTML = '<option value="">Scenarios unavailable</option>';
       this.elStatusText.textContent = `SCENARIOS ERROR: ${err.message}`;
     }
 
@@ -862,7 +868,7 @@ class SetuDashboardApp {
 
     // Auto-inspect Node 1 by default so the right-side Inspector panel is immediately populated
     const defaultNode = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
-    if (defaultNode) {
+    if (defaultNode && this.inspector) {
       this.inspector.inspectNode(defaultNode);
     }
   }
