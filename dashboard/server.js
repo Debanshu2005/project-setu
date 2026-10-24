@@ -45,7 +45,9 @@ class InteractiveSimulatorManager {
     this.buffer = '';
     this.eventHistory = [];
     this.sseClients = new Set();
-    this.pendingResolvers = new Map();
+    this.commandQueue = [];
+    this.activeCommand = null;
+    this.commandTimeoutMs = 8000;
     this.isRunning = false;
     this.simTime = 0;
     this.continuousTimer = null;
@@ -90,6 +92,18 @@ class InteractiveSimulatorManager {
     return new Promise((resolve, reject) => {
       let resolved = false;
 
+      // 10-second startup watchdog timer
+      const startupTimer = setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          if (this.process) {
+            try { this.process.kill(); } catch {}
+            this.process = null;
+          }
+          reject(new Error('Simulator process failed to initialize (startup timed out after 10s)'));
+        }
+      }, 10000);
+
       this.process.stdout.on('data', chunk => {
         this.buffer += chunk.toString();
         let idx;
@@ -100,6 +114,7 @@ class InteractiveSimulatorManager {
           this.handleLine(line);
           if (!resolved && line.includes('"cmd":"ready"')) {
             resolved = true;
+            clearTimeout(startupTimer);
             resolve();
           }
         }
@@ -111,8 +126,10 @@ class InteractiveSimulatorManager {
 
       this.process.on('close', code => {
         console.log(`[Setu API] Simulator process closed with code ${code}`);
+        clearTimeout(startupTimer);
         this.process = null;
         this.pauseContinuous();
+        this.cleanupPendingCommands(new Error(`Simulator closed prematurely with code ${code}`));
         this.broadcastSSE('sim_closed', { code });
         if (!resolved) {
           resolved = true;
@@ -121,14 +138,29 @@ class InteractiveSimulatorManager {
       });
 
       this.process.on('error', err => {
+        clearTimeout(startupTimer);
         this.process = null;
         this.pauseContinuous();
+        this.cleanupPendingCommands(err);
         if (!resolved) {
           resolved = true;
           reject(err);
         }
       });
     });
+  }
+
+  cleanupPendingCommands(err) {
+    if (this.activeCommand) {
+      if (this.activeCommand.timeoutId) clearTimeout(this.activeCommand.timeoutId);
+      this.activeCommand.reject(err);
+      this.activeCommand = null;
+    }
+    while (this.commandQueue.length > 0) {
+      const item = this.commandQueue.shift();
+      if (item.timeoutId) clearTimeout(item.timeoutId);
+      item.reject(err);
+    }
   }
 
   handleLine(line) {
@@ -145,10 +177,14 @@ class InteractiveSimulatorManager {
       }
       if (obj.cmd) {
         if (typeof obj.t === 'number') this.simTime = obj.t;
-        const resolvers = this.pendingResolvers.get(obj.cmd);
-        if (resolvers && resolvers.length > 0) {
-          const fn = resolvers.shift();
-          fn(obj);
+        if (this.activeCommand) {
+          const activeCmd = this.activeCommand.cmdObj.cmd;
+          if (activeCmd === obj.cmd || obj.cmd === 'ready' || obj.cmd === 'reset') {
+            if (this.activeCommand.timeoutId) clearTimeout(this.activeCommand.timeoutId);
+            this.activeCommand.resolve(obj);
+            this.activeCommand = null;
+            this.processNextCommand();
+          }
         }
         this.broadcastSSE('status', {
           cmd: obj.cmd,
@@ -162,20 +198,45 @@ class InteractiveSimulatorManager {
     }
   }
 
+  processNextCommand() {
+    if (this.activeCommand || this.commandQueue.length === 0) return;
+    if (!this.process || !this.process.stdin.writable) {
+      this.cleanupPendingCommands(new Error('Simulator process not running or stdin not writable'));
+      return;
+    }
+
+    const item = this.commandQueue.shift();
+    this.activeCommand = item;
+    const line = JSON.stringify(item.cmdObj) + '\n';
+
+    item.timeoutId = setTimeout(() => {
+      console.error(`[Setu API] Command timed out after ${this.commandTimeoutMs}ms:`, item.cmdObj);
+      item.reject(new Error(`Command timed out after ${this.commandTimeoutMs}ms (${item.cmdObj.cmd})`));
+      if (this.activeCommand === item) {
+        this.activeCommand = null;
+      }
+      this.processNextCommand();
+    }, this.commandTimeoutMs);
+
+    this.process.stdin.write(line, err => {
+      if (err) {
+        if (item.timeoutId) clearTimeout(item.timeoutId);
+        item.reject(err);
+        if (this.activeCommand === item) {
+          this.activeCommand = null;
+        }
+        this.processNextCommand();
+      }
+    });
+  }
+
   sendCommand(cmdObj) {
     if (!this.process || !this.process.stdin.writable) {
       return Promise.reject(new Error('Simulator process not running'));
     }
-    const line = JSON.stringify(cmdObj) + '\n';
     return new Promise((resolve, reject) => {
-      const cmd = cmdObj.cmd;
-      if (!this.pendingResolvers.has(cmd)) {
-        this.pendingResolvers.set(cmd, []);
-      }
-      this.pendingResolvers.get(cmd).push(resolve);
-      this.process.stdin.write(line, err => {
-        if (err) reject(err);
-      });
+      this.commandQueue.push({ cmdObj, resolve, reject, timeoutId: null });
+      this.processNextCommand();
     });
   }
 
@@ -196,6 +257,10 @@ class InteractiveSimulatorManager {
     this.continuousTimer = setInterval(async () => {
       if (!this.process || !this.isRunning) {
         this.pauseContinuous();
+        return;
+      }
+      // Yield continuous step if user/API commands are executing or waiting
+      if (this.activeCommand || this.commandQueue.length > 0) {
         return;
       }
       try {
@@ -263,31 +328,44 @@ function getAllowedOrigins() {
 }
 
 function getCorsOrigin(req) {
+  if (!req || !req.headers) return null;
   const origin = req.headers.origin;
   if (!origin) return null;
   const allowed = getAllowedOrigins();
   if (allowed.includes(origin)) return origin;
+  if (/^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(origin)) {
+    return origin;
+  }
   const allowVercel = process.env.ALLOW_VERCEL_PREVIEWS !== 'false';
   if (allowVercel && /^https:\/\/[a-z0-9_-]+\.vercel\.app$/i.test(origin)) {
     return origin;
   }
+  if (/^https:\/\/[a-z0-9_-]+\.onrender\.com$/i.test(origin)) {
+    return origin;
+  }
   return null;
+}
+
+function applyCorsHeaders(headers, req) {
+  const corsOrigin = getCorsOrigin(req);
+  if (corsOrigin) {
+    headers['Access-Control-Allow-Origin'] = corsOrigin;
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept';
+    headers['Access-Control-Allow-Credentials'] = 'true';
+    headers['Vary'] = 'Origin';
+  } else {
+    headers['Access-Control-Allow-Origin'] = '*';
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept';
+  }
 }
 
 function sendJson(res, statusCode, data, req = null) {
   const headers = {
     'Content-Type': 'application/json; charset=utf-8'
   };
-  const corsOrigin = req ? getCorsOrigin(req) : null;
-  if (corsOrigin) {
-    headers['Access-Control-Allow-Origin'] = corsOrigin;
-    headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
-    headers['Access-Control-Allow-Credentials'] = 'true';
-    headers['Vary'] = 'Origin';
-  } else if (!req) {
-    headers['Access-Control-Allow-Origin'] = '*';
-  }
+  applyCorsHeaders(headers, req);
   res.writeHead(statusCode, headers);
   res.end(JSON.stringify(data));
 }
@@ -323,14 +401,9 @@ const server = http.createServer(async (req, res) => {
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
-    const corsOrigin = getCorsOrigin(req) || '*';
-    res.writeHead(204, {
-      'Access-Control-Allow-Origin': corsOrigin,
-      'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-      'Access-Control-Allow-Credentials': 'true',
-      'Vary': 'Origin'
-    });
+    const headers = {};
+    applyCorsHeaders(headers, req);
+    res.writeHead(204, headers);
     res.end();
     return;
   }
@@ -344,14 +417,7 @@ const server = http.createServer(async (req, res) => {
       'Cache-Control': 'no-cache, no-transform',
       'Connection': 'keep-alive'
     };
-    const corsOrigin = getCorsOrigin(req);
-    if (corsOrigin) {
-      sseHeaders['Access-Control-Allow-Origin'] = corsOrigin;
-      sseHeaders['Access-Control-Allow-Credentials'] = 'true';
-      sseHeaders['Vary'] = 'Origin';
-    } else {
-      sseHeaders['Access-Control-Allow-Origin'] = '*';
-    }
+    applyCorsHeaders(sseHeaders, req);
     res.writeHead(200, sseHeaders);
     res.write(': connected\n\n');
 
@@ -394,9 +460,9 @@ const server = http.createServer(async (req, res) => {
           path_exp: simManager.config.path_exp
         });
       }
-      return sendJson(res, 200, { success: true, config: simManager.config, t: simManager.simTime });
+      return sendJson(res, 200, { success: true, config: simManager.config, t: simManager.simTime }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -408,16 +474,16 @@ const server = http.createServer(async (req, res) => {
       const speed = parseFloat(body.speed || 1.0);
       const stepMs = Math.round(50 * speed);
       simManager.startContinuous(stepMs, 50);
-      return sendJson(res, 200, { success: true, isRunning: true });
+      return sendJson(res, 200, { success: true, isRunning: true }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
   // POST /api/control/pause
   if (req.method === 'POST' && pathname === '/api/control/pause') {
     simManager.pauseContinuous();
-    return sendJson(res, 200, { success: true, isRunning: false });
+    return sendJson(res, 200, { success: true, isRunning: false }, req);
   }
 
   // POST /api/control/step
@@ -427,9 +493,9 @@ const server = http.createServer(async (req, res) => {
       const body = await parseBody(req);
       const ms = Math.min(10000, Math.max(1, parseInt(body.ms, 10) || 100));
       const result = await simManager.sendCommand({ cmd: 'step', ms });
-      return sendJson(res, 200, { success: true, result, t: simManager.simTime });
+      return sendJson(res, 200, { success: true, result, t: simManager.simTime }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -437,9 +503,9 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/control/reset') {
     try {
       await simManager.stopAndReset();
-      return sendJson(res, 200, { success: true, t: 0 });
+      return sendJson(res, 200, { success: true, t: 0 }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -485,9 +551,9 @@ const server = http.createServer(async (req, res) => {
       if (body.dr !== undefined) cmdObj.dr = Boolean(body.dr);
       if (body.battery !== undefined) cmdObj.battery = parseInt(body.battery, 10);
       const result = await simManager.sendCommand(cmdObj);
-      return sendJson(res, 200, { success: true, result });
+      return sendJson(res, 200, { success: true, result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -500,9 +566,9 @@ const server = http.createServer(async (req, res) => {
       const x = parseFloat(body.x);
       const y = parseFloat(body.y);
       const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
-      return sendJson(res, 200, { success: true, result });
+      return sendJson(res, 200, { success: true, result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -515,9 +581,9 @@ const server = http.createServer(async (req, res) => {
       const b = parseInt(body.b, 10);
       const blocked = body.blocked !== undefined ? Boolean(body.blocked) : true;
       const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
-      return sendJson(res, 200, { success: true, result });
+      return sendJson(res, 200, { success: true, result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -526,9 +592,9 @@ const server = http.createServer(async (req, res) => {
     try {
       await simManager.ensureStarted();
       const result = await simManager.sendCommand({ cmd: 'get_state' });
-      return sendJson(res, 200, result);
+      return sendJson(res, 200, result, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -537,9 +603,9 @@ const server = http.createServer(async (req, res) => {
     try {
       await simManager.ensureStarted();
       const result = await simManager.sendCommand({ cmd: 'summary' });
-      return sendJson(res, 200, result);
+      return sendJson(res, 200, result, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -551,7 +617,7 @@ const server = http.createServer(async (req, res) => {
       eventsCount: simManager.eventHistory.length,
       processActive: Boolean(simManager.process),
       config: simManager.config
-    });
+    }, req);
   }
 
   // --- Standard API Endpoints ---
@@ -592,24 +658,35 @@ const server = http.createServer(async (req, res) => {
   // GET /api/scenarios
   if (req.method === 'GET' && pathname === '/api/scenarios') {
     try {
+      if (!fs.existsSync(SCENARIOS_DIR)) {
+        return sendError(res, 500, 'Scenarios directory not found', req);
+      }
       const files = fs.readdirSync(SCENARIOS_DIR).filter(f => f.endsWith('.json'));
       const list = files.map(file => {
         try {
           const content = fs.readFileSync(path.join(SCENARIOS_DIR, file), 'utf8');
-          return JSON.parse(content);
-        } catch {
+          const parsed = JSON.parse(content);
+          if (parsed && (parsed.id || parsed.name)) {
+            return parsed;
+          }
+          return null;
+        } catch (readErr) {
+          console.warn(`[Setu API] Failed to read scenario file ${file}:`, readErr.message);
           return null;
         }
       }).filter(Boolean);
-      return sendJson(res, 200, list);
+      return sendJson(res, 200, list, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
   // GET /api/traces
   if (req.method === 'GET' && pathname === '/api/traces') {
     try {
+      if (!fs.existsSync(TRACES_DIR)) {
+        return sendJson(res, 200, [], req);
+      }
       const files = fs.readdirSync(TRACES_DIR).filter(f => f.endsWith('.jsonl'));
       const traces = files.map(f => {
         const full = path.join(TRACES_DIR, f);
@@ -620,9 +697,9 @@ const server = http.createServer(async (req, res) => {
           modified: st.mtime
         };
       });
-      return sendJson(res, 200, traces);
+      return sendJson(res, 200, traces, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -646,13 +723,7 @@ const server = http.createServer(async (req, res) => {
         'Content-Type': 'text/plain; charset=utf-8',
         'Content-Length': data.length
       };
-      const corsOrigin = getCorsOrigin(req);
-      if (corsOrigin) {
-        headers['Access-Control-Allow-Origin'] = corsOrigin;
-        headers['Vary'] = 'Origin';
-      } else {
-        headers['Access-Control-Allow-Origin'] = '*';
-      }
+      applyCorsHeaders(headers, req);
       res.writeHead(200, headers);
       res.end(data);
     });
@@ -663,10 +734,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/simulate') {
     const simPath = findSimulator();
     if (!simPath) {
-      return sendError(res, 500, 'Simulator binary (setu_sim) not found. Please build the project first.');
+      return sendError(res, 500, 'Simulator binary (setu_sim) not found. Please build the project first.', req);
     }
     if (activeChildProcess) {
-      return sendError(res, 409, 'Another simulation is already currently running.');
+      return sendError(res, 409, 'Another simulation is already currently running.', req);
     }
 
     try {
@@ -739,7 +810,7 @@ const server = http.createServer(async (req, res) => {
       child.on('close', code => {
         activeChildProcess = null;
         if (code !== 0) {
-          return sendError(res, 500, `Simulator exited with code ${code}: ${stderrData || stdoutData}`);
+          return sendError(res, 500, `Simulator exited with code ${code}: ${stderrData || stdoutData}`, req);
         }
         let summary = null;
         try {
@@ -751,17 +822,17 @@ const server = http.createServer(async (req, res) => {
           success: true,
           traceFilename,
           summary
-        });
+        }, req);
       });
 
       child.on('error', err => {
         activeChildProcess = null;
-        sendError(res, 500, `Simulator spawn failed: ${err.message}`);
+        sendError(res, 500, `Simulator spawn failed: ${err.message}`, req);
       });
       return;
     } catch (err) {
       activeChildProcess = null;
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -769,10 +840,10 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'GET' && pathname === '/api/simulate/stream') {
     const simPath = findSimulator();
     if (!simPath) {
-      return sendError(res, 500, 'Simulator binary not found.');
+      return sendError(res, 500, 'Simulator binary not found.', req);
     }
     if (activeChildProcess) {
-      return sendError(res, 409, 'Another simulation is already currently running.');
+      return sendError(res, 409, 'Another simulation is already currently running.', req);
     }
 
     const searchParams = reqUrl.searchParams;
@@ -800,31 +871,18 @@ const server = http.createServer(async (req, res) => {
       '--trace', traceFilePath
     ];
 
-    if (query.trigger) {
-      const trs = Array.isArray(query.trigger) ? query.trigger : [query.trigger];
-      for (const t of trs) args.push('--trigger', t);
-    }
-    if (query.fault) {
-      const fts = Array.isArray(query.fault) ? query.fault : [query.fault];
-      for (const f of fts) {
-        const [kind, rest] = f.split(':');
-        if (kind && rest) args.push(`--${kind}`, rest);
-      }
-    }
-
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
+    const streamHeaders = {
+      'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*'
-    });
-
+      'Connection': 'keep-alive'
+    };
+    applyCorsHeaders(streamHeaders, req);
+    res.writeHead(200, streamHeaders);
     res.write(`data: ${JSON.stringify({ type: 'start', traceFilename })}\n\n`);
 
     const child = spawn(simPath, args, { cwd: ROOT_DIR });
     activeChildProcess = child;
 
-    let buffer = '';
     let summaryData = '';
 
     child.stdout.on('data', chunk => {
@@ -860,12 +918,12 @@ const server = http.createServer(async (req, res) => {
       try {
         activeChildProcess.kill();
         activeChildProcess = null;
-        return sendJson(res, 200, { success: true, message: 'Simulation stopped' });
+        return sendJson(res, 200, { success: true, message: 'Simulation stopped' }, req);
       } catch (err) {
-        return sendError(res, 500, err.message);
+        return sendError(res, 500, err.message, req);
       }
     }
-    return sendJson(res, 200, { success: true, message: 'No simulation was active' });
+    return sendJson(res, 200, { success: true, message: 'No simulation was active' }, req);
   }
 
   // POST /api/upload-trace

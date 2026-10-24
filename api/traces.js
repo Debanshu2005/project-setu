@@ -11,9 +11,17 @@ export default function handler(req, res) {
     return res.status(204).end();
   }
 
-  const tracesDir = path.join(process.cwd(), 'scenarios', 'traces');
+  const possibleDirs = [
+    path.join(process.cwd(), 'scenarios', 'traces'),
+    path.resolve('scenarios/traces'),
+    path.join(path.dirname(__filename || ''), '..', 'scenarios', 'traces')
+  ];
+  const tracesDir = possibleDirs.find(d => {
+    try { return fs.existsSync(d) && fs.statSync(d).isDirectory(); } catch { return false; }
+  });
+
   try {
-    if (!fs.existsSync(tracesDir)) {
+    if (!tracesDir || !fs.existsSync(tracesDir)) {
       return res.status(200).json([]);
     }
     const files = fs.readdirSync(tracesDir).filter(f => f.endsWith('.jsonl'));

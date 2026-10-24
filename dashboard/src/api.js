@@ -4,12 +4,26 @@ export class SetuApi {
   static baseUrl = '';
 
   static getBaseUrl() {
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const custom = window.localStorage.getItem('setu_backend_url');
-      if (custom) return custom.replace(/\/+$/, '');
-    }
-    if (typeof window !== 'undefined' && window.__SETU_BACKEND_URL__) {
-      return window.__SETU_BACKEND_URL__.replace(/\/+$/, '');
+    if (this.baseUrl) return this.baseUrl;
+    if (typeof window !== 'undefined' && window.location) {
+      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+      if (window.localStorage) {
+        const custom = window.localStorage.getItem('setu_backend_url');
+        if (custom) {
+          const cleanCustom = custom.replace(/\/+$/, '');
+          const isCustomLocal = cleanCustom.includes('localhost') || cleanCustom.includes('127.0.0.1');
+          if (isLocal || !isCustomLocal) {
+            return cleanCustom;
+          }
+        }
+      }
+      if (window.__SETU_BACKEND_URL__) {
+        return window.__SETU_BACKEND_URL__.replace(/\/+$/, '');
+      }
+      if (isLocal) {
+        const port = window.location.port;
+        return (port === '3000' || port === '') ? window.location.origin.replace(/\/+$/, '') : 'http://localhost:3000';
+      }
     }
     return this.baseUrl || '';
   }
@@ -24,57 +38,73 @@ export class SetuApi {
   }
 
   static async resolveBaseUrl() {
+    const isBrowser = typeof window !== 'undefined' && Boolean(window.location);
+    const host = isBrowser ? window.location.hostname : '';
+    const isLocal = host === 'localhost' || host === '127.0.0.1';
+
     // 1. Check URL query parameters: ?backend=https://...
-    if (typeof window !== 'undefined' && window.location) {
+    if (isBrowser) {
       const params = new URLSearchParams(window.location.search);
       const paramBackend = params.get('backend');
-      if (paramBackend) {
+      if (paramBackend && /^https?:\/\//i.test(paramBackend)) {
         this.setBaseUrl(paramBackend);
         return this.getBaseUrl();
       }
     }
 
-    // 2. Check window.__SETU_BACKEND_URL__
-    if (typeof window !== 'undefined' && window.__SETU_BACKEND_URL__) {
+    // 2. Check injected runtime config
+    if (isBrowser && window.__SETU_BACKEND_URL__) {
       this.baseUrl = window.__SETU_BACKEND_URL__.replace(/\/+$/, '');
       return this.baseUrl;
     }
 
-    // 3. Check localStorage
-    if (typeof window !== 'undefined' && window.localStorage) {
-      const custom = window.localStorage.getItem('setu_backend_url');
-      if (custom) {
-        this.baseUrl = custom.replace(/\/+$/, '');
-        return this.baseUrl;
-      }
-    }
-
-    // 4. If running locally (localhost or 127.0.0.1)
-    if (typeof window !== 'undefined' && window.location) {
-      const host = window.location.hostname;
-      if (host === 'localhost' || host === '127.0.0.1') {
-        const port = window.location.port;
-        if (port === '3000' || port === '') {
-          this.baseUrl = window.location.origin.replace(/\/+$/, '');
-        } else {
-          this.baseUrl = 'http://localhost:3000';
+    // 3. If deployed on remote host (e.g. Vercel), fetch /api/config first to avoid stale localStorage hijacking
+    if (isBrowser && !isLocal) {
+      try {
+        const res = await fetch('/api/config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.backendUrl && /^https?:\/\//i.test(data.backendUrl)) {
+            this.baseUrl = data.backendUrl.replace(/\/+$/, '');
+            return this.baseUrl;
+          }
         }
-        return this.baseUrl;
+      } catch {
+        // Fall through to manual overrides
+      }
+
+      // 4. Check localStorage on remote hosts only if NOT pointing to stale localhost
+      if (window.localStorage) {
+        const custom = window.localStorage.getItem('setu_backend_url');
+        if (custom) {
+          const cleanCustom = custom.replace(/\/+$/, '');
+          if (!cleanCustom.includes('localhost') && !cleanCustom.includes('127.0.0.1') && /^https?:\/\//i.test(cleanCustom)) {
+            this.baseUrl = cleanCustom;
+            return this.baseUrl;
+          } else {
+            // Clear stale local dev URL from remote domain storage
+            window.localStorage.removeItem('setu_backend_url');
+          }
+        }
       }
     }
 
-    // 5. On deployed frontend (e.g. Vercel), fetch /api/config
-    try {
-      const res = await fetch('/api/config');
-      if (res.ok) {
-        const data = await res.json();
-        if (data && data.backendUrl) {
-          this.baseUrl = data.backendUrl.replace(/\/+$/, '');
+    // 5. If running locally (localhost or 127.0.0.1)
+    if (isBrowser && isLocal) {
+      if (window.localStorage) {
+        const custom = window.localStorage.getItem('setu_backend_url');
+        if (custom) {
+          this.baseUrl = custom.replace(/\/+$/, '');
           return this.baseUrl;
         }
       }
-    } catch {
-      // Ignore
+      const port = window.location.port;
+      if (port === '3000' || port === '') {
+        this.baseUrl = window.location.origin.replace(/\/+$/, '');
+      } else {
+        this.baseUrl = 'http://localhost:3000';
+      }
+      return this.baseUrl;
     }
 
     return this.baseUrl || '';
@@ -115,14 +145,40 @@ export class SetuApi {
   }
 
   static async getScenarios() {
+    const base = this.getBaseUrl();
+    const primaryUrl = `${base}/api/scenarios`;
+    let primaryErr = null;
+
     try {
-      const res = await fetch(`${this.getBaseUrl()}/api/scenarios`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return await res.json();
+      const res = await fetch(primaryUrl);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) return data;
+      } else {
+        primaryErr = new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
     } catch (err) {
-      console.warn('Get Scenarios error:', err);
-      return [];
+      primaryErr = err;
     }
+
+    // Secondary fallback: if primary was a remote cross-origin backend, try local relative /api/scenarios (e.g. Vercel Lambda)
+    if (base && typeof window !== 'undefined' && window.location) {
+      try {
+        const fallbackRes = await fetch('/api/scenarios');
+        if (fallbackRes.ok) {
+          const data = await fallbackRes.json();
+          if (Array.isArray(data) && data.length > 0) return data;
+        }
+      } catch {
+        // Fall through to error reporting
+      }
+    }
+
+    if (primaryErr) {
+      console.error('Failed to load scenarios:', primaryErr);
+      throw new Error(`Failed to load scenarios from ${base || 'server'}: ${primaryErr.message}`);
+    }
+    return [];
   }
 
   static async getTraces() {
@@ -137,10 +193,40 @@ export class SetuApi {
   }
 
   static async fetchTrace(filename) {
-    const res = await fetch(`${this.getBaseUrl()}/api/trace/${encodeURIComponent(filename)}`);
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to fetch trace`);
+    const base = this.getBaseUrl();
+    let res = null;
+    let fetchError = null;
+
+    try {
+      res = await fetch(`${base}/api/trace/${encodeURIComponent(filename)}`);
+    } catch (err) {
+      fetchError = err;
+    }
+
+    // Fallback: try relative path (e.g. Vercel serverless trace route)
+    if ((!res || !res.ok) && base && typeof window !== 'undefined' && window.location) {
+      try {
+        const fallbackRes = await fetch(`/api/trace/${encodeURIComponent(filename)}`);
+        if (fallbackRes.ok) {
+          res = fallbackRes;
+          fetchError = null;
+        }
+      } catch (err) {
+        if (!fetchError) fetchError = err;
+      }
+    }
+
+    if (!res || !res.ok) {
+      const statusMsg = res ? `HTTP ${res.status}` : (fetchError ? fetchError.message : 'Network error');
+      throw new Error(`Failed to fetch trace "${filename}": ${statusMsg}`);
+    }
+
     const text = await res.text();
-    return this.parseJsonl(text);
+    const events = this.parseJsonl(text);
+    if (!events || events.length === 0) {
+      throw new Error(`Trace file "${filename}" is empty or contains no valid events`);
+    }
+    return events;
   }
 
   static async runSimulation(payload) {
@@ -306,16 +392,21 @@ export class SetuApi {
   }
 
   static parseJsonl(text) {
+    if (!text || typeof text !== 'string') return [];
     const lines = text.split('\n');
     const events = [];
+    const errors = [];
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i].trim();
       if (!line) continue;
       try {
         events.push(JSON.parse(line));
       } catch (err) {
-        console.warn(`Malformed JSONL line ${i + 1}:`, line);
+        errors.push({ line: i + 1, error: err.message, snippet: line.slice(0, 80) });
       }
+    }
+    if (errors.length > 0) {
+      console.warn(`[Setu API] Encountered ${errors.length} malformed JSONL line(s):`, errors);
     }
     return events;
   }

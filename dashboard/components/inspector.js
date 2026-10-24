@@ -30,6 +30,14 @@ export class InspectorComponent {
     this.renderNode();
   }
 
+  get selectedNode() {
+    return this.currentNode;
+  }
+
+  set selectedNode(node) {
+    this.inspectNode(node);
+  }
+
   inspectNode(node) {
     this.currentNode = node;
     this.renderNode();
@@ -50,8 +58,19 @@ export class InspectorComponent {
     const stats = (n && n.stats) || { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 };
     const role = (n && n.role) || 'survivor';
     const roleBadge = role === 'hub' ? 'badge-hub' : role === 'relay' ? 'badge-relay' : 'badge-survivor';
-    const statusText = n.online ? (n.active_sos ? 'EMERGENCY ACTIVE' : 'ONLINE') : 'OFFLINE (FAILED)';
-    const statusClass = !n.online ? 'badge-sos' : n.active_sos ? 'badge-sos' : 'badge-hub';
+    const statusText = !n.online
+      ? 'OFFLINE (FAILED)'
+      : n.pending_trigger
+      ? 'DISPATCHING SOS...'
+      : n.active_sos
+      ? 'EMERGENCY ACTIVE'
+      : 'ONLINE';
+    const statusClass = !n.online ? 'badge-sos' : n.active_sos ? 'badge-sos' : n.pending_trigger ? 'badge-relay' : 'badge-hub';
+    const provenanceBadge = this.sim.isLiveEngine
+      ? `<span class="badge" style="background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #34d399; font-weight: 700;">🟢 LIVE C++ TWIN</span>`
+      : this.sim.isFallbackDemo
+      ? `<span class="badge" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #fcd34d; font-weight: 700;">🟡 OFFLINE DEMO</span>`
+      : `<span class="badge" style="background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #7dd3fc; font-weight: 700;">📽️ TRACE REPLAY</span>`;
 
     const lat = ((n.lat_e6 || 0) / 1e6).toFixed(6);
     const lon = ((n.lon_e6 || 0) / 1e6).toFixed(6);
@@ -146,7 +165,8 @@ export class InspectorComponent {
     this.nodeContainer.innerHTML = `
       <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 10px;">
         <div style="font-size: 14px; font-weight: 700; color: #fff;">Node ${n.id}</div>
-        <div style="display:flex; gap: 6px;">
+        <div style="display:flex; gap: 6px; align-items: center;">
+          ${provenanceBadge}
           <span class="badge ${roleBadge}">${role.toUpperCase()}</span>
           <span class="badge ${statusClass}">${statusText}</span>
         </div>

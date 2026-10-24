@@ -127,41 +127,49 @@ class SetuDashboardApp {
         this.toggleOperatingMode();
       }
 
-      try {
-        // 2. Immediately mark local node state for instant visual feedback on canvas
-        const tn = this.sim.nodes.get(nodeId);
-        if (tn) {
-          tn.active_sos = true;
-          tn.active = true;
-          tn.acked = false;
-          tn.gave_up = false;
-          if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
-            this.inspector.inspectNode(tn);
-          }
-        }
+      const tn = this.sim.nodes.get(nodeId);
+      if (tn) {
+        tn.pending_trigger = true;
         this.topo.render();
         this.updateMetrics();
+        if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
+          this.inspector.renderNode();
+        }
+      }
 
-        this.elStatusText.textContent = `TRIGGERING NODE ${nodeId} (${kind.toUpperCase()})...`;
+      this.elStatusDot.classList.add('simulating');
+      this.elStatusText.textContent = `DISPATCHING TRIGGER TO NODE ${nodeId} (${kind.toUpperCase()})...`;
+
+      try {
+        // 2. Dispatch trigger command to native C++ simulator
         await SetuApi.triggerNode(nodeId, kind);
 
-        // 3. Ensure engine is running continuous simulation or step clock so FreeRTOS queues drain
-        if (!this.isEngineRunning) {
-          await SetuApi.startControl();
-          this.isEngineRunning = true;
-          this.updatePlayButton();
-        }
-
-        // 4. Step clock forward by 1000ms so the 150ms press + 600ms double-click debounce window elapses and LoRa RF packets transmit
+        // 3. Step clock forward deterministically by 1000ms so button debounce elapses and LoRa RF packets transmit
         await SetuApi.stepControl(1000);
 
-        this.elStatusText.textContent = `NODE ${nodeId} SOS ACTIVE (${kind.toUpperCase()}) — LORA PACKETS PROPAGATING`;
+        // 4. Fetch confirmed native state
         await this.syncLiveEngineState();
-        const updated = this.sim.nodes.get(nodeId);
-        if (updated && this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
-          this.inspector.inspectNode(updated);
+
+        const fresh = this.sim.nodes.get(nodeId);
+        if (fresh) {
+          fresh.pending_trigger = false;
+          if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
+            this.inspector.inspectNode(fresh);
+          }
         }
+
+        this.elStatusDot.classList.remove('simulating');
+        const isSosConfirmed = fresh && (fresh.active_sos || fresh.active);
+        this.elStatusText.textContent = isSosConfirmed
+          ? `NODE ${nodeId} SOS TRANSMITTING (${kind.toUpperCase()}) — CONFIRMED BY NATIVE ENGINE`
+          : `NODE ${nodeId} TRIGGER PROCESSED (${kind.toUpperCase()}) — NATIVE QUEUES DRAINED`;
       } catch (err) {
+        this.elStatusDot.classList.remove('simulating');
+        if (tn) {
+          tn.pending_trigger = false;
+          this.topo.render();
+        }
+        this.elStatusText.textContent = `TRIGGER FAILED: ${err.message}`;
         alert(`Trigger failed: ${err.message}`);
       }
     };
@@ -618,8 +626,11 @@ class SetuDashboardApp {
 
   async syncLiveEngineState() {
     try {
+      const selectedId = this.inspector && this.inspector.selectedNode ? this.inspector.selectedNode.id : null;
       const cState = await SetuApi.getControlState();
       if (cState && cState.nodes) {
+        this.sim.isLiveEngine = true;
+        this.sim.isFallbackDemo = false;
         this.sim.loadTrace([]);
         // Re-populate nodes from native engine
         this.sim.nodes.clear();
@@ -682,6 +693,21 @@ class SetuDashboardApp {
         if (this.console && typeof this.console.populateSurvivors === 'function') {
           this.console.populateSurvivors();
         }
+
+        // Re-inspect the currently selected node reference so it is never stale or orphaned
+        if (this.inspector) {
+          if (selectedId !== null) {
+            const fresh = this.sim.nodes.get(selectedId);
+            if (fresh) {
+              this.inspector.inspectNode(fresh);
+            }
+          } else if (this.sim.nodes.size > 0 && !this.inspector.selectedNode) {
+            const first = this.sim.nodes.get(1) || this.sim.nodes.values().next().value;
+            if (first) {
+              this.inspector.inspectNode(first);
+            }
+          }
+        }
       }
     } catch (err) {
       console.warn('Could not sync live engine state:', err);
@@ -696,41 +722,46 @@ class SetuDashboardApp {
 
     try {
       this.elStatusDot.classList.add('simulating');
-      this.elStatusText.textContent = `BROADCASTING EMERGENCY WAVE (${kind.toUpperCase()}, JITTER ±${jitter}ms)...`;
+      this.elStatusText.textContent = `DISPATCHING BROADCAST SOS WAVE (${kind.toUpperCase()}, JITTER ±${jitter}ms)...`;
 
-      // 2. Immediately mark all survivor nodes as active SOS for instant visual feedback on canvas
-      let survivorCount = 0;
+      // 2. Mark survivor nodes as pending dispatch
       for (const [, n] of this.sim.nodes) {
         if (n.role === 'survivor' && n.online) {
-          n.active_sos = true;
-          n.active = true;
-          n.acked = false;
-          n.gave_up = false;
-          survivorCount++;
+          n.pending_trigger = true;
         }
       }
       this.topo.render();
       this.updateMetrics();
 
       // 3. Dispatch broadcast trigger to C++ engine
-      const res = await SetuApi.triggerAll(kind, jitter);
+      await SetuApi.triggerAll(kind, jitter);
 
-      // 4. Ensure engine is running continuous simulation so packets ripple across the mesh
-      if (!this.isEngineRunning) {
-        await SetuApi.startControl();
-        this.isEngineRunning = true;
-        this.updatePlayButton();
+      // 4. Step forward deterministically by at least 1000ms (or jitter + 1000ms) so button release and double-gap elapse
+      const stepDuration = Math.max(1000, (parseInt(jitter, 10) || 0) + 1000);
+      await SetuApi.stepControl(stepDuration);
+
+      // 5. Fetch confirmed native state
+      await this.syncLiveEngineState();
+
+      // 6. Count actually confirmed active survivors from verified native C++ state
+      let confirmedActive = 0;
+      for (const [, n] of this.sim.nodes) {
+        n.pending_trigger = false;
+        if (n.role === 'survivor' && (n.active_sos || n.active)) {
+          confirmedActive++;
+        }
       }
 
-      // Step forward by at least 1000ms (or jitter + 1000ms) so button release and double-gap elapse
-      await SetuApi.stepControl(Math.max(1000, jitter + 1000));
-
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `BROADCAST COMPLETE: ${survivorCount} SURVIVORS ACTIVE — PROPAGATING LORA MESH WAVE`;
-      await this.syncLiveEngineState();
+      this.elStatusText.textContent = `BROADCAST ACCEPTED: ${confirmedActive} SURVIVORS ACTIVE (NATIVE ENGINE VERIFIED)`;
     } catch (err) {
-      alert(`Trigger All failed: ${err.message}`);
       this.elStatusDot.classList.remove('simulating');
+      for (const [, n] of this.sim.nodes) {
+        n.pending_trigger = false;
+      }
+      this.topo.render();
+      this.elStatusText.textContent = `BROADCAST FAILED: ${err.message}`;
+      alert(`Trigger All failed: ${err.message}`);
     }
   }
 
@@ -774,12 +805,17 @@ class SetuDashboardApp {
     // 3. Sync live engine state
     await this.syncLiveEngineState();
 
-    // 4. Fetch scenarios for selector
-    this.scenarios = await SetuApi.getScenarios();
-    if (this.scenarios && this.scenarios.length > 0) {
-      this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
-        <option value="${sc.id}">${sc.name}</option>
-      `).join('');
+    // 4. Fetch scenarios for selector with clear diagnostics
+    try {
+      this.scenarios = await SetuApi.getScenarios();
+      if (this.scenarios && this.scenarios.length > 0) {
+        this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
+          <option value="${sc.id}">${sc.name}</option>
+        `).join('');
+      }
+    } catch (err) {
+      console.warn('Could not load scenarios list:', err.message);
+      this.elStatusText.textContent = `SCENARIOS ERROR: ${err.message}`;
     }
 
     // 5. If engine state has no nodes (e.g. offline or starting), initialize default topology so the canvas and inspector are immediately populated
@@ -795,6 +831,8 @@ class SetuDashboardApp {
   }
 
   initDefaultTopology() {
+    this.sim.isLiveEngine = false;
+    this.sim.isFallbackDemo = true;
     this.sim.nodes.clear();
     this.sim.links = [];
     // 1 Hub at (150, 150)
@@ -849,6 +887,8 @@ class SetuDashboardApp {
   async loadScenario(scenarioId) {
     try {
       this.mode = 'replay';
+      this.sim.isLiveEngine = false;
+      this.sim.isFallbackDemo = false;
       if (this.btnToggleMode) {
         this.btnToggleMode.textContent = '📽️ SCENARIO REPLAY';
         this.btnToggleMode.style.color = '#f59e0b';
@@ -864,11 +904,20 @@ class SetuDashboardApp {
 
       this.elStatusDot.classList.remove('simulating');
       this.elStatusText.textContent = `TRACE LOADED: ${events.length} EVENTS (${scenarioId})`;
+
+      const def = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
+      if (def && this.inspector) {
+        this.inspector.inspectNode(def);
+      }
     } catch (err) {
       console.warn(`Could not load pre-generated trace for ${scenarioId}, attempting live simulation:`, err);
-      const sc = this.scenarios.find(s => s.id === scenarioId);
+      const sc = this.scenarios ? this.scenarios.find(s => s.id === scenarioId) : null;
       if (sc) {
         await this.runScenarioLive(sc);
+      } else {
+        this.elStatusDot.classList.remove('simulating');
+        this.elStatusText.textContent = `SCENARIO LOAD ERROR: ${err.message}`;
+        alert(`Failed to load scenario: ${err.message}`);
       }
     }
   }

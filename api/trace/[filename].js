@@ -13,7 +13,23 @@ export default function handler(req, res) {
 
   const { filename } = req.query;
   const safeFilename = path.basename(filename || '');
-  const tracesDir = path.join(process.cwd(), 'scenarios', 'traces');
+  if (!safeFilename || !safeFilename.endsWith('.jsonl')) {
+    return res.status(400).send('Invalid trace filename');
+  }
+
+  const possibleDirs = [
+    path.join(process.cwd(), 'scenarios', 'traces'),
+    path.resolve('scenarios/traces'),
+    path.join(path.dirname(__filename || ''), '..', '..', 'scenarios', 'traces')
+  ];
+  const tracesDir = possibleDirs.find(d => {
+    try { return fs.existsSync(d) && fs.statSync(d).isDirectory(); } catch { return false; }
+  });
+
+  if (!tracesDir) {
+    return res.status(404).send('Trace directory not found in serverless environment');
+  }
+
   const fullPath = path.join(tracesDir, safeFilename);
 
   if (!fs.existsSync(fullPath)) {

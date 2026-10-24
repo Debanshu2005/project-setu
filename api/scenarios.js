@@ -11,7 +11,19 @@ export default function handler(req, res) {
     return res.status(204).end();
   }
 
-  const scenariosDir = path.join(process.cwd(), 'scenarios');
+  const possibleDirs = [
+    path.join(process.cwd(), 'scenarios'),
+    path.resolve('scenarios'),
+    path.join(path.dirname(__filename || ''), '..', 'scenarios')
+  ];
+  const scenariosDir = possibleDirs.find(d => {
+    try { return fs.existsSync(d) && fs.statSync(d).isDirectory(); } catch { return false; }
+  });
+
+  if (!scenariosDir) {
+    return res.status(500).json({ error: 'Scenarios directory not found in serverless environment' });
+  }
+
   try {
     const files = fs.readdirSync(scenariosDir).filter(f => f.endsWith('.json'));
     const list = files.map(file => {

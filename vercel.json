@@ -3,6 +3,11 @@
   "cleanUrls": true,
   "outputDirectory": ".",
   "buildCommand": null,
+  "functions": {
+    "api/**/*.js": {
+      "includeFiles": "scenarios/**"
+    }
+  },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/dashboard", "destination": "/index.html" },

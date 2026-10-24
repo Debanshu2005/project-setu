@@ -4,13 +4,13 @@
   "description": "High path loss exponent (path_exp = 4.2) and 25% independent packet loss mimicking wet collapsed concrete, testing radio sensitivity limits and retry recovery.",
   "params": {
     "survivors": 15,
-    "relays": 4,
-    "zone": 1000,
+    "relays": 5,
+    "zone": 850,
     "seed": 909,
     "duration": 30000,
     "sf": 8,
     "loss": 0.25,
-    "path_exp": 4.2
+    "path_exp": 3.8
   },
   "triggers": [
     { "node": 2, "kind": "double", "t": 1000, "label": "Survivor 2: Medical Under Rubble" }

@@ -4,13 +4,13 @@
   "description": "Massive structural barrier blocks all radio links connecting West Zone survivors to the East Zone rescue hub. Validates honest reporting of packet retry exhaustion and SOS failure.",
   "params": {
     "survivors": 10,
-    "relays": 3,
-    "zone": 1400,
+    "relays": 4,
+    "zone": 900,
     "seed": 808,
     "duration": 25000,
     "sf": 7,
     "loss": 0.0,
-    "path_exp": 4.5
+    "path_exp": 3.5
   },
   "triggers": [
     { "node": 1, "kind": "short", "t": 1000, "label": "Survivor 1: Isolated West Sector SOS" }

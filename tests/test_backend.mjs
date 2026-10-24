@@ -227,6 +227,15 @@ async function runTests() {
     const activeOrSent = survivors.filter(n => n.tx_sos >= 1);
     assert(activeOrSent.length >= 3, `Broadcast SOS wave reached survivor nodes (transmitting count: ${activeOrSent.length}/${survivors.length})`);
 
+    // Test Serialized Command Queue (Concurrent requests handled deterministically)
+    console.log('\n    [Subtest] Testing serialized simulator command queue concurrency...');
+    const [stepPromise, statePromise] = await Promise.all([
+      request('POST', '/api/control/step', { ms: 500 }),
+      request('GET', '/api/control/state')
+    ]);
+    assert(stepPromise.statusCode === 200 && stepPromise.json?.result?.cmd === 'step', 'Concurrent step resolved with step response');
+    assert(statePromise.statusCode === 200 && statePromise.json?.cmd === 'get_state', 'Concurrent get_state resolved with get_state response');
+
     // Reset simulator
     const resReset = await request('POST', '/api/control/reset');
     assert(resReset.statusCode === 200 && resReset.json?.success === true, 'C++ engine reset cleanly');
@@ -235,20 +244,54 @@ async function runTests() {
   }
 
   // 7. Scenarios and Trace File Endpoints
-  console.log('\n[7/8] Testing /api/scenarios and /api/traces...');
+  console.log('\n[7/9] Testing /api/scenarios and /api/traces...');
   try {
-    const resScenarios = await request('GET', '/api/scenarios');
+    const resScenarios = await request('GET', '/api/scenarios', null, {
+      'Origin': 'https://project-setu.vercel.app'
+    });
     assert(resScenarios.statusCode === 200 && Array.isArray(resScenarios.json), '/api/scenarios returns array of scenarios');
+    assert(resScenarios.headers['access-control-allow-origin'] === 'https://project-setu.vercel.app', 'Cross-origin /api/scenarios sets CORS header');
     assert(resScenarios.json.length > 0, `Loaded ${resScenarios.json.length} scenario definitions`);
+
+    // Verify scenario schema
+    const firstScenario = resScenarios.json[0];
+    assert(firstScenario && typeof firstScenario.id === 'string' && typeof firstScenario.name === 'string', 'Scenario has valid schema (id, name)');
 
     const resTraces = await request('GET', '/api/traces');
     assert(resTraces.statusCode === 200 && Array.isArray(resTraces.json), '/api/traces returns array of trace files');
+
+    // Test serving a valid trace file cross-origin
+    const resTrace = await request('GET', '/api/trace/basic_network.jsonl', null, {
+      'Origin': 'https://project-setu.vercel.app'
+    });
+    assert(resTrace.statusCode === 200, 'Trace file basic_network.jsonl fetched successfully');
+    assert(resTrace.headers['access-control-allow-origin'] === 'https://project-setu.vercel.app', 'Trace endpoint returns Vercel CORS header');
+    assert(resTrace.data.length > 0, `Trace file has content (${resTrace.data.length} bytes)`);
+
+    // Test missing trace returns 404
+    const resMissing = await request('GET', '/api/trace/nonexistent_scenario_12345.jsonl');
+    assert(resMissing.statusCode === 404, 'Missing trace file returns HTTP 404');
   } catch (err) {
     assert(false, `Scenarios check failed: ${err.message}`);
   }
 
-  // 8. Graceful Shutdown & Child Process Cleanup
-  console.log('\n[8/8] Testing graceful shutdown (SIGTERM)...');
+  // 8. Client-side SetuApi Unit Verification (JSONL Parsing & Error Diagnostics)
+  console.log('\n[8/9] Testing SetuApi JSONL parser unit diagnostics...');
+  try {
+    const { SetuApi } = await import('../dashboard/src/api.js');
+    const validJsonl = '{"ev":"tx","node":1,"t":100}\n{"ev":"rx","node":0,"t":165}\n';
+    const parsed = SetuApi.parseJsonl(validJsonl);
+    assert(parsed.length === 2, `Parsed ${parsed.length}/2 valid JSONL lines`);
+
+    const mixedJsonl = '{"ev":"tx","node":1}\nMALFORMED_LINE\n{"ev":"rx","node":0}\n';
+    const mixedParsed = SetuApi.parseJsonl(mixedJsonl);
+    assert(mixedParsed.length === 2, `Malformed line ignored gracefully; parsed ${mixedParsed.length}/2 valid lines`);
+  } catch (err) {
+    assert(false, `SetuApi unit test failed: ${err.message}`);
+  }
+
+  // 9. Graceful Shutdown & Child Process Cleanup
+  console.log('\n[9/9] Testing graceful shutdown (SIGTERM)...');
   try {
     const shutdownPromise = new Promise(resolve => {
       serverProcess.on('exit', (code, signal) => {

@@ -17,6 +17,8 @@ export class SimulationEngine {
     this.alerts = []; // array of alerts
     this.activePackets = []; // currently transmitting packets
     this.summary = null;
+    this.isLiveEngine = false;
+    this.isFallbackDemo = false;
 
     // Playback state
     this.currentTime = 0;
