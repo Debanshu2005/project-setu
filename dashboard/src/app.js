@@ -625,14 +625,37 @@ class SetuDashboardApp {
   }
 
   async loadInitialData() {
-    // 1. Fetch server status
-    const status = await SetuApi.getStatus();
+    // 0. Resolve backend URL first
+    await SetuApi.resolveBaseUrl();
+
+    // 1. Fetch server status with wake-up handling for Render Free sleep
+    const base = SetuApi.getBaseUrl();
+    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+    if (!base && !isLocal) {
+      this.elStatusDot.style.background = '#f59e0b';
+      this.elStatusText.textContent = 'BACKEND URL REQUIRED (Click ⚡ Backend above to connect)';
+      return;
+    }
+
+    let status = await SetuApi.getStatus();
+    if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render'))) {
+      this.elStatusDot.style.background = '#f59e0b';
+      this.elStatusText.textContent = 'WAKING UP RENDER ENGINE... (Cold start may take ~30s)';
+      const ping = await SetuApi.pingBackend(base, 15000);
+      if (ping.ok) {
+        status = await SetuApi.getStatus();
+      }
+    }
+
     if (status.status === 'online') {
       this.elStatusDot.style.background = '#10b981';
       this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
     } else {
       this.elStatusDot.style.background = '#ef4444';
-      this.elStatusText.textContent = `SIMULATOR OFFLINE`;
+      this.elStatusText.textContent = status.status === 'unconfigured'
+        ? 'CONFIGURE BACKEND URL (Click ⚡ Backend)'
+        : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'})`;
     }
 
     // 2. Connect SSE live event stream
@@ -640,6 +663,12 @@ class SetuDashboardApp {
 
     // 3. Sync live engine state
     await this.syncLiveEngineState();
+
+    // Auto-inspect Node 1 by default so the right-side Inspector panel is immediately populated
+    const defaultNode = this.sim.nodes.get(1);
+    if (defaultNode) {
+      this.inspector.inspectNode(defaultNode);
+    }
 
     // 4. Fetch scenarios for selector
     this.scenarios = await SetuApi.getScenarios();

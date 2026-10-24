@@ -20,6 +20,8 @@ out.jsonl
 out_test.jsonl
 scenarios/traces/sim_*.jsonl
 *.log
+*.tmp
+sim_*.jsonl
 
 # Editor & OS files
 .DS_Store

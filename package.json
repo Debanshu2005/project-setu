@@ -6,7 +6,9 @@
   "main": "dashboard/server.js",
   "scripts": {
     "start": "node dashboard/server.js",
-    "dev": "node dashboard/server.js"
+    "dev": "node dashboard/server.js",
+    "test:backend": "node tests/test_backend.mjs",
+    "test": "node tests/test_backend.mjs"
   },
   "keywords": [
     "disaster-response",

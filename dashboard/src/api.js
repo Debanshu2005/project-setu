@@ -8,6 +8,9 @@ export class SetuApi {
       const custom = window.localStorage.getItem('setu_backend_url');
       if (custom) return custom.replace(/\/+$/, '');
     }
+    if (typeof window !== 'undefined' && window.__SETU_BACKEND_URL__) {
+      return window.__SETU_BACKEND_URL__.replace(/\/+$/, '');
+    }
     return this.baseUrl || '';
   }
 
@@ -20,9 +23,89 @@ export class SetuApi {
     this.baseUrl = clean;
   }
 
+  static async resolveBaseUrl() {
+    // 1. Check URL query parameters: ?backend=https://...
+    if (typeof window !== 'undefined' && window.location) {
+      const params = new URLSearchParams(window.location.search);
+      const paramBackend = params.get('backend');
+      if (paramBackend) {
+        this.setBaseUrl(paramBackend);
+        return this.getBaseUrl();
+      }
+    }
+
+    // 2. Check window.__SETU_BACKEND_URL__
+    if (typeof window !== 'undefined' && window.__SETU_BACKEND_URL__) {
+      this.baseUrl = window.__SETU_BACKEND_URL__.replace(/\/+$/, '');
+      return this.baseUrl;
+    }
+
+    // 3. Check localStorage
+    if (typeof window !== 'undefined' && window.localStorage) {
+      const custom = window.localStorage.getItem('setu_backend_url');
+      if (custom) {
+        this.baseUrl = custom.replace(/\/+$/, '');
+        return this.baseUrl;
+      }
+    }
+
+    // 4. If running locally (localhost or 127.0.0.1)
+    if (typeof window !== 'undefined' && window.location) {
+      const host = window.location.hostname;
+      if (host === 'localhost' || host === '127.0.0.1') {
+        const port = window.location.port;
+        if (port === '3000' || port === '') {
+          this.baseUrl = window.location.origin.replace(/\/+$/, '');
+        } else {
+          this.baseUrl = 'http://localhost:3000';
+        }
+        return this.baseUrl;
+      }
+    }
+
+    // 5. On deployed frontend (e.g. Vercel), fetch /api/config
+    try {
+      const res = await fetch('/api/config');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.backendUrl) {
+          this.baseUrl = data.backendUrl.replace(/\/+$/, '');
+          return this.baseUrl;
+        }
+      }
+    } catch {
+      // Ignore
+    }
+
+    return this.baseUrl || '';
+  }
+
+  static async pingBackend(url = null, timeoutMs = 8000) {
+    const target = (url || this.getBaseUrl()).replace(/\/+$/, '');
+    if (!target) return { ok: false, error: 'No backend URL configured' };
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch(`${target}/health`, { signal: controller.signal });
+      clearTimeout(id);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: true, data };
+      }
+      return { ok: false, status: res.status };
+    } catch (err) {
+      clearTimeout(id);
+      return { ok: false, error: err.name === 'AbortError' ? 'Timeout (Service may be waking up)' : err.message };
+    }
+  }
+
   static async getStatus() {
     try {
-      const res = await fetch(`${this.getBaseUrl()}/api/status`);
+      const base = this.getBaseUrl();
+      if (!base && typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+        return { status: 'unconfigured', error: 'Backend URL not configured. Click ⚡ Backend to connect.' };
+      }
+      const res = await fetch(`${base}/api/status`);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (err) {
@@ -121,20 +204,27 @@ export class SetuApi {
   }
 
   static async triggerNode(nodeId, kind = 'short') {
+    const cleanKind = String(kind || 'short').replace('_', '-');
     const res = await fetch(`${this.getBaseUrl()}/api/control/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node: nodeId, kind })
+      body: JSON.stringify({ node: nodeId, kind: cleanKind })
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to trigger node`);
     return await res.json();
   }
 
-  static async triggerAll(payload = {}) {
+  static async triggerAll(payload = {}, jitter = 0) {
+    const body = typeof payload === 'string'
+      ? { kind: payload.replace('_', '-'), mode: jitter > 0 ? 'staggered' : 'immediate', delay_ms: jitter }
+      : {
+          ...payload,
+          kind: String(payload.kind || 'short').replace('_', '-')
+        };
     const res = await fetch(`${this.getBaseUrl()}/api/control/trigger-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(body)
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to trigger all nodes`);
     return await res.json();

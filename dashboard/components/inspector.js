@@ -40,12 +40,13 @@ export class InspectorComponent {
     }
 
     const n = this.currentNode;
+    const stats = n.stats || { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 };
     const roleBadge = n.role === 'hub' ? 'badge-hub' : n.role === 'relay' ? 'badge-relay' : 'badge-survivor';
     const statusText = n.online ? (n.active_sos ? 'EMERGENCY ACTIVE' : 'ONLINE') : 'OFFLINE (FAILED)';
     const statusClass = !n.online ? 'badge-sos' : n.active_sos ? 'badge-sos' : 'badge-hub';
 
-    const lat = (n.lat_e6 / 1e6).toFixed(6);
-    const lon = (n.lon_e6 / 1e6).toFixed(6);
+    const lat = ((n.lat_e6 || 0) / 1e6).toFixed(6);
+    const lon = ((n.lon_e6 || 0) / 1e6).toFixed(6);
     const posProv = n.gnss_on ? 'GNSS 3D Satellite Fix' : n.dr_on ? 'Dead-Reckoning (MPU-6050 IMU)' : 'Unknown / Signal Lost';
 
     let controlsHtml = '';
@@ -68,10 +69,10 @@ export class InspectorComponent {
             <button class="btn btn-sos-trigger" data-kind="voice" style="font-size: 10px; padding: 6px 4px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #bae6fd;">
               🎙️ Wake-Word ("Setu")
             </button>
-            <button class="btn btn-sos-trigger" data-kind="voice_medical" style="font-size: 10px; padding: 6px 4px; background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #a7f3d0;">
+            <button class="btn btn-sos-trigger" data-kind="voice-medical" style="font-size: 10px; padding: 6px 4px; background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #a7f3d0;">
               🗣️ Voice: Medical
             </button>
-            <button class="btn btn-sos-trigger" data-kind="voice_trapped" style="font-size: 10px; padding: 6px 4px; background: rgba(236, 72, 153, 0.2); border: 1px solid #ec4899; color: #fbcfe8;">
+            <button class="btn btn-sos-trigger" data-kind="voice-trapped" style="font-size: 10px; padding: 6px 4px; background: rgba(236, 72, 153, 0.2); border: 1px solid #ec4899; color: #fbcfe8;">
               🗣️ Voice: Trapped
             </button>
           </div>

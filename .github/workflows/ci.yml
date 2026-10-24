@@ -1,0 +1,113 @@
+name: Project Setu CI & Quality Gate
+
+on:
+  push:
+    branches: [ main, feature/** ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  # ----------------------------------------------------------------------------
+  # Job 1: Native C++ Build and Test on Linux (Ubuntu GCC/Clang)
+  # ----------------------------------------------------------------------------
+  build-and-test-linux:
+    name: Native C++ Core (Linux GCC 13)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential cmake
+
+      - name: Configure CMake
+        run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build all targets
+        run: cmake --build build --config Release -j$(nproc)
+
+      - name: Run CTest test suite
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Test interactive CLI engine directly
+        run: |
+          printf '{"cmd":"init","survivors":5,"relays":2,"zone":600,"seed":42}\n{"cmd":"trigger","node":1,"kind":"short"}\n{"cmd":"step","ms":1000}\n{"cmd":"summary"}\n{"cmd":"quit"}\n' | ./build/setu_sim -i > sim_cli_out.jsonl
+          cat sim_cli_out.jsonl
+          grep -q '"cmd":"summary"' sim_cli_out.jsonl || (echo "Summary not found in CLI output" && exit 1)
+
+  # ----------------------------------------------------------------------------
+  # Job 2: Native C++ Build and Test on Windows (MSVC 2022)
+  # ----------------------------------------------------------------------------
+  build-and-test-windows:
+    name: Native C++ Core (Windows MSVC)
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build with PowerShell build script
+        run: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
+
+      - name: Execute automated test suite
+        run: powershell -ExecutionPolicy Bypass -File scripts/test_windows.ps1
+
+  # ----------------------------------------------------------------------------
+  # Job 3: Docker Container Build & Healthcheck Verification
+  # ----------------------------------------------------------------------------
+  docker-validation:
+    name: Docker Multi-Stage Build & Container Health
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image (includes inside-container ctest execution)
+        run: docker build -t project-setu-backend:ci .
+
+      - name: Test container startup and healthcheck
+        run: |
+          docker run -d --name setu-ci-container -p 3000:3000 project-setu-backend:ci
+          sleep 5
+          docker logs setu-ci-container
+          curl -s -f http://localhost:3000/health | grep '"status":"ok"' || (echo "Healthcheck failed" && exit 1)
+          curl -s -f http://localhost:3000/api/status | grep '"simulatorFound":true' || (echo "Simulator not detected in container" && exit 1)
+          docker stop setu-ci-container
+          docker rm setu-ci-container
+
+  # ----------------------------------------------------------------------------
+  # Job 4: Node.js Backend & API Verification
+  # ----------------------------------------------------------------------------
+  backend-and-scenario-checks:
+    name: Backend API & Scenario Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Validate server syntax
+        run: node --check dashboard/server.js
+
+      - name: Validate scenarios JSON formatting
+        run: |
+          for f in scenarios/*.json; do
+            node -e "JSON.parse(fs.readFileSync('$f', 'utf8'))" || (echo "Invalid JSON: $f" && exit 1)
+          done
+
+      - name: Build native simulator for backend tests
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Run automated backend test suite
+        run: node tests/test_backend.mjs

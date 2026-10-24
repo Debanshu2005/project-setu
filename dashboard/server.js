@@ -18,11 +18,18 @@ const TRACES_DIR = path.join(SCENARIOS_DIR, 'traces');
 
 // Locate setu_sim executable
 function findSimulator() {
+  if (process.env.SETU_SIM_PATH && fs.existsSync(process.env.SETU_SIM_PATH)) {
+    return process.env.SETU_SIM_PATH;
+  }
   const candidates = [
+    // Standard Windows build paths
     path.join(ROOT_DIR, 'build', 'Release', 'setu_sim.exe'),
     path.join(ROOT_DIR, 'build', 'setu_sim.exe'),
+    path.join(ROOT_DIR, 'setu_sim.exe'),
+    // Standard Linux / Docker / Render build paths
     path.join(ROOT_DIR, 'build', 'setu_sim'),
-    path.join(ROOT_DIR, 'build', 'Release', 'setu_sim')
+    path.join(ROOT_DIR, 'build', 'Release', 'setu_sim'),
+    path.join(ROOT_DIR, 'setu_sim')
   ];
   for (const c of candidates) {
     if (fs.existsSync(c)) return c;
@@ -241,18 +248,52 @@ const MIME_TYPES = {
   '.ico': 'image/x-icon'
 };
 
-function sendJson(res, statusCode, data) {
-  res.writeHead(statusCode, {
-    'Content-Type': 'application/json; charset=utf-8',
-    'Access-Control-Allow-Origin': '*',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type'
-  });
+const DEFAULT_ALLOWED_ORIGINS = [
+  'http://localhost:3000',
+  'http://localhost:5173',
+  'http://localhost:4173',
+  'http://127.0.0.1:3000',
+  'http://127.0.0.1:5173',
+  'http://127.0.0.1:4173'
+];
+
+function getAllowedOrigins() {
+  const envOrigins = (process.env.ALLOWED_ORIGINS || '').split(',').map(s => s.trim()).filter(Boolean);
+  return [...DEFAULT_ALLOWED_ORIGINS, ...envOrigins];
+}
+
+function getCorsOrigin(req) {
+  const origin = req.headers.origin;
+  if (!origin) return null;
+  const allowed = getAllowedOrigins();
+  if (allowed.includes(origin)) return origin;
+  const allowVercel = process.env.ALLOW_VERCEL_PREVIEWS !== 'false';
+  if (allowVercel && /^https:\/\/[a-z0-9_-]+\.vercel\.app$/i.test(origin)) {
+    return origin;
+  }
+  return null;
+}
+
+function sendJson(res, statusCode, data, req = null) {
+  const headers = {
+    'Content-Type': 'application/json; charset=utf-8'
+  };
+  const corsOrigin = req ? getCorsOrigin(req) : null;
+  if (corsOrigin) {
+    headers['Access-Control-Allow-Origin'] = corsOrigin;
+    headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization';
+    headers['Access-Control-Allow-Credentials'] = 'true';
+    headers['Vary'] = 'Origin';
+  } else if (!req) {
+    headers['Access-Control-Allow-Origin'] = '*';
+  }
+  res.writeHead(statusCode, headers);
   res.end(JSON.stringify(data));
 }
 
-function sendError(res, statusCode, message) {
-  sendJson(res, statusCode, { error: message });
+function sendError(res, statusCode, message, req = null) {
+  sendJson(res, statusCode, { error: message }, req);
 }
 
 function parseBody(req) {
@@ -282,10 +323,13 @@ const server = http.createServer(async (req, res) => {
 
   // CORS preflight
   if (req.method === 'OPTIONS') {
+    const corsOrigin = getCorsOrigin(req) || '*';
     res.writeHead(204, {
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': corsOrigin,
       'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type'
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Credentials': 'true',
+      'Vary': 'Origin'
     });
     res.end();
     return;
@@ -295,12 +339,20 @@ const server = http.createServer(async (req, res) => {
 
   // GET /api/events (Server-Sent Events)
   if (req.method === 'GET' && pathname === '/api/events') {
-    res.writeHead(200, {
+    const sseHeaders = {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*'
-    });
+      'Connection': 'keep-alive'
+    };
+    const corsOrigin = getCorsOrigin(req);
+    if (corsOrigin) {
+      sseHeaders['Access-Control-Allow-Origin'] = corsOrigin;
+      sseHeaders['Access-Control-Allow-Credentials'] = 'true';
+      sseHeaders['Vary'] = 'Origin';
+    } else {
+      sseHeaders['Access-Control-Allow-Origin'] = '*';
+    }
+    res.writeHead(200, sseHeaders);
     res.write(': connected\n\n');
 
     // Send history if any
@@ -397,11 +449,11 @@ const server = http.createServer(async (req, res) => {
       await simManager.ensureStarted();
       const body = await parseBody(req);
       const node = parseInt(body.node, 10);
-      const kind = String(body.kind || 'short');
+      const kind = String(body.kind || 'short').replace('_', '-');
       const result = await simManager.sendCommand({ cmd: 'trigger', node, kind });
-      return sendJson(res, 200, { success: true, result });
+      return sendJson(res, 200, { success: true, result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -410,13 +462,13 @@ const server = http.createServer(async (req, res) => {
     try {
       await simManager.ensureStarted();
       const body = await parseBody(req);
-      const kind = String(body.kind || 'short');
+      const kind = String(body.kind || 'short').replace('_', '-');
       const mode = String(body.mode || 'immediate');
       const delayMs = parseInt(body.delay_ms, 10) || 2000;
       const result = await simManager.sendCommand({ cmd: 'trigger_all', kind, mode, delay_ms: delayMs });
-      return sendJson(res, 200, { success: true, result });
+      return sendJson(res, 200, { success: true, result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -502,18 +554,37 @@ const server = http.createServer(async (req, res) => {
 
   // --- Standard API Endpoints ---
 
+  // GET /health and /api/health (Render Blueprint Healthcheck)
+  if (req.method === 'GET' && (pathname === '/health' || pathname === '/api/health')) {
+    const simPath = findSimulator();
+    return sendJson(res, 200, {
+      status: 'ok',
+      service: 'setu-simulation-backend',
+      timestamp: Date.now(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      simulatorFound: Boolean(simPath),
+      simulatorActive: Boolean(simManager.process),
+      engine: 'c++_protocol_core_fitl',
+      memoryRssBytes: process.memoryUsage().rss
+    }, req);
+  }
+
   // GET /api/status
   if (req.method === 'GET' && pathname === '/api/status') {
     const simPath = findSimulator();
     return sendJson(res, 200, {
       status: 'online',
-      nodeVersion: process.version,
+      serviceHealth: 'ok',
       simulatorFound: Boolean(simPath),
+      simulatorHealthy: Boolean(simPath),
       simulatorPath: simPath ? path.relative(ROOT_DIR, simPath) : null,
       activeRun: Boolean(activeChildProcess || simManager.process),
       interactiveActive: Boolean(simManager.process),
-      simTime: simManager.simTime
-    });
+      engine: 'c++_protocol_core_fitl',
+      simTime: simManager.simTime,
+      nodeVersion: process.version,
+      uptimeSeconds: Math.floor(process.uptime())
+    }, req);
   }
 
   // GET /api/scenarios
@@ -555,18 +626,32 @@ const server = http.createServer(async (req, res) => {
 
   // GET /api/trace/:filename
   if (req.method === 'GET' && pathname.startsWith('/api/trace/')) {
-    const filename = path.basename(pathname.replace('/api/trace/', ''));
-    const fullPath = path.join(TRACES_DIR, filename);
+    const rawParam = pathname.replace('/api/trace/', '');
+    const filename = path.basename(decodeURIComponent(rawParam));
+    if (!filename || filename.includes('\0') || !filename.endsWith('.jsonl')) {
+      return sendError(res, 400, 'Invalid trace filename format', req);
+    }
+    const fullPath = path.resolve(TRACES_DIR, filename);
+    if (!fullPath.startsWith(path.resolve(TRACES_DIR))) {
+      return sendError(res, 403, 'Access denied', req);
+    }
     if (!fs.existsSync(fullPath)) {
-      return sendError(res, 404, 'Trace file not found');
+      return sendError(res, 404, 'Trace file not found', req);
     }
     fs.readFile(fullPath, (err, data) => {
-      if (err) return sendError(res, 500, err.message);
-      res.writeHead(200, {
+      if (err) return sendError(res, 500, err.message, req);
+      const headers = {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Length': data.length,
-        'Access-Control-Allow-Origin': '*'
-      });
+        'Content-Length': data.length
+      };
+      const corsOrigin = getCorsOrigin(req);
+      if (corsOrigin) {
+        headers['Access-Control-Allow-Origin'] = corsOrigin;
+        headers['Vary'] = 'Origin';
+      } else {
+        headers['Access-Control-Allow-Origin'] = '*';
+      }
+      res.writeHead(200, headers);
       res.end(data);
     });
     return;
@@ -688,15 +773,15 @@ const server = http.createServer(async (req, res) => {
       return sendError(res, 409, 'Another simulation is already currently running.');
     }
 
-    const query = parsedUrl.query;
-    const survivors = Math.min(100, Math.max(1, parseInt(query.survivors, 10) || 20));
-    const relays = Math.min(30, Math.max(1, parseInt(query.relays, 10) || 5));
-    const zone = Math.min(5000, Math.max(200, parseFloat(query.zone) || 1200));
-    const seed = Math.max(0, parseInt(query.seed, 10) || 7);
-    const duration = Math.min(120000, Math.max(1000, parseInt(query.duration, 10) || 30000));
-    const sf = Math.min(12, Math.max(7, parseInt(query.sf, 10) || 7));
-    const loss = Math.min(0.9, Math.max(0.0, parseFloat(query.loss) || 0.0));
-    const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(query.path_exp) || 3.5));
+    const searchParams = reqUrl.searchParams;
+    const survivors = Math.min(100, Math.max(1, parseInt(searchParams.get('survivors'), 10) || 20));
+    const relays = Math.min(30, Math.max(1, parseInt(searchParams.get('relays'), 10) || 5));
+    const zone = Math.min(5000, Math.max(200, parseFloat(searchParams.get('zone')) || 1200));
+    const seed = Math.max(0, parseInt(searchParams.get('seed'), 10) || 7);
+    const duration = Math.min(120000, Math.max(1000, parseInt(searchParams.get('duration'), 10) || 30000));
+    const sf = Math.min(12, Math.max(7, parseInt(searchParams.get('sf'), 10) || 7));
+    const loss = Math.min(0.9, Math.max(0.0, parseFloat(searchParams.get('loss')) || 0.0));
+    const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(searchParams.get('path_exp')) || 3.5));
 
     const traceFilename = `stream_${Date.now()}_seed${seed}.jsonl`;
     const traceFilePath = path.join(TRACES_DIR, traceFilename);
@@ -785,13 +870,22 @@ const server = http.createServer(async (req, res) => {
   if (req.method === 'POST' && pathname === '/api/upload-trace') {
     try {
       const body = await parseBody(req);
-      const filename = `uploaded_${Date.now()}.jsonl`;
-      const fullPath = path.join(TRACES_DIR, filename);
       const content = typeof body === 'string' ? body : (body.content || body.raw || '');
+      if (typeof content !== 'string' || content.length === 0) {
+        return sendError(res, 400, 'Empty or invalid trace content', req);
+      }
+      if (Buffer.byteLength(content, 'utf8') > 10 * 1024 * 1024) {
+        return sendError(res, 413, 'Trace content exceeds 10MB limit', req);
+      }
+      const filename = `uploaded_${Date.now()}.jsonl`;
+      const fullPath = path.resolve(TRACES_DIR, filename);
+      if (!fullPath.startsWith(path.resolve(TRACES_DIR))) {
+        return sendError(res, 403, 'Access denied', req);
+      }
       fs.writeFileSync(fullPath, content, 'utf8');
-      return sendJson(res, 200, { success: true, filename });
+      return sendJson(res, 200, { success: true, filename }, req);
     } catch (err) {
-      return sendError(res, 500, err.message);
+      return sendError(res, 500, err.message, req);
     }
   }
 
@@ -822,19 +916,45 @@ const server = http.createServer(async (req, res) => {
   sendError(res, 404, 'File not found');
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log(`================================================================`);
   console.log(`  Project Setu - Operations Dashboard & Simulation Server        `);
-  console.log(`  Control Center: http://localhost:${PORT}                      `);
-  console.log(`  Simulator Binary: ${findSimulator() || 'NOT BUILT YET'}       `);
+  console.log(`  Host: http://0.0.0.0:${PORT}                                   `);
+  console.log(`  Simulator Binary: ${findSimulator() || 'NOT BUILT YET'}        `);
   console.log(`================================================================`);
 });
 
 server.on('error', err => {
   if (err.code === 'EADDRINUSE') {
-    console.warn(`Port ${PORT} in use, trying ${PORT + 1}...`);
-    server.listen(PORT + 1);
+    console.warn(`Port ${PORT} in use, trying ${Number(PORT) + 1}...`);
+    server.listen(Number(PORT) + 1, '0.0.0.0');
   } else {
     console.error('Server error:', err);
   }
 });
+
+function gracefulShutdown(signal) {
+  console.log(`[Setu API] Received ${signal}. Shutting down gracefully...`);
+  if (simManager.process) {
+    try {
+      simManager.process.kill('SIGTERM');
+    } catch {}
+  }
+  if (activeChildProcess) {
+    try {
+      activeChildProcess.kill('SIGTERM');
+    } catch {}
+  }
+  for (const client of simManager.sseClients) {
+    try { client.end(); } catch {}
+  }
+  simManager.sseClients.clear();
+  server.close(() => {
+    console.log('[Setu API] Server closed cleanly.');
+    process.exit(0);
+  });
+  setTimeout(() => process.exit(0), 5000).unref();
+}
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));

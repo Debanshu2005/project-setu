@@ -76,7 +76,7 @@ try {
     }
 
     # 3. Interactive Engine Verification via CLI
-    Write-Host "`n[3/3] Interactive engine IPC verification..." -ForegroundColor Cyan
+    Write-Host "`n[3/4] Interactive engine IPC verification..." -ForegroundColor Cyan
     $simExe = Join-Path $buildDir "$Config\setu_sim.exe"
     if (-not (Test-Path $simExe)) { $simExe = Join-Path $buildDir "setu_sim.exe" }
 
@@ -90,6 +90,11 @@ try {
             Write-Host "Interactive IPC engine verified (Setu World initialized)." -ForegroundColor Green
         }
     }
+
+    # 4. End-to-end Backend API & C++ Protocol Integration Tests
+    Write-Host "`n[4/4] Automated Backend REST/SSE & Protocol Verification..." -ForegroundColor Cyan
+    & node tests/test_backend.mjs
+    if ($LASTEXITCODE -ne 0) { throw "Backend integration tests failed!" }
 
     Write-Host "`n==========================================================" -ForegroundColor Green
     Write-Host "  ALL TESTS PASSED SUCCESSFULLY!" -ForegroundColor Green

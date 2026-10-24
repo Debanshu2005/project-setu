@@ -1,4 +1,8 @@
 // Vercel Serverless Function: POST /api/simulate
+// NOTICE: This serverless endpoint runs an ephemeral JavaScript demonstration fallback.
+// For authoritative C++ simulation using the real setu::Node protocol core,
+// target the persistent Render backend.
+
 import { SetuSimulator } from '../simulation/js/simulator.js';
 
 export default function handler(req, res) {
@@ -27,7 +31,6 @@ export default function handler(req, res) {
         sim.addTrigger(tr.node || tr.id || 1, tr.kind || 'short', tr.t || 1000);
       }
     } else {
-      // Default sample trigger
       sim.addTrigger(1, 'short', 1000);
     }
 
@@ -35,7 +38,9 @@ export default function handler(req, res) {
 
     return res.status(200).json({
       success: true,
-      platform: 'Vercel Serverless',
+      platform: 'Vercel Serverless (JavaScript Demo Engine)',
+      executionMode: 'JavaScript demonstration (NOT native C++ core)',
+      warning: 'This execution used the ephemeral JavaScript demo engine. For authoritative native C++ simulation, target the Render backend.',
       traceEvents: result.traceEvents,
       summary: result.summary
     });
