@@ -1,0 +1,23 @@
+{
+  "version": 2,
+  "cleanUrls": true,
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/", "destination": "/dashboard/index.html" },
+    { "source": "/dashboard/(.*)", "destination": "/dashboard/$1" },
+    { "source": "/styles/(.*)", "destination": "/dashboard/styles/$1" },
+    { "source": "/src/(.*)", "destination": "/dashboard/src/$1" },
+    { "source": "/components/(.*)", "destination": "/dashboard/components/$1" },
+    { "source": "/scenarios/(.*)", "destination": "/scenarios/$1" },
+    { "source": "/simulation/(.*)", "destination": "/simulation/$1" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, POST, OPTIONS" }
+      ]
+    }
+  ]
+}

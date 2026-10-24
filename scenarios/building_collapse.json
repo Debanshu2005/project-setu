@@ -1,0 +1,25 @@
+{
+  "id": "building_collapse",
+  "name": "Subterranean Tunnel / Deep Basements Collapse",
+  "description": "Multi-level subterranean infrastructure collapse with extreme RF attenuation, GPS denial, and dead-reckoning inertial navigation fallback.",
+  "params": {
+    "survivors": 15,
+    "relays": 4,
+    "zone": 900,
+    "seed": 108,
+    "duration": 30000,
+    "sf": 9,
+    "loss": 0.08,
+    "path_exp": 4.1
+  },
+  "triggers": [
+    { "node": 5, "kind": "long", "t": 2000, "label": "Survivor 5: Deep Basements Structural Collapse (Long Press)" },
+    { "node": 9, "kind": "voice-trapped", "t": 6000, "label": "Survivor 9: Voice 'Setu - Trapped Under Debris'" },
+    { "node": 2, "kind": "short", "t": 11000, "label": "Survivor 2: General SOS" }
+  ],
+  "faults": [
+    { "kind": "gps-off", "target": "5", "t": 100, "label": "Survivor 5 Subterranean: GNSS Satellite Loss" },
+    { "kind": "gps-off", "target": "9", "t": 100, "label": "Survivor 9 Subterranean: GNSS Satellite Loss" },
+    { "kind": "no-dr", "target": "2", "t": 500, "label": "Survivor 2 IMU Malfunction: Unknown Position Prov." }
+  ]
+}

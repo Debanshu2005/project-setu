@@ -1,0 +1,26 @@
+{
+  "id": "high_congestion_storm",
+  "name": "Mass-Casualty Incident & RF Storm",
+  "description": "High-density mass-casualty scenario testing relay duplicate suppression, half-duplex collision capture, listen-before-talk deferral, and duty cycle enforcement.",
+  "params": {
+    "survivors": 35,
+    "relays": 8,
+    "zone": 1000,
+    "seed": 777,
+    "duration": 30000,
+    "sf": 7,
+    "loss": 0.02,
+    "path_exp": 3.3
+  },
+  "triggers": [
+    { "node": 2, "kind": "long", "t": 1000, "label": "Survivor 2: Structural Trapped" },
+    { "node": 3, "kind": "long", "t": 1200, "label": "Survivor 3: Structural Trapped" },
+    { "node": 8, "kind": "double", "t": 1500, "label": "Survivor 8: Severe Medical" },
+    { "node": 15, "kind": "short", "t": 1800, "label": "Survivor 15: General SOS" },
+    { "node": 22, "kind": "voice-medical", "t": 2200, "label": "Survivor 22: Voice Medical" },
+    { "node": 30, "kind": "short", "t": 2500, "label": "Survivor 30: Panic Button" }
+  ],
+  "faults": [
+    { "kind": "kill", "target": "104", "t": 3000, "label": "Central Relay 104 Hardware Overheat" }
+  ]
+}

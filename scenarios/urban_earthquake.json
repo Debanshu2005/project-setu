@@ -1,0 +1,26 @@
+{
+  "id": "urban_earthquake",
+  "name": "Urban Earthquake & Structural Collapse",
+  "description": "7.2-magnitude urban earthquake. Multiple structural collapses, severe rubble path loss, and relay node failure forcing multi-hop alternative path routing.",
+  "params": {
+    "survivors": 25,
+    "relays": 6,
+    "zone": 1200,
+    "seed": 42,
+    "duration": 35000,
+    "sf": 8,
+    "loss": 0.04,
+    "path_exp": 3.6
+  },
+  "triggers": [
+    { "node": 7, "kind": "long", "t": 1000, "label": "Survivor 7: Trapped Under Debris (Long Press)" },
+    { "node": 3, "kind": "voice-medical", "t": 4000, "label": "Survivor 3: Voice 'Setu - Medical Emergency'" },
+    { "node": 14, "kind": "short", "t": 6500, "label": "Survivor 14: General Panic Button (Short Press)" },
+    { "node": 21, "kind": "double", "t": 9000, "label": "Survivor 21: Medical Emergency (Double Press)" }
+  ],
+  "faults": [
+    { "kind": "kill", "target": "102", "t": 2000, "label": "Relay 102 Power Severed / Destroyed" },
+    { "kind": "gps-off", "target": "7", "t": 500, "label": "Survivor 7 GPS Lost Underground (DR Fallback)" },
+    { "kind": "block", "target": "100-101", "t": 3000, "label": "Concrete Barrier Blocks Link 100-101" }
+  ]
+}

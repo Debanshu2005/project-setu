@@ -1,0 +1,26 @@
+{
+  "id": "flash_flood_network",
+  "name": "Flash Flood Multi-Hop Mesh Surge",
+  "description": "Rapid water level rise wiping out central relay towers sequentially, forcing dynamic rerouting over peripheral survivor bands.",
+  "params": {
+    "survivors": 30,
+    "relays": 7,
+    "zone": 1400,
+    "seed": 999,
+    "duration": 40000,
+    "sf": 7,
+    "loss": 0.05,
+    "path_exp": 3.4
+  },
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1500, "label": "Survivor 1: Stranded on Rooftop (Short Press)" },
+    { "node": 10, "kind": "voice-medical", "t": 3500, "label": "Survivor 10: Hypothermia Medical Alert (Voice)" },
+    { "node": 19, "kind": "long", "t": 5000, "label": "Survivor 19: Structural Wall Failure (Long Press)" },
+    { "node": 25, "kind": "double", "t": 8000, "label": "Survivor 25: Injured Swimmer (Double Press)" }
+  ],
+  "faults": [
+    { "kind": "kill", "target": "100", "t": 2000, "label": "Relay 100 Submerged / Inundated" },
+    { "kind": "kill", "target": "103", "t": 4500, "label": "Relay 103 Power Generator Flooded" },
+    { "kind": "block", "target": "1-101", "t": 6000, "label": "Heavy Downpour / Attenuation Blocks 1-101" }
+  ]
+}

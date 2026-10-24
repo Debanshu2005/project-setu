@@ -1,0 +1,27 @@
+# Build and compiler outputs
+build/
+build_unit/
+cmake-build-*/
+*.exe
+*.obj
+*.o
+*.pdb
+*.ilk
+*.idb
+
+# Dependency directories
+node_modules/
+
+# Vercel deployment artifacts
+.vercel/
+
+# Temporary simulation run logs
+out.jsonl
+out_test.jsonl
+*.log
+
+# Editor & OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

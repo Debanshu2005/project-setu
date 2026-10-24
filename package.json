@@ -1,0 +1,21 @@
+{
+  "name": "project-setu-operations",
+  "version": "1.0.0",
+  "description": "Project Setu: Disaster-Response Operations Dashboard & Real-Time LoRa Mesh Simulation Center",
+  "type": "module",
+  "main": "dashboard/server.js",
+  "scripts": {
+    "start": "node dashboard/server.js",
+    "dev": "node dashboard/server.js",
+    "build": "node -e \"console.log('Ready for Vercel deployment')\""
+  },
+  "keywords": [
+    "disaster-response",
+    "mesh-simulation",
+    "lora",
+    "esp32-s3",
+    "setu"
+  ],
+  "author": "Antigravity Engineering",
+  "license": "MIT"
+}
