@@ -197,35 +197,41 @@
 }
 .sos-trigger-btn.voice .trigger-title { color: var(--purple-voice); }
 
-/* Simulation Parameters Modal */
-.modal-backdrop {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: rgba(4, 7, 15, 0.75);
-  backdrop-filter: blur(4px);
-  z-index: 100;
+/* Simulation Parameters & Backend Settings Modals */
+.modal-backdrop,
+.modal-overlay {
+  position: fixed !important;
+  top: 0 !important;
+  left: 0 !important;
+  width: 100vw !important;
+  height: 100vh !important;
+  background: rgba(4, 7, 15, 0.8) !important;
+  backdrop-filter: blur(6px) !important;
+  -webkit-backdrop-filter: blur(6px) !important;
+  z-index: 9999 !important;
   display: none;
-  align-items: center;
-  justify-content: center;
+  align-items: center !important;
+  justify-content: center !important;
 }
 
-.modal-backdrop.active {
-  display: flex;
+.modal-backdrop.active,
+.modal-overlay.active {
+  display: flex !important;
 }
 
-.modal-dialog {
+.modal-dialog,
+.modal-content {
   width: 580px;
   max-width: 90vw;
-  background: var(--bg-base);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  background: var(--bg-base) !important;
+  border: 1px solid var(--border-strong) !important;
+  border-radius: var(--radius-lg) !important;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.8) !important;
+  display: flex !important;
+  flex-direction: column !important;
+  overflow: hidden !important;
+  position: relative !important;
+  z-index: 10000 !important;
 }
 
 .modal-header {

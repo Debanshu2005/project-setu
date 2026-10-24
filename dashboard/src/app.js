@@ -18,10 +18,15 @@ class SetuDashboardApp {
     this.isEngineRunning = false;
     this.eventSource = null;
 
+    this.backendModalInitialized = false;
+
     this.initElements();
+    this.initBackendModal(); // Bound immediately so backend settings modal is always usable even if subsequent initializations throw
     this.initComponents();
     this.initEvents();
-    this.loadInitialData();
+    this.loadInitialData().catch(err => {
+      console.warn('Initial data load notice:', err);
+    });
   }
 
   initElements() {
@@ -234,47 +239,55 @@ class SetuDashboardApp {
     }
 
     // Playback Controls
-    this.btnPlay.addEventListener('click', async () => {
-      if (this.mode === 'live') {
-        if (this.isEngineRunning) {
-          await SetuApi.pauseControl();
-          this.isEngineRunning = false;
+    if (this.btnPlay) {
+      this.btnPlay.addEventListener('click', async () => {
+        if (this.mode === 'live') {
+          if (this.isEngineRunning) {
+            await SetuApi.pauseControl();
+            this.isEngineRunning = false;
+          } else {
+            await SetuApi.startControl();
+            this.isEngineRunning = true;
+          }
+          this.updatePlayButton();
         } else {
-          await SetuApi.startControl();
-          this.isEngineRunning = true;
+          this.sim.togglePlay();
+          this.updatePlayButton();
         }
-        this.updatePlayButton();
-      } else {
-        this.sim.togglePlay();
-        this.updatePlayButton();
-      }
-    });
+      });
+    }
 
-    this.btnStepBack.addEventListener('click', () => {
-      if (this.mode === 'live') {
-        // In live mode, clock is monotonic in C++ engine
-        this.sim.seek(Math.max(0, this.sim.currentTime - 1000));
-      } else {
-        this.sim.step(-1000);
-      }
-    });
+    if (this.btnStepBack) {
+      this.btnStepBack.addEventListener('click', () => {
+        if (this.mode === 'live') {
+          // In live mode, clock is monotonic in C++ engine
+          this.sim.seek(Math.max(0, this.sim.currentTime - 1000));
+        } else {
+          this.sim.step(-1000);
+        }
+      });
+    }
 
-    this.btnStepForward.addEventListener('click', async () => {
-      if (this.mode === 'live') {
-        await SetuApi.stepControl(1000);
-      } else {
-        this.sim.step(1000);
-      }
-    });
+    if (this.btnStepForward) {
+      this.btnStepForward.addEventListener('click', async () => {
+        if (this.mode === 'live') {
+          await SetuApi.stepControl(1000);
+        } else {
+          this.sim.step(1000);
+        }
+      });
+    }
 
-    this.btnReset.addEventListener('click', async () => {
-      if (this.mode === 'live') {
-        await SetuApi.resetControl();
-        await this.syncLiveEngineState();
-      } else {
-        this.sim.seek(0);
-      }
-    });
+    if (this.btnReset) {
+      this.btnReset.addEventListener('click', async () => {
+        if (this.mode === 'live') {
+          await SetuApi.resetControl();
+          await this.syncLiveEngineState();
+        } else {
+          this.sim.seek(0);
+        }
+      });
+    }
 
     // Speed buttons
     document.querySelectorAll('.speed-btn').forEach(btn => {
@@ -286,11 +299,13 @@ class SetuDashboardApp {
     });
 
     // Scrubber seek
-    this.scrubberTrack.addEventListener('click', e => {
-      const rect = this.scrubberTrack.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-      this.sim.seek(pct * this.sim.meta.duration);
-    });
+    if (this.scrubberTrack) {
+      this.scrubberTrack.addEventListener('click', e => {
+        const rect = this.scrubberTrack.getBoundingClientRect();
+        const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+        this.sim.seek(pct * this.sim.meta.duration);
+      });
+    }
 
     // Simulation updates
     this.sim.subscribe((engine, type) => {
@@ -312,19 +327,28 @@ class SetuDashboardApp {
     });
 
     // Zoom buttons
-    document.getElementById('btnZoomIn').addEventListener('click', () => {
-      this.topo.scale *= 1.25;
-      this.topo.render();
-    });
+    const btnZoomIn = document.getElementById('btnZoomIn');
+    if (btnZoomIn) {
+      btnZoomIn.addEventListener('click', () => {
+        this.topo.scale *= 1.25;
+        this.topo.render();
+      });
+    }
 
-    document.getElementById('btnZoomOut').addEventListener('click', () => {
-      this.topo.scale *= 0.8;
-      this.topo.render();
-    });
+    const btnZoomOut = document.getElementById('btnZoomOut');
+    if (btnZoomOut) {
+      btnZoomOut.addEventListener('click', () => {
+        this.topo.scale *= 0.8;
+        this.topo.render();
+      });
+    }
 
-    document.getElementById('btnZoomFit').addEventListener('click', () => {
-      this.topo.fitToScreen();
-    });
+    const btnZoomFit = document.getElementById('btnZoomFit');
+    if (btnZoomFit) {
+      btnZoomFit.addEventListener('click', () => {
+        this.topo.fitToScreen();
+      });
+    }
 
     // Tabs switching (Right sidebar)
     document.querySelectorAll('.tab-btn').forEach(btn => {
@@ -334,28 +358,66 @@ class SetuDashboardApp {
     });
 
     // Scenario Select
-    this.elScenarioSelect.addEventListener('change', async e => {
-      const selectedId = e.target.value;
-      if (selectedId) {
-        await this.loadScenario(selectedId);
-      }
-    });
+    if (this.elScenarioSelect) {
+      this.elScenarioSelect.addEventListener('change', async e => {
+        const selectedId = e.target.value;
+        if (selectedId) {
+          await this.loadScenario(selectedId);
+        }
+      });
+    }
 
     // Run Modal
-    this.btnRunModal.addEventListener('click', () => {
-      this.modalRunSim.classList.add('active');
-    });
+    if (this.btnRunModal && this.modalRunSim) {
+      this.btnRunModal.addEventListener('click', () => {
+        this.modalRunSim.classList.add('active');
+      });
 
-    const closeModal = () => this.modalRunSim.classList.remove('active');
-    this.btnCloseModal.addEventListener('click', closeModal);
-    this.btnCancelModal.addEventListener('click', closeModal);
+      const closeModal = () => this.modalRunSim.classList.remove('active');
+      if (this.btnCloseModal) this.btnCloseModal.addEventListener('click', closeModal);
+      if (this.btnCancelModal) this.btnCancelModal.addEventListener('click', closeModal);
 
-    // Modal Execute
-    this.btnExecuteSim.addEventListener('click', async () => {
-      await this.executeCustomSimulation();
-    });
+      if (this.btnExecuteSim) {
+        this.btnExecuteSim.addEventListener('click', async () => {
+          await this.executeCustomSimulation();
+        });
+      }
+    }
 
-    // Backend Settings Modal
+    // Ensure Backend Modal registration
+    this.initBackendModal();
+
+    // Export buttons
+    if (this.btnExportJson) {
+      this.btnExportJson.addEventListener('click', () => {
+        Exporter.exportJson(this.sim);
+      });
+    }
+
+    if (this.btnExportCsv) {
+      this.btnExportCsv.addEventListener('click', () => {
+        Exporter.exportCsv(this.sim);
+      });
+    }
+
+    // Upload custom trace
+    if (this.fileTraceUpload) {
+      this.fileTraceUpload.addEventListener('change', async e => {
+        const file = e.target.files[0];
+        if (file) {
+          const text = await file.text();
+          const events = SetuApi.parseJsonl(text);
+          this.sim.loadTrace(events);
+          this.timeline.setEvents();
+        }
+      });
+    }
+  }
+
+  initBackendModal() {
+    if (this.backendModalInitialized) return;
+    this.backendModalInitialized = true;
+
     const modalBackend = document.getElementById('modalBackendSettings');
     const btnOpenBackend = document.getElementById('btnOpenBackendModal');
     const btnCloseBackend = document.getElementById('btnCloseBackendModal');
@@ -366,90 +428,112 @@ class SetuDashboardApp {
     const lblEngineStatus = document.getElementById('lblBackendEngineStatus');
     const lblBackendSource = document.getElementById('lblBackendSource');
 
-    if (btnOpenBackend && modalBackend) {
-      btnOpenBackend.addEventListener('click', () => {
-        if (txtBackendUrl) txtBackendUrl.value = SetuApi.getBaseUrl();
-        if (lblBackendSource) {
-          const src = SetuApi.getSource();
-          const isOverride = SetuApi.isManualOverride();
-          lblBackendSource.textContent = `Source: ${src.toUpperCase()}${isOverride ? ' (Manual override active)' : ''}`;
-        }
-        if (lblEngineStatus) {
-          lblEngineStatus.textContent = '';
-        }
-        modalBackend.classList.add('active');
-        modalBackend.style.display = 'flex';
-      });
-
-      const closeBackendModal = () => {
-        modalBackend.classList.remove('active');
-        modalBackend.style.display = 'none';
-      };
-
-      if (btnCloseBackend) btnCloseBackend.addEventListener('click', closeBackendModal);
-
-      if (btnResetBackend) {
-        btnResetBackend.addEventListener('click', async () => {
-          if (lblEngineStatus) {
-            lblEngineStatus.textContent = 'Restoring default configuration...';
-            lblEngineStatus.style.color = '#38bdf8';
-          }
-          const defaultUrl = await SetuApi.clearManualOverride();
-          if (txtBackendUrl) txtBackendUrl.value = defaultUrl;
-          if (lblBackendSource) {
-            lblBackendSource.textContent = `Source: ${SetuApi.getSource().toUpperCase()} (Default restored)`;
-          }
-          if (lblEngineStatus) {
-            lblEngineStatus.textContent = defaultUrl ? 'Default backend restored' : 'No default backend URL configured';
-            lblEngineStatus.style.color = defaultUrl ? '#10b981' : '#f59e0b';
-          }
-          await this.loadInitialData();
-        });
-      }
-
-      if (btnTestBackend) {
-        btnTestBackend.addEventListener('click', async () => {
-          if (lblEngineStatus) {
-            lblEngineStatus.textContent = 'Testing connection...';
-            lblEngineStatus.style.color = '#38bdf8';
-          }
-          const candidate = (txtBackendUrl?.value || '').trim();
-          const result = await SetuApi.pingBackend(candidate);
-          if (lblEngineStatus) {
-            if (result.ok) {
-              const engine = result.data?.engine || 'FITL Simulator Core';
-              lblEngineStatus.textContent = `● Online: ${engine} (HTTP 200)`;
-              lblEngineStatus.style.color = '#10b981';
-            } else {
-              lblEngineStatus.textContent = `× Error: ${result.error || `HTTP ${result.status}`}`;
-              lblEngineStatus.style.color = '#ef4444';
-            }
-          }
-        });
-      }
-
-      if (btnSaveBackend) {
-        btnSaveBackend.addEventListener('click', async () => {
-          const url = (txtBackendUrl?.value || '').trim();
-          if (url) {
-            SetuApi.setManualOverride(url);
-          } else {
-            await SetuApi.clearManualOverride();
-          }
-          closeBackendModal();
-          await this.loadInitialData();
-        });
-      }
+    if (!modalBackend || !btnOpenBackend) {
+      console.warn('Backend modal elements not found in DOM');
+      return;
     }
 
-    // Export buttons
-    this.btnExportJson.addEventListener('click', () => {
-      Exporter.exportJson(this.sim);
+    const openBackendModal = () => {
+      if (txtBackendUrl) txtBackendUrl.value = SetuApi.getBaseUrl();
+      if (lblBackendSource) {
+        const src = SetuApi.getSource();
+        const isOverride = SetuApi.isManualOverride();
+        lblBackendSource.textContent = `Source: ${src.toUpperCase()}${isOverride ? ' (Manual override active)' : ''}`;
+      }
+      if (lblEngineStatus) {
+        const base = SetuApi.getBaseUrl();
+        lblEngineStatus.textContent = base ? `Active Target: ${base}` : 'No backend URL configured';
+        lblEngineStatus.style.color = '#94a3b8';
+      }
+      modalBackend.classList.add('active');
+      modalBackend.style.display = 'flex';
+    };
+
+    const closeBackendModal = () => {
+      modalBackend.classList.remove('active');
+      modalBackend.style.display = 'none';
+    };
+
+    // 1. Open Button
+    btnOpenBackend.addEventListener('click', openBackendModal);
+
+    // 2. Close Button (×)
+    if (btnCloseBackend) {
+      btnCloseBackend.addEventListener('click', closeBackendModal);
+    }
+
+    // 3. Click Backdrop Overlay to Close
+    modalBackend.addEventListener('click', e => {
+      if (e.target === modalBackend) {
+        closeBackendModal();
+      }
     });
 
-    this.btnExportCsv.addEventListener('click', () => {
-      Exporter.exportCsv(this.sim);
+    // 4. Escape Key to Close
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape' && modalBackend.classList.contains('active')) {
+        closeBackendModal();
+      }
     });
+
+    // 5. Test Connection Button
+    if (btnTestBackend) {
+      btnTestBackend.addEventListener('click', async () => {
+        const candidate = (txtBackendUrl?.value || '').trim();
+        if (lblEngineStatus) {
+          lblEngineStatus.textContent = `Testing /health at ${candidate || 'configured backend'}...`;
+          lblEngineStatus.style.color = '#38bdf8';
+        }
+        const result = await SetuApi.pingBackend(candidate);
+        if (lblEngineStatus) {
+          if (result.ok) {
+            const data = result.data || {};
+            const service = data.service || 'Backend Service';
+            const engine = data.engine || 'FITL Simulator Core';
+            const uptime = data.uptimeSeconds ? ` (uptime: ${data.uptimeSeconds}s)` : '';
+            lblEngineStatus.textContent = `● Online: ${service} / ${engine}${uptime} — HTTP 200`;
+            lblEngineStatus.style.color = '#10b981';
+          } else {
+            lblEngineStatus.textContent = `× Connection failed: ${result.error || `HTTP ${result.status}`}`;
+            lblEngineStatus.style.color = '#ef4444';
+          }
+        }
+      });
+    }
+
+    // 6. Save & Reconnect Button
+    if (btnSaveBackend) {
+      btnSaveBackend.addEventListener('click', async () => {
+        const url = (txtBackendUrl?.value || '').trim();
+        if (url) {
+          SetuApi.setManualOverride(url);
+        } else {
+          await SetuApi.clearManualOverride();
+        }
+        closeBackendModal();
+        await this.loadInitialData();
+      });
+    }
+
+    // 7. Reset to Default Button
+    if (btnResetBackend) {
+      btnResetBackend.addEventListener('click', async () => {
+        if (lblEngineStatus) {
+          lblEngineStatus.textContent = 'Clearing manual override & querying default...';
+          lblEngineStatus.style.color = '#38bdf8';
+        }
+        const defaultUrl = await SetuApi.clearManualOverride();
+        if (txtBackendUrl) txtBackendUrl.value = defaultUrl;
+        if (lblBackendSource) {
+          lblBackendSource.textContent = `Source: ${SetuApi.getSource().toUpperCase()} (Default restored)`;
+        }
+        if (lblEngineStatus) {
+          lblEngineStatus.textContent = defaultUrl ? `Default restored: ${defaultUrl}` : 'No environment default configured';
+          lblEngineStatus.style.color = defaultUrl ? '#10b981' : '#f59e0b';
+        }
+        await this.loadInitialData();
+      });
+    }
 
     // Upload custom trace
     this.fileTraceUpload.addEventListener('change', async e => {
@@ -1052,7 +1136,20 @@ class SetuDashboardApp {
   }
 }
 
-// Instantiate on DOM content loaded
-document.addEventListener('DOMContentLoaded', () => {
-  window.setuApp = new SetuDashboardApp();
-});
+export function initSetuApp() {
+  if (typeof window !== 'undefined') {
+    if (window.setuApp) return window.setuApp;
+    window.setuApp = new SetuDashboardApp();
+    return window.setuApp;
+  }
+  return null;
+}
+
+// Ensure the application initializes when DOM is available (handles loading, interactive, and complete states)
+if (typeof document !== 'undefined') {
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', initSetuApp);
+  } else {
+    initSetuApp();
+  }
+}

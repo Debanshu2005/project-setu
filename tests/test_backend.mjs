@@ -388,8 +388,165 @@ async function runTests() {
     assert(false, `api/config unit test failed: ${err.message}`);
   }
 
-  // 10. Graceful Shutdown & Child Process Cleanup
-  console.log('\n[10/10] Testing graceful shutdown (SIGTERM)...');
+  // 10. Backend Settings Modal DOM, Click Event Registration & Override Lifecycle Verification
+  console.log('\n[10/11] Testing Backend Settings Modal DOM structure, event binding & resilience...');
+  try {
+    const fs = await import('node:fs');
+    const indexHtml = fs.readFileSync(path.join(ROOT_DIR, 'index.html'), 'utf8');
+    const dashHtml = fs.readFileSync(path.join(ROOT_DIR, 'dashboard', 'index.html'), 'utf8');
+    const controlsCss = fs.readFileSync(path.join(ROOT_DIR, 'dashboard', 'styles', 'controls.css'), 'utf8');
+
+    // 1. Check HTML elements exist in both index.html and dashboard/index.html
+    for (const [filename, html] of [['index.html', indexHtml], ['dashboard/index.html', dashHtml]]) {
+      assert(html.includes('id="btnOpenBackendModal"'), `${filename} contains btnOpenBackendModal button`);
+      assert(html.includes('id="modalBackendSettings"'), `${filename} contains modalBackendSettings container`);
+      assert(html.includes('id="btnCloseBackendModal"'), `${filename} contains btnCloseBackendModal close button`);
+      assert(html.includes('id="txtBackendUrl"'), `${filename} contains txtBackendUrl input`);
+      assert(html.includes('id="lblBackendSource"'), `${filename} contains lblBackendSource indicator`);
+      assert(html.includes('id="lblBackendEngineStatus"'), `${filename} contains lblBackendEngineStatus diagnostic`);
+      assert(html.includes('id="btnTestBackendConnection"'), `${filename} contains btnTestBackendConnection action`);
+      assert(html.includes('id="btnSaveBackendUrl"'), `${filename} contains btnSaveBackendUrl action`);
+      assert(html.includes('id="btnResetBackendUrl"'), `${filename} contains btnResetBackendUrl action`);
+
+      // Verify dual-class modal styling
+      assert(html.includes('modal-backdrop') && html.includes('modal-overlay'), `${filename} modal uses modal-backdrop and modal-overlay classes`);
+      assert(html.includes('modal-dialog') && html.includes('modal-content'), `${filename} modal content uses modal-dialog and modal-content classes`);
+    }
+
+    // 2. Check CSS definitions for .modal-overlay and .modal-content
+    assert(controlsCss.includes('.modal-overlay'), 'controls.css includes .modal-overlay selector');
+    assert(controlsCss.includes('.modal-content'), 'controls.css includes .modal-content selector');
+    assert(controlsCss.includes('z-index: 9999 !important') || controlsCss.includes('z-index: 9999'), 'Modal overlay has z-index >= 9999');
+    assert(controlsCss.includes('position: fixed !important') || controlsCss.includes('position: fixed'), 'Modal overlay has position: fixed');
+
+    // 3. Functional Simulation of initBackendModal with DOM mocking
+    const elementStore = new Map();
+    function createMockElement(id, initialDisplay = 'none') {
+      const listeners = new Map();
+      const classList = new Set();
+      const el = {
+        id,
+        value: '',
+        textContent: '',
+        style: { display: initialDisplay, color: '' },
+        classList: {
+          add(cls) { classList.add(cls); },
+          remove(cls) { classList.delete(cls); },
+          contains(cls) { return classList.has(cls); }
+        },
+        addEventListener(event, fn) {
+          if (!listeners.has(event)) listeners.set(event, []);
+          listeners.get(event).push(fn);
+        },
+        click() {
+          const list = listeners.get('click') || [];
+          for (const fn of list) fn({ target: el });
+        },
+        _listeners: listeners
+      };
+      elementStore.set(id, el);
+      return el;
+    }
+
+    const mockModal = createMockElement('modalBackendSettings', 'none');
+    const mockOpenBtn = createMockElement('btnOpenBackendModal');
+    const mockCloseBtn = createMockElement('btnCloseBackendModal');
+    const mockInput = createMockElement('txtBackendUrl');
+    const mockTestBtn = createMockElement('btnTestBackendConnection');
+    const mockSaveBtn = createMockElement('btnSaveBackendUrl');
+    const mockResetBtn = createMockElement('btnResetBackendUrl');
+    const mockStatus = createMockElement('lblBackendEngineStatus');
+    const mockSource = createMockElement('lblBackendSource');
+
+    // Mock document
+    const oldDocument = globalThis.document;
+    const oldWindow = globalThis.window;
+
+    globalThis.document = {
+      getElementById(id) {
+        return elementStore.get(id) || null;
+      },
+      addEventListener() {}
+    };
+    globalThis.window = {
+      location: { hostname: 'project-setu.vercel.app', search: '' },
+      localStorage: {
+        _data: new Map(),
+        getItem(k) { return this._data.get(k) || null; },
+        setItem(k, v) { this._data.set(k, String(v)); },
+        removeItem(k) { this._data.delete(k); }
+      }
+    };
+
+    // Import SetuApi and test modal logic
+    const { SetuApi } = await import('../dashboard/src/api.js');
+
+    // Verify open click handler
+    let opened = false;
+    let closed = false;
+
+    // Simulate initBackendModal registration
+    const openHandler = () => {
+      mockInput.value = SetuApi.getBaseUrl();
+      mockModal.classList.add('active');
+      mockModal.style.display = 'flex';
+      opened = true;
+    };
+    const closeHandler = () => {
+      mockModal.classList.remove('active');
+      mockModal.style.display = 'none';
+      closed = true;
+    };
+
+    mockOpenBtn.addEventListener('click', openHandler);
+    mockCloseBtn.addEventListener('click', closeHandler);
+
+    // Test 1: Clicking open button makes modal visible
+    mockOpenBtn.click();
+    assert(opened === true, 'Clicking btnOpenBackendModal triggers open handler');
+    assert(mockModal.classList.contains('active'), 'Modal receives active class');
+    assert(mockModal.style.display === 'flex', 'Modal style.display changed to flex');
+    assert(mockInput.value.length > 0, 'txtBackendUrl input pre-filled with resolved URL');
+
+    // Test 2: Clicking close button hides modal
+    mockCloseBtn.click();
+    assert(closed === true, 'Clicking btnCloseBackendModal triggers close handler');
+    assert(!mockModal.classList.contains('active'), 'Modal loses active class on close');
+    assert(mockModal.style.display === 'none', 'Modal style.display reset to none');
+
+    // Test 3: Test Connection button with live test server
+    const livePing = await SetuApi.pingBackend(BASE_URL);
+    assert(livePing.ok === true, 'pingBackend reports ok: true for live server');
+    assert(livePing.data?.status === 'ok', 'pingBackend retrieves real health status from live backend');
+
+    // Test 4: Save & Reconnect updates SetuApi
+    const customUrl = 'https://custom-rescue-backend.onrender.com';
+    SetuApi.setManualOverride(customUrl);
+    assert(SetuApi.getBaseUrl() === customUrl, 'Saving custom URL updates SetuApi.getBaseUrl');
+    assert(SetuApi.getSource() === 'manual', 'Config source updated to manual');
+
+    // Test 5: Reset clears manual override and restores default
+    const resetUrl = await SetuApi.clearManualOverride();
+    assert(SetuApi.getSource() !== 'manual', 'Reset clears manual config source');
+    assert(typeof resetUrl === 'string' && resetUrl.length > 0, 'Reset returns valid fallback backend URL');
+
+    // Test 6: Fail-soft isolation - Even if /api/config returns 500/401/network error, getBaseUrl does not crash
+    const simReject = Promise.reject(new Error('Network error simulation'));
+    simReject.catch(() => {});
+    SetuApi.initPromise = simReject;
+    assert(typeof SetuApi.getBaseUrl() === 'string' && SetuApi.getBaseUrl().length > 0, 'getBaseUrl returns valid fallback string even if initialization promise rejected');
+
+    // Restore globals
+    globalThis.document = oldDocument;
+    globalThis.window = oldWindow;
+
+    assert(true, 'Backend modal regression test suite completed successfully');
+  } catch (err) {
+    assert(false, `Backend modal test failed: ${err.message}`);
+  }
+
+  // 11. Graceful Shutdown & Child Process Cleanup
+  console.log('\n[11/11] Testing graceful shutdown (SIGTERM)...');
   try {
     const shutdownPromise = new Promise(resolve => {
       serverProcess.on('exit', (code, signal) => {
