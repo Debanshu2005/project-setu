@@ -463,10 +463,12 @@ const server = http.createServer(async (req, res) => {
       await simManager.ensureStarted();
       const body = await parseBody(req);
       const kind = String(body.kind || 'short').replace('_', '-');
-      const mode = String(body.mode || 'immediate');
-      const delayMs = parseInt(body.delay_ms, 10) || 2000;
+      const delayMs = typeof body.delay_ms !== 'undefined' && !isNaN(parseInt(body.delay_ms, 10))
+        ? parseInt(body.delay_ms, 10)
+        : 0;
+      const mode = String(body.mode || (delayMs > 0 ? 'staggered' : 'immediate'));
       const result = await simManager.sendCommand({ cmd: 'trigger_all', kind, mode, delay_ms: delayMs });
-      return sendJson(res, 200, { success: true, result }, req);
+      return sendJson(res, 200, { success: true, result, t: simManager.simTime }, req);
     } catch (err) {
       return sendError(res, 500, err.message, req);
     }

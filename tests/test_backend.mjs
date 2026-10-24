@@ -209,6 +209,24 @@ async function runTests() {
     assert(resSummary.statusCode === 200, '/api/control/summary returns HTTP 200');
     assert(resSummary.json?.summary?.totals?.tx >= 1, `C++ World RF channel recorded real transmissions (${resSummary.json?.summary?.totals?.tx})`);
 
+    // Test Broadcast SOS (trigger_all)
+    console.log('\n    [Subtest] Testing Broadcast SOS (trigger_all across all survivors)...');
+    const resTriggerAll = await request('POST', '/api/control/trigger-all', {
+      kind: 'short',
+      delay_ms: 0
+    });
+    assert(resTriggerAll.statusCode === 200, '/api/control/trigger-all returns HTTP 200');
+    assert(resTriggerAll.json?.success === true, 'trigger_all registered by C++ engine');
+
+    // Step simulation time forward by 1200ms
+    const resStepAll = await request('POST', '/api/control/step', { ms: 1200 });
+    assert(resStepAll.statusCode === 200, 'Clock stepped forward for broadcast wave');
+
+    const resStateBroadcast = await request('GET', '/api/control/state');
+    const survivors = resStateBroadcast.json?.nodes.filter(n => n.role === 'survivor') || [];
+    const activeOrSent = survivors.filter(n => n.tx_sos >= 1);
+    assert(activeOrSent.length >= 3, `Broadcast SOS wave reached survivor nodes (transmitting count: ${activeOrSent.length}/${survivors.length})`);
+
     // Reset simulator
     const resReset = await request('POST', '/api/control/reset');
     assert(resReset.statusCode === 200 && resReset.json?.success === true, 'C++ engine reset cleanly');

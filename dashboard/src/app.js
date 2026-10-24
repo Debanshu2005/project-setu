@@ -122,16 +122,47 @@ class SetuDashboardApp {
 
     // Inspector node trigger handler (C++ IPC)
     this.inspector.onTrigger = async (nodeId, kind) => {
-      if (this.mode === 'live') {
-        try {
-          this.elStatusText.textContent = `TRIGGERING NODE ${nodeId} (${kind.toUpperCase()})...`;
-          await SetuApi.triggerNode(nodeId, kind);
-          this.elStatusText.textContent = `NODE ${nodeId} SOS DISPATCHED (${kind.toUpperCase()})`;
-        } catch (err) {
-          alert(`Trigger failed: ${err.message}`);
+      // 1. If currently in replay mode, auto-switch to live digital twin mode
+      if (this.mode !== 'live') {
+        this.toggleOperatingMode();
+      }
+
+      try {
+        // 2. Immediately mark local node state for instant visual feedback on canvas
+        const tn = this.sim.nodes.get(nodeId);
+        if (tn) {
+          tn.active_sos = true;
+          tn.active = true;
+          tn.acked = false;
+          tn.gave_up = false;
+          if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
+            this.inspector.inspectNode(tn);
+          }
         }
-      } else {
-        alert(`Node ${nodeId} trigger requested in replay mode. Switch to LIVE DIGITAL TWIN to execute native triggers.`);
+        this.topo.render();
+        this.updateMetrics();
+
+        this.elStatusText.textContent = `TRIGGERING NODE ${nodeId} (${kind.toUpperCase()})...`;
+        await SetuApi.triggerNode(nodeId, kind);
+
+        // 3. Ensure engine is running continuous simulation or step clock so FreeRTOS queues drain
+        if (!this.isEngineRunning) {
+          await SetuApi.startControl();
+          this.isEngineRunning = true;
+          this.updatePlayButton();
+        }
+
+        // 4. Step clock forward by 1000ms so the 150ms press + 600ms double-click debounce window elapses and LoRa RF packets transmit
+        await SetuApi.stepControl(1000);
+
+        this.elStatusText.textContent = `NODE ${nodeId} SOS ACTIVE (${kind.toUpperCase()}) — LORA PACKETS PROPAGATING`;
+        await this.syncLiveEngineState();
+        const updated = this.sim.nodes.get(nodeId);
+        if (updated && this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
+          this.inspector.inspectNode(updated);
+        }
+      } catch (err) {
+        alert(`Trigger failed: ${err.message}`);
       }
     };
 
@@ -450,8 +481,15 @@ class SetuDashboardApp {
         if (this.mode !== 'live') return;
         this.handleLiveEngineEvent(eventData);
       },
+      statusData => {
+        if (this.mode !== 'live') return;
+        if (statusData && typeof statusData.running === 'boolean') {
+          this.isEngineRunning = statusData.running;
+          this.updatePlayButton();
+        }
+      },
       err => {
-        console.warn('SSE stream error:', err);
+        console.warn('SSE stream notice:', err);
       }
     );
   }
@@ -461,14 +499,14 @@ class SetuDashboardApp {
 
     if (ev.ev === 'status') {
       this.isEngineRunning = !!ev.running;
-      this.sim.currentTime = ev.time_ms || 0;
+      this.sim.currentTime = ev.time_ms || ev.t || 0;
       this.updatePlayButton();
       this.updateScrubber();
       return;
     }
 
     if (ev.ev === 'state') {
-      this.sim.currentTime = ev.time_ms || 0;
+      this.sim.currentTime = ev.time_ms || ev.t || 0;
       if (Array.isArray(ev.nodes)) {
         for (const n of ev.nodes) {
           const existing = this.sim.nodes.get(n.id);
@@ -492,7 +530,7 @@ class SetuDashboardApp {
       return;
     }
 
-    // Trace events: tx, rx, drop, dedup, ack, suppress, sos, retry
+    // Trace events: tx, rx, drop, dedup, ack, suppress, sos, retry, alert, haptic, button_down
     this.sim.events.push(ev);
     this.sim.currentTime = ev.t || this.sim.currentTime;
 
@@ -501,20 +539,54 @@ class SetuDashboardApp {
       const na = this.sim.nodes.get(ev.node);
       if (na) {
         na.stats.tx++;
-        if (!ev.ack) na.active_sos = true;
+        if (ev.ack) {
+          // ACK transmission from Hub or Relay
+          const target = this.sim.nodes.get(ev.target);
+          if (target) {
+            target.ack_received = true;
+            target.acked = true;
+            target.active_sos = false;
+            target.active = false;
+          }
+        } else {
+          na.active_sos = true;
+          na.active = true;
+          na.acked = false;
+        }
+        if (typeof ev.seq === 'number') na.seq = ev.seq;
+        if (typeof ev.battery === 'number') na.battery = ev.battery;
       }
     } else if (ev.ev === 'rx') {
-      const nb = this.sim.nodes.get(ev.to);
+      const rxId = ev.node !== undefined ? ev.node : ev.to;
+      const nb = this.sim.nodes.get(rxId);
       if (nb) nb.stats.rx++;
-      if (ev.ack) {
-        const orig = this.sim.nodes.get(ev.orig);
-        if (orig) {
-          orig.ack_received = true;
-          orig.active_sos = false;
+    } else if (ev.ev === 'alert') {
+      // Hub sink alert delivery
+      this.sim.alerts.push(ev);
+      if (this.console && typeof this.console.renderAlerts === 'function') {
+        this.console.renderAlerts();
+      }
+    } else if (ev.ev === 'haptic') {
+      // Haptic confirmation (pattern 3 = AckReceived)
+      if (ev.pattern === 3) {
+        const survivor = this.sim.nodes.get(ev.node);
+        if (survivor) {
+          survivor.ack_received = true;
+          survivor.acked = true;
+          survivor.active_sos = false;
+          survivor.active = false;
         }
       }
+    } else if (ev.ev === 'button_down') {
+      const survivor = this.sim.nodes.get(ev.node);
+      if (survivor) {
+        survivor.active_sos = true;
+        survivor.active = true;
+        survivor.acked = false;
+      }
     } else if (ev.ev === 'drop') {
-      const nb = this.sim.nodes.get(ev.to);
+      const dropId = ev.node !== undefined ? ev.node : ev.to;
+      const nb = this.sim.nodes.get(dropId);
       if (nb) nb.stats.drop++;
     } else if (ev.ev === 'dedup') {
       const nn = this.sim.nodes.get(ev.node);
@@ -530,6 +602,12 @@ class SetuDashboardApp {
     // Clean up finished packet rings
     const curT = this.sim.currentTime;
     this.sim.activePackets = this.sim.activePackets.filter(p => (curT - p.t) < (p.air || 65) + 300);
+
+    // Update inspector if inspecting affected node
+    if (this.inspector && this.inspector.selectedNode &&
+        (this.inspector.selectedNode.id === ev.node || this.inspector.selectedNode.id === ev.origin || this.inspector.selectedNode.id === ev.target)) {
+      this.inspector.renderNode();
+    }
 
     // Update timeline and metrics
     this.timeline.setEvents();
@@ -601,6 +679,9 @@ class SetuDashboardApp {
         this.topo.fitToScreen();
         this.topo.render();
         this.updateMetrics();
+        if (this.console && typeof this.console.populateSurvivors === 'function') {
+          this.console.populateSurvivors();
+        }
       }
     } catch (err) {
       console.warn('Could not sync live engine state:', err);
@@ -608,19 +689,48 @@ class SetuDashboardApp {
   }
 
   async executeTriggerAllSurvivors(kind, jitter) {
-    if (this.mode === 'live') {
-      try {
-        this.elStatusDot.classList.add('simulating');
-        this.elStatusText.textContent = `TRIGGERING ALL SURVIVOR NODES (${kind.toUpperCase()}, JITTER ±${jitter}ms)...`;
-        const res = await SetuApi.triggerAll(kind, jitter);
-        this.elStatusDot.classList.remove('simulating');
-        this.elStatusText.textContent = `BROADCAST COMPLETED: ${res.triggered_count || 'ALL'} SURVIVOR NODES TRIGGERED`;
-      } catch (err) {
-        alert(`Trigger All failed: ${err.message}`);
-        this.elStatusDot.classList.remove('simulating');
+    // 1. Auto-switch to live digital twin mode if in replay mode
+    if (this.mode !== 'live') {
+      this.toggleOperatingMode();
+    }
+
+    try {
+      this.elStatusDot.classList.add('simulating');
+      this.elStatusText.textContent = `BROADCASTING EMERGENCY WAVE (${kind.toUpperCase()}, JITTER ±${jitter}ms)...`;
+
+      // 2. Immediately mark all survivor nodes as active SOS for instant visual feedback on canvas
+      let survivorCount = 0;
+      for (const [, n] of this.sim.nodes) {
+        if (n.role === 'survivor' && n.online) {
+          n.active_sos = true;
+          n.active = true;
+          n.acked = false;
+          n.gave_up = false;
+          survivorCount++;
+        }
       }
-    } else {
-      alert(`Trigger All requested in Replay Mode. Switch to LIVE DIGITAL TWIN to trigger C++ engine.`);
+      this.topo.render();
+      this.updateMetrics();
+
+      // 3. Dispatch broadcast trigger to C++ engine
+      const res = await SetuApi.triggerAll(kind, jitter);
+
+      // 4. Ensure engine is running continuous simulation so packets ripple across the mesh
+      if (!this.isEngineRunning) {
+        await SetuApi.startControl();
+        this.isEngineRunning = true;
+        this.updatePlayButton();
+      }
+
+      // Step forward by at least 1000ms (or jitter + 1000ms) so button release and double-gap elapse
+      await SetuApi.stepControl(Math.max(1000, jitter + 1000));
+
+      this.elStatusDot.classList.remove('simulating');
+      this.elStatusText.textContent = `BROADCAST COMPLETE: ${survivorCount} SURVIVORS ACTIVE — PROPAGATING LORA MESH WAVE`;
+      await this.syncLiveEngineState();
+    } catch (err) {
+      alert(`Trigger All failed: ${err.message}`);
+      this.elStatusDot.classList.remove('simulating');
     }
   }
 
@@ -731,6 +841,9 @@ class SetuDashboardApp {
     this.topo.fitToScreen();
     this.topo.render();
     this.updateMetrics();
+    if (this.console && typeof this.console.populateSurvivors === 'function') {
+      this.console.populateSurvivors();
+    }
   }
 
   async loadScenario(scenarioId) {
@@ -837,10 +950,12 @@ class SetuDashboardApp {
   }
 
   handleInjectTrigger(tr) {
-    if (this.mode === 'live') {
-      SetuApi.triggerNode(tr.node, tr.kind);
+    const nodeId = parseInt(tr.node || tr.id, 10);
+    const kind = String(tr.kind || 'short');
+    if (this.inspector && typeof this.inspector.onTrigger === 'function') {
+      this.inspector.onTrigger(nodeId, kind);
     } else {
-      alert(`SOS Trigger Injected on Survivor Node ${tr.node} (${tr.kind.toUpperCase()}). In replay mode, seek or configure this in scenario settings.`);
+      SetuApi.triggerNode(nodeId, kind);
     }
   }
 }

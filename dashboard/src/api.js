@@ -215,12 +215,15 @@ export class SetuApi {
   }
 
   static async triggerAll(payload = {}, jitter = 0) {
-    const body = typeof payload === 'string'
-      ? { kind: payload.replace('_', '-'), mode: jitter > 0 ? 'staggered' : 'immediate', delay_ms: jitter }
-      : {
-          ...payload,
-          kind: String(payload.kind || 'short').replace('_', '-')
-        };
+    const delay = typeof payload === 'string'
+      ? (typeof jitter === 'number' ? jitter : parseInt(jitter, 10) || 0)
+      : (typeof payload.delay_ms !== 'undefined' ? (parseInt(payload.delay_ms, 10) || 0) : (parseInt(jitter, 10) || 0));
+    const kind = typeof payload === 'string'
+      ? payload.replace('_', '-')
+      : String(payload.kind || 'short').replace('_', '-');
+    const mode = delay > 0 ? 'staggered' : 'immediate';
+
+    const body = { kind, mode, delay_ms: delay };
     const res = await fetch(`${this.getBaseUrl()}/api/control/trigger-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
