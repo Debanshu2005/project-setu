@@ -5,7 +5,7 @@
   "buildCommand": null,
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
-    { "source": "/", "destination": "/dashboard/index.html" },
+    { "source": "/dashboard", "destination": "/index.html" },
     { "source": "/dashboard/(.*)", "destination": "/dashboard/$1" },
     { "source": "/styles/(.*)", "destination": "/dashboard/styles/$1" },
     { "source": "/src/(.*)", "destination": "/dashboard/src/$1" },
