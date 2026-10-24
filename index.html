@@ -40,10 +40,24 @@
         <select class="select-input" id="scenarioSelect" style="width: 220px;" aria-label="Select disaster scenario"></select>
       </div>
 
+      <!-- Mode Switch -->
+      <button class="btn" id="btnToggleMode" style="border: 1px solid var(--cyan-main); color: var(--cyan-main);" title="Switch between Interactive Live Engine and Scenario Trace Replay">
+        ⚡ LIVE DIGITAL TWIN
+      </button>
+
+      <!-- Trigger All Survivors -->
+      <button class="btn" id="btnOpenTriggerAllModal" style="background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5; font-weight: 700;" title="Trigger all online survivor wristbands simultaneously">
+        🚨 Trigger All Survivors
+      </button>
+
       <!-- Action Buttons -->
       <button class="btn btn-primary" id="btnOpenRunModal">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
         Run Simulation
+      </button>
+
+      <button class="btn" id="btnOpenBackendModal" title="Configure persistent simulation backend URL (FITL Engine)" style="border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399;">
+        ⚡ Backend
       </button>
 
       <button class="btn" id="btnExportJson" title="Export simulation metrics to JSON">Export JSON</button>
@@ -260,6 +274,81 @@
       <div class="modal-footer">
         <button class="btn" id="btnCancelModal">Cancel</button>
         <button class="btn btn-primary" id="btnExecuteSim">Run Simulator</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Trigger All Survivors Schedule -->
+  <div class="modal-backdrop" id="modalTriggerAll" role="dialog" aria-modal="true" aria-labelledby="modalTriggerAllTitle">
+    <div class="modal-dialog" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3 id="modalTriggerAllTitle">Trigger All Survivor Nodes</h3>
+        <button class="modal-close-btn" id="btnCloseTriggerAllModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+          Broadcasts simultaneous emergency SOS triggers across every eligible online survivor node in the mesh network to test LoRa congestion, packet collision capture, relay queue pressure, and hub acknowledgment delivery.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div>
+            <label class="form-label"><span>Emergency Classification:</span></label>
+            <select class="form-input" id="selTriggerAllKind">
+              <option value="short" selected>Short Press (General Disaster SOS)</option>
+              <option value="double">Double Press (Urgent Medical SOS)</option>
+              <option value="long">Long Press (Trapped Under Debris SOS)</option>
+              <option value="voice">Voice Command ("Setu Rescue")</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="form-label"><span>Concurrency Schedule & Delay Jitter:</span></label>
+            <select class="form-input" id="selTriggerAllJitter">
+              <option value="0" selected>0 ms (Simultaneous Wave - Maximum Collision Stress)</option>
+              <option value="500">±500 ms (Tight Packet Burst)</option>
+              <option value="2000">±2000 ms (2-Second Evacuation Dispersion)</option>
+              <option value="5000">±5000 ms (5-Second Disaster Scenario)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnCancelTriggerAll">Cancel</button>
+        <button class="btn btn-primary" id="btnConfirmTriggerAll" style="background: #ef4444; border-color: #ef4444; color: #fff;">
+          Broadcast SOS Wave
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backend Settings Modal -->
+  <div class="modal-overlay" id="modalBackendSettings" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>⚡ Firmware-In-The-Loop Backend Service</h3>
+        <button class="modal-close-btn" id="btnCloseBackendModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+          Project Setu executes the authoritative C++ firmware core (<code style="color:var(--cyan-main);">setu::Node</code>, FreeRTOS queue tasks, SX1262 ISRs) inside a persistent simulation engine. When viewing on Vercel, connect this dashboard to your persistent backend daemon.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div>
+            <label class="form-label"><span>Backend Target URL (REST / SSE):</span></label>
+            <input type="text" class="form-input" id="txtBackendUrl" placeholder="http://localhost:3000 (default) or https://your-server.com" />
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Leave empty for auto-detect (same origin or local port 3000 bridge).</div>
+          </div>
+
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); font-size: 11px;">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 4px;">Active Engine Mode</div>
+            <div id="lblBackendEngineStatus" style="color: #10b981;">● Native C++ FITL Daemon (FreeRTOS Queues Active)</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnTestBackendConnection">Test Connection</button>
+        <button class="btn btn-primary" id="btnSaveBackendUrl">Save & Reconnect</button>
       </div>
     </div>
   </div>

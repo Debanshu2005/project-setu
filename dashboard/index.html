@@ -56,6 +56,10 @@
         Run Simulation
       </button>
 
+      <button class="btn" id="btnOpenBackendModal" title="Configure persistent simulation backend URL (FITL Engine)" style="border: 1px solid rgba(16, 185, 129, 0.4); color: #34d399;">
+        ⚡ Backend
+      </button>
+
       <button class="btn" id="btnExportJson" title="Export simulation metrics to JSON">Export JSON</button>
       <button class="btn" id="btnExportCsv" title="Export node telemetry to CSV">Export CSV</button>
 
@@ -313,6 +317,38 @@
         <button class="btn btn-primary" id="btnConfirmTriggerAll" style="background: #ef4444; border-color: #ef4444; color: #fff;">
           Broadcast SOS Wave
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Backend Settings Modal -->
+  <div class="modal-overlay" id="modalBackendSettings" style="display:none;" role="dialog" aria-modal="true">
+    <div class="modal-content" style="max-width: 480px;">
+      <div class="modal-header">
+        <h3>⚡ Firmware-In-The-Loop Backend Service</h3>
+        <button class="modal-close-btn" id="btnCloseBackendModal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+          Project Setu executes the authoritative C++ firmware core (<code style="color:var(--cyan-main);">setu::Node</code>, FreeRTOS queue tasks, SX1262 ISRs) inside a persistent simulation engine. When viewing on Vercel, connect this dashboard to your persistent backend daemon.
+        </p>
+
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          <div>
+            <label class="form-label"><span>Backend Target URL (REST / SSE):</span></label>
+            <input type="text" class="form-input" id="txtBackendUrl" placeholder="http://localhost:3000 (default) or https://your-server.com" />
+            <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Leave empty for auto-detect (same origin or local port 3000 bridge).</div>
+          </div>
+
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); font-size: 11px;">
+            <div style="font-weight: 700; color: #38bdf8; margin-bottom: 4px;">Active Engine Mode</div>
+            <div id="lblBackendEngineStatus" style="color: #10b981;">● Native C++ FITL Daemon (FreeRTOS Queues Active)</div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn" id="btnTestBackendConnection">Test Connection</button>
+        <button class="btn btn-primary" id="btnSaveBackendUrl">Save & Reconnect</button>
       </div>
     </div>
   </div>

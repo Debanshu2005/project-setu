@@ -178,6 +178,19 @@ export class InspectorComponent {
           <tr><td class="field-name">Retries Attempted:</td><td class="field-val">${n.stats.retries}</td></tr>
         </table>
       </div>
+
+      <div class="wire-breakdown-card" style="border-color: rgba(16, 185, 129, 0.4); background: rgba(6, 78, 59, 0.15);">
+        <div class="wire-header" style="color: #34d399; font-weight: 700;">
+          <span>⚡ FreeRTOS Tasks & Queues (FITL)</span>
+        </div>
+        <table class="field-table">
+          <tr><td class="field-name">Button ISR Queue (Cap 16):</td><td class="field-val"><strong style="color: #38bdf8;">${n.button_q !== undefined ? n.button_q : 0} / 16</strong> ${n.button_q_ovf > 0 ? `<span style="color: #ef4444;">(${n.button_q_ovf} dropped)</span>` : ''}</td></tr>
+          <tr><td class="field-name">Radio RX Queue (Cap 8):</td><td class="field-val"><strong style="color: #38bdf8;">${n.radio_q !== undefined ? n.radio_q : 0} / 8</strong> ${n.radio_q_ovf > 0 ? `<span style="color: #ef4444;">(${n.radio_q_ovf} dropped)</span>` : ''}</td></tr>
+          <tr><td class="field-name">Firmware State:</td><td class="field-val" style="color:${n.acked ? '#34d399' : n.active ? '#f59e0b' : '#94a3b8'}">${n.acked ? 'ACK_RECEIVED (Confirmed)' : n.active ? 'SOS_TRANSMITTING (Retry Loop)' : 'IDLE / STANDBY'}</td></tr>
+          <tr><td class="field-name">Sequence Counter (seq):</td><td class="field-val">${n.seq !== undefined ? n.seq : 0}</td></tr>
+          <tr><td class="field-name">Airtime Duty Used:</td><td class="field-val">${n.duty_used_ms !== undefined ? n.duty_used_ms : 0} ms</td></tr>
+        </table>
+      </div>
     `;
 
     // Attach Interactive Event Handlers

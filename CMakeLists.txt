@@ -20,7 +20,7 @@ target_include_directories(setu_core PUBLIC shared/include)
 
 # Native RF/world simulator that runs the real core on many virtual nodes.
 add_library(setu_world STATIC simulation/native/world.cpp)
-target_include_directories(setu_world PUBLIC simulation/native)
+target_include_directories(setu_world PUBLIC simulation/native firmware/esp32s3/include)
 target_link_libraries(setu_world PUBLIC setu_core)
 
 add_executable(setu_sim simulation/native/main.cpp)
@@ -29,9 +29,10 @@ target_link_libraries(setu_sim PRIVATE setu_world)
 enable_testing()
 add_executable(setu_unit_tests
   tests/unit/test_main.cpp tests/unit/test_packet.cpp tests/unit/test_button.cpp
-  tests/unit/test_misc.cpp tests/unit/test_node.cpp tests/unit/test_firmware_mocks.cpp)
+  tests/unit/test_misc.cpp tests/unit/test_node.cpp tests/unit/test_firmware_mocks.cpp
+  tests/unit/test_firmware_in_the_loop.cpp)
 target_include_directories(setu_unit_tests PRIVATE firmware/esp32s3/include)
-target_link_libraries(setu_unit_tests PRIVATE setu_core)
+target_link_libraries(setu_unit_tests PRIVATE setu_core setu_world)
 add_test(NAME unit COMMAND setu_unit_tests)
 
 add_executable(setu_integration_tests tests/integration/test_mesh.cpp tests/unit/test_main.cpp)

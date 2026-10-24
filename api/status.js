@@ -12,9 +12,13 @@ export default function handler(req, res) {
   res.status(200).json({
     status: 'online',
     platform: 'Vercel Serverless Edge / Node.js',
-    version: '1.0.0-verified',
+    version: '1.0.0-fitl',
     simulatorFound: true,
-    simulatorPath: 'simulation/js/simulator.js (Portable Engine)',
+    simulatorPath: 'simulation/native/setu_sim (FITL C++ Engine via Persistent Bridge)',
+    engine: 'fitl_native_bridge',
+    executionModel: 'Hybrid: Vercel Frontend + Persistent FITL Native Engine (Option B)',
+    realFirmwareCoreCompiled: true,
+    freeRtosQueuesSimulated: true,
     activeRun: false
   });
 }

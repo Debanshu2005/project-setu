@@ -110,6 +110,10 @@ void print_node_state(const World& w) {
               << ",\"gave_up\":" << (inf.gave_up ? "true" : "false")
               << ",\"seq\":" << inf.seq
               << ",\"duty_used_ms\":" << inf.duty_used_ms
+              << ",\"button_q\":" << inf.button_queue_depth
+              << ",\"radio_q\":" << inf.radio_queue_depth
+              << ",\"button_q_ovf\":" << inf.button_queue_overflows
+              << ",\"radio_q_ovf\":" << inf.radio_queue_overflows
               << ",\"tx_sos\":" << inf.stats.tx_sos
               << ",\"tx_relay\":" << inf.stats.tx_relay
               << ",\"tx_ack\":" << inf.stats.tx_ack
@@ -198,6 +202,11 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
         continue;
       }
       std::cout << "{\"ok\":true,\"cmd\":\"trigger\",\"node\":" << id << ",\"kind\":\"" << kind << "\"}\n" << std::flush;
+    } else if (cmd == "button_isr") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
+      bool pressed = json_get_bool(line, "pressed", true);
+      w->firmware_button_isr(id, pressed);
+      std::cout << "{\"ok\":true,\"cmd\":\"button_isr\",\"node\":" << id << ",\"pressed\":" << (pressed ? "true" : "false") << "}\n" << std::flush;
     } else if (cmd == "trigger_all") {
       std::string kind = json_get_str(line, "kind");
       if (kind.empty()) kind = "short";

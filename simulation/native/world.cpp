@@ -12,6 +12,7 @@
 #include <stdexcept>
 
 #include "setu/duty_cycle.hpp"
+#include "firmware_task_node.hpp"
 
 namespace sim {
 namespace {
@@ -38,6 +39,43 @@ struct World::SimNode {
   uint8_t battery = 100;
   std::mt19937 rng;
   std::normal_distribution<double> gauss{0.0, 1.0};
+
+  // Virtual FreeRTOS Queues (matching app_main.cpp)
+  setu::fitl::VirtualQueue<setu::fitl::ButtonEvent, 16> button_queue;
+  setu::fitl::VirtualQueue<setu::fitl::RadioRxEvent, 8> radio_queue;
+
+  void simulate_button_isr(uint32_t at_ms, bool pressed) {
+    button_queue.send_from_isr({at_ms, pressed});
+  }
+
+  void simulate_radio_isr(const uint8_t* data, size_t len, int16_t rssi, int8_t snr) {
+    setu::fitl::RadioRxEvent evt;
+    if (len > setu::kPacketSize) len = setu::kPacketSize;
+    std::memcpy(evt.buffer, data, len);
+    evt.length = len;
+    evt.rssi = rssi;
+    evt.snr = snr;
+    radio_queue.send_from_isr(evt);
+  }
+
+  void drain_queues_and_tick() {
+    // 1. Radio RX task: drain radio queue and deliver to firmware core
+    setu::fitl::RadioRxEvent rx;
+    while (radio_queue.receive(rx)) {
+      if (rx.length == setu::kPacketSize) {
+        node->on_radio_rx(rx.buffer, rx.length);
+      }
+    }
+
+    // 2. Core protocol task: drain button events from GPIO ISR queue
+    setu::fitl::ButtonEvent btn;
+    while (button_queue.receive(btn)) {
+      node->on_button_edge(btn.is_pressed);
+    }
+
+    // 3. Advance authoritative tick
+    node->tick();
+  }
 
   struct Clock : setu::IClock {
     SimNode& n;
@@ -225,11 +263,29 @@ void World::block_link(uint16_t a, uint16_t b, bool blocked) {
 }
 void World::schedule(uint32_t at, std::function<void()> fn) { actions_.emplace(at, std::move(fn)); }
 
+void World::firmware_button_isr(uint16_t id, bool pressed) {
+  auto it = nodes_.find(id);
+  if (it == nodes_.end() || !it->second->online) return;
+  it->second->simulate_button_isr(now_, pressed);
+  char b[48];
+  std::snprintf(b, sizeof b, ",\"edge\":%s,\"queue_depth\":%zu", pressed ? "1" : "0", it->second->button_queue.size());
+  trace_event("gpio_btn_isr", id, b);
+}
+
+void World::firmware_radio_isr(uint16_t receiver_id, const uint8_t* data, size_t len, int16_t rssi, int8_t snr) {
+  auto it = nodes_.find(receiver_id);
+  if (it == nodes_.end() || !it->second->online) return;
+  it->second->simulate_radio_isr(data, len, rssi, snr);
+  char b[48];
+  std::snprintf(b, sizeof b, ",\"queue_depth\":%zu", it->second->radio_queue.size());
+  trace_event("radio_dio1_isr", receiver_id, b);
+}
+
 void World::button_press(uint16_t id, uint32_t at, uint32_t hold) {
   schedule(at, [this, id] {
     if (nodes_.at(id)->online) {
       trace_event("button_down", id);
-      node(id).on_button_edge(true);
+      firmware_button_isr(id, true);
     }
   });
   schedule(at + hold, [this, id, hold] {
@@ -237,7 +293,7 @@ void World::button_press(uint16_t id, uint32_t at, uint32_t hold) {
       char b[48];
       std::snprintf(b, sizeof b, ",\"hold_ms\":%u", hold);
       trace_event("button_up", id, b);
-      node(id).on_button_edge(false);
+      firmware_button_isr(id, false);
     }
   });
 }
@@ -388,7 +444,9 @@ void World::finish_tx(const Tx& tx) {
     counters_.delivered++;
     std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f", tx.from, rssi);
     trace_event("rx", r, b);
-    kv.second->node->on_radio_rx(tx.data.data(), tx.data.size());
+    firmware_radio_isr(r, tx.data.data(), tx.data.size(),
+                       static_cast<int16_t>(std::lround(rssi)),
+                       static_cast<int8_t>(std::clamp(static_cast<int>(rssi - sens_), -20, 20)));
   }
 }
 
@@ -400,9 +458,9 @@ void World::run_until(uint32_t t_end) {
       it = actions_.erase(it);
       fn();
     }
-    // 2. every online device runs one tick of the real firmware logic
+    // 2. every online device drains virtual FreeRTOS queues and runs real firmware tick
     for (auto& kv : nodes_)
-      if (kv.second->online) kv.second->node->tick();
+      if (kv.second->online) kv.second->drain_queues_and_tick();
     // 3. transmissions that end now are delivered
     std::vector<Tx> done;
     for (auto& t : txs_)
@@ -493,6 +551,10 @@ SimNodeInfo World::get_node_info(uint16_t id) const {
   info.seq = n.node->seq();
   info.duty_used_ms = n.node->duty_used_ms();
   info.stats = n.node->stats();
+  info.button_queue_depth = n.button_queue.size();
+  info.radio_queue_depth = n.radio_queue.size();
+  info.button_queue_overflows = n.button_queue.overflow_count();
+  info.radio_queue_overflows = n.radio_queue.overflow_count();
   return info;
 }
 

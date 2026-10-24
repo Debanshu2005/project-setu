@@ -316,6 +316,56 @@ class SetuDashboardApp {
       await this.executeCustomSimulation();
     });
 
+    // Backend Settings Modal
+    const modalBackend = document.getElementById('modalBackendSettings');
+    const btnOpenBackend = document.getElementById('btnOpenBackendModal');
+    const btnCloseBackend = document.getElementById('btnCloseBackendModal');
+    const txtBackendUrl = document.getElementById('txtBackendUrl');
+    const btnTestBackend = document.getElementById('btnTestBackendConnection');
+    const btnSaveBackend = document.getElementById('btnSaveBackendUrl');
+    const lblEngineStatus = document.getElementById('lblBackendEngineStatus');
+
+    if (btnOpenBackend && modalBackend) {
+      btnOpenBackend.addEventListener('click', () => {
+        if (txtBackendUrl) txtBackendUrl.value = SetuApi.getBaseUrl();
+        modalBackend.classList.add('active');
+        modalBackend.style.display = 'flex';
+      });
+
+      const closeBackendModal = () => {
+        modalBackend.classList.remove('active');
+        modalBackend.style.display = 'none';
+      };
+
+      if (btnCloseBackend) btnCloseBackend.addEventListener('click', closeBackendModal);
+
+      if (btnTestBackend) {
+        btnTestBackend.addEventListener('click', async () => {
+          lblEngineStatus.textContent = 'Testing connection...';
+          lblEngineStatus.style.color = '#38bdf8';
+          const prev = SetuApi.getBaseUrl();
+          if (txtBackendUrl) SetuApi.setBaseUrl(txtBackendUrl.value);
+          const st = await SetuApi.getStatus();
+          if (st.status === 'online') {
+            lblEngineStatus.textContent = `● Online: ${st.platform || 'Native Bridge'} (${st.version || 'FITL'})`;
+            lblEngineStatus.style.color = '#10b981';
+          } else {
+            lblEngineStatus.textContent = `× Error: ${st.error || 'Connection Failed'}`;
+            lblEngineStatus.style.color = '#ef4444';
+          }
+          SetuApi.setBaseUrl(prev);
+        });
+      }
+
+      if (btnSaveBackend) {
+        btnSaveBackend.addEventListener('click', async () => {
+          if (txtBackendUrl) SetuApi.setBaseUrl(txtBackendUrl.value);
+          closeBackendModal();
+          await this.loadInitialData();
+        });
+      }
+    }
+
     // Export buttons
     this.btnExportJson.addEventListener('click', () => {
       Exporter.exportJson(this.sim);
@@ -503,13 +553,29 @@ class SetuDashboardApp {
             y: n.y,
             battery: n.battery,
             online: n.online,
-            active_sos: n.active_sos,
-            ack_received: false,
-            gnss_on: n.gnss_on,
-            dr_on: n.dr_on,
+            active_sos: n.active,
+            ack_received: n.acked,
+            active: n.active,
+            acked: n.acked,
+            gave_up: n.gave_up,
+            seq: n.seq,
+            duty_used_ms: n.duty_used_ms,
+            button_q: n.button_q !== undefined ? n.button_q : 0,
+            radio_q: n.radio_q !== undefined ? n.radio_q : 0,
+            button_q_ovf: n.button_q_ovf !== undefined ? n.button_q_ovf : 0,
+            radio_q_ovf: n.radio_q_ovf !== undefined ? n.radio_q_ovf : 0,
+            gnss_on: n.gnss !== undefined ? n.gnss : true,
+            dr_on: n.dr !== undefined ? n.dr : true,
             lat_e6: n.lat_e6,
             lon_e6: n.lon_e6,
-            stats: n.stats || { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
+            stats: {
+              tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
+              rx: n.rx_total || 0,
+              drop: 0,
+              dedup: n.rx_dup || 0,
+              suppressed: n.relay_suppressed || 0,
+              retries: n.retries || 0
+            }
           });
         }
         if (cState.links && cState.links.length > 0) {

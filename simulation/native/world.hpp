@@ -57,6 +57,10 @@ struct SimNodeInfo {
   bool gave_up = false;
   uint16_t seq = 0;
   uint32_t duty_used_ms = 0;
+  size_t button_queue_depth = 0;
+  size_t radio_queue_depth = 0;
+  uint32_t button_queue_overflows = 0;
+  uint32_t radio_queue_overflows = 0;
   setu::NodeStats stats;
 };
 
@@ -75,6 +79,10 @@ class World {
   void block_link(uint16_t a, uint16_t b, bool blocked = true);
   void schedule(uint32_t at_ms, std::function<void()> fn);
   void reposition_node(uint16_t id, double x, double y);
+
+  // --- virtual firmware hardware interrupt simulation (drives real FreeRTOS queues) ---
+  void firmware_button_isr(uint16_t id, bool pressed);
+  void firmware_radio_isr(uint16_t receiver_id, const uint8_t* data, size_t len, int16_t rssi, int8_t snr);
 
   // --- virtual user input (drives the real button classifier) ---
   void button_press(uint16_t id, uint32_t at_ms, uint32_t hold_ms);
