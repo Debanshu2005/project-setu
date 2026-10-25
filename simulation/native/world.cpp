@@ -51,7 +51,7 @@ struct World::SimNode {
     if (new_batt != battery) {
       battery = new_batt;
       char b[96];
-      std::snprintf(b, sizeof b, ",\"battery\":%u,\"why\":\"%s\",\"mah\":%.2f",
+      std::snprintf(b, sizeof b, ",\"battery\":%u,\"why\":\"%s\",\"mah\":%.3f",
                     static_cast<unsigned int>(battery), reason, energy_consumed_mah);
       w.trace_event("battery", id, b);
       if (battery == 0) {
@@ -298,6 +298,7 @@ void World::set_battery(uint16_t id, uint8_t pct) {
   n.battery = pct;
   n.initial_battery = pct;
   n.battery_fraction = pct;
+  n.energy_consumed_mah = ((100.0 - pct) / 100.0) * ch_.battery_capacity_mah;
   if (pct > 0 && !n.online && n.battery == 0) {
     n.online = true;
     trace_event("node_revive", id, ",\"why\":\"battery_recharged\"");
@@ -447,12 +448,15 @@ bool World::start_tx(uint16_t from, const uint8_t* d, size_t n) {
   if (trace_) {
     setu::Packet p;
     setu::parse(d, n, p);
-    char b[256];
+    char b[320];
     std::snprintf(b, sizeof b,
                   ",\"origin\":%u,\"seq\":%u,\"ack\":%d,\"target\":%u,\"ref_seq\":%u,\"hazard\":%d,"
-                  "\"flags\":%u,\"lat_e6\":%ld,\"lon_e6\":%ld,\"battery\":%u,\"hop\":%u,\"contact\":%u,\"air\":%u",
+                  "\"flags\":%u,\"lat_e6\":%ld,\"lon_e6\":%ld,\"battery\":%u,\"hop\":%u,\"contact\":%u,\"air\":%u"
+                  ",\"energy_mah\":%.3f",
                   p.node_id, p.seq, p.is_ack() ? 1 : 0, p.target, p.ref_seq, static_cast<int>(p.hazard),
-                  p.flags, static_cast<long>(p.lat_e6), static_cast<long>(p.lon_e6), p.battery, p.hop, p.contact, air);
+                  p.flags, static_cast<long>(p.lat_e6), static_cast<long>(p.lon_e6),
+                  node_it->second->battery, p.hop, p.contact, air,
+                  node_it->second->energy_consumed_mah);
     trace_event("tx", from, b);
   }
   return true;
@@ -473,7 +477,7 @@ void World::finish_tx(const Tx& tx) {
     const double mean = mean_rssi(tx.from, r);
     if (mean < sens_ - 6.0) continue;  // far outside range: not worth tracing
     const double rssi = mean + fade(rng_);
-    char b[96];
+    char b[128];
     if (rssi < sens_) {
       counters_.weak++;
       std::snprintf(b, sizeof b, ",\"from\":%u,\"why\":\"weak\"", tx.from);
@@ -511,7 +515,8 @@ void World::finish_tx(const Tx& tx) {
     }
     counters_.delivered++;
     kv.second->consume_energy(ch_.rx_energy_pct, "rx");
-    std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f", tx.from, rssi);
+    std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f,\"battery\":%u,\"energy_mah\":%.3f",
+                  tx.from, rssi, kv.second->battery, kv.second->energy_consumed_mah);
     trace_event("rx", r, b);
     firmware_radio_isr(r, tx.data.data(), tx.data.size(),
                        static_cast<int16_t>(std::lround(rssi)),

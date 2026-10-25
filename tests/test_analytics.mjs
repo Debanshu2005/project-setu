@@ -337,6 +337,260 @@ try {
   assert(false, `Native C++ engine test failed: ${err.message}`);
 }
 
+// -------------------------------------------------------------
+// Test Group 7: Controlled Trace PDR Scenarios & Energy Model
+// -------------------------------------------------------------
+console.log('\n[7/7] Testing Controlled Trace PDR Scenarios & Energy Model Telemetry...');
+
+// Scenario 7.1: Five originated messages, two delivered, and three in flight
+{
+  const events = [
+    { t: 100, ev: 'originate', node: 1, seq: 1 },
+    { t: 100, ev: 'tx', node: 1, seq: 1 },
+    { t: 200, ev: 'originate', node: 2, seq: 1 },
+    { t: 200, ev: 'tx', node: 2, seq: 1 },
+    { t: 300, ev: 'originate', node: 3, seq: 1 },
+    { t: 300, ev: 'tx', node: 3, seq: 1 },
+    { t: 400, ev: 'originate', node: 4, seq: 1 },
+    { t: 400, ev: 'tx', node: 4, seq: 1 },
+    { t: 500, ev: 'originate', node: 5, seq: 1 },
+    { t: 500, ev: 'tx', node: 5, seq: 1 },
+    // Deliveries for 1 and 2
+    { t: 600, ev: 'alert', origin: 1, seq: 1, hops: 1, latency_ms: 500 },
+    { t: 700, ev: 'alert', origin: 2, seq: 1, hops: 2, latency_ms: 500 }
+    // 3, 4, 5 still in flight at t=800
+  ];
+
+  const res = calculateMetrics(events, new Map(), 800, { status: 'running' });
+  assertStrictEqual(res.lifecycle.uniqueOriginated, 5, 'Scenario 1: 5 originated messages');
+  assertStrictEqual(res.lifecycle.uniqueDelivered, 2, 'Scenario 1: 2 delivered messages');
+  assertStrictEqual(res.lifecycle.inFlight, 3, 'Scenario 1: 3 in-flight messages');
+  assertStrictEqual(res.lifecycle.failed, 0, 'Scenario 1: 0 failed messages');
+  assertStrictEqual(res.lifecycle.pdr, 40.0, 'Scenario 1: PDR is exactly 40.0%');
+  assertStrictEqual(res.lifecycle.isProvisional, true, 'Scenario 1: PDR is provisional during active simulation');
+  assertStrictEqual(res.lifecycle.pdrDisplay, '40.0%', 'Scenario 1: PDR display formatted as 40.0%');
+}
+
+// Scenario 7.2: Five originated messages, three delivered, one failed, and one in flight
+{
+  const events = [
+    { t: 100, ev: 'originate', node: 1, seq: 1 },
+    { t: 200, ev: 'originate', node: 2, seq: 1 },
+    { t: 300, ev: 'originate', node: 3, seq: 1 },
+    { t: 400, ev: 'originate', node: 4, seq: 1 },
+    { t: 500, ev: 'originate', node: 5, seq: 1 },
+    // Deliver 1, 2, 3
+    { t: 600, ev: 'alert', origin: 1, seq: 1, hops: 1, latency_ms: 500 },
+    { t: 700, ev: 'alert', origin: 2, seq: 1, hops: 1, latency_ms: 500 },
+    { t: 800, ev: 'alert', origin: 3, seq: 1, hops: 2, latency_ms: 500 },
+    // Node 4 exhausts retries and gives up
+    { t: 850, ev: 'gave_up', node: 4 }
+    // Node 5 still in flight
+  ];
+
+  const res = calculateMetrics(events, new Map(), 900, { status: 'running' });
+  assertStrictEqual(res.lifecycle.uniqueOriginated, 5, 'Scenario 2: 5 originated messages');
+  assertStrictEqual(res.lifecycle.uniqueDelivered, 3, 'Scenario 2: 3 delivered messages');
+  assertStrictEqual(res.lifecycle.failed, 1, 'Scenario 2: 1 permanently failed message');
+  assertStrictEqual(res.lifecycle.inFlight, 1, 'Scenario 2: 1 in-flight message');
+  assertStrictEqual(res.lifecycle.pdr, 60.0, 'Scenario 2: Observed delivery ratio is 60.0%');
+  assertStrictEqual(res.lifecycle.isProvisional, true, 'Scenario 2: Marked provisional due to in-flight message');
+}
+
+// Scenario 7.3: Five originated messages, all delivered (100% PDR)
+{
+  const events = [
+    { t: 100, ev: 'originate', node: 1, seq: 1 },
+    { t: 200, ev: 'originate', node: 2, seq: 1 },
+    { t: 300, ev: 'originate', node: 3, seq: 1 },
+    { t: 400, ev: 'originate', node: 4, seq: 1 },
+    { t: 500, ev: 'originate', node: 5, seq: 1 },
+    { t: 600, ev: 'alert', origin: 1, seq: 1, hops: 1, latency_ms: 500 },
+    { t: 700, ev: 'alert', origin: 2, seq: 1, hops: 2, latency_ms: 500 },
+    { t: 800, ev: 'alert', origin: 3, seq: 1, hops: 1, latency_ms: 500 },
+    { t: 900, ev: 'alert', origin: 4, seq: 1, hops: 2, latency_ms: 500 },
+    { t: 1000, ev: 'alert', origin: 5, seq: 1, hops: 3, latency_ms: 500 }
+  ];
+
+  const res = calculateMetrics(events, new Map(), 1200, { status: 'running' });
+  assertStrictEqual(res.lifecycle.uniqueOriginated, 5, 'Scenario 3: 5 originated messages');
+  assertStrictEqual(res.lifecycle.uniqueDelivered, 5, 'Scenario 3: 5 delivered messages');
+  assertStrictEqual(res.lifecycle.inFlight, 0, 'Scenario 3: 0 in flight');
+  assertStrictEqual(res.lifecycle.failed, 0, 'Scenario 3: 0 failed');
+  assertStrictEqual(res.lifecycle.pdr, 100.0, 'Scenario 3: True PDR is 100.0%');
+  assertStrictEqual(res.lifecycle.isProvisional, false, 'Scenario 3: Non-provisional delivery complete');
+}
+
+// Scenario 7.4: Retries and duplicate receptions
+{
+  const events = [
+    // Initial transmission attempt 0
+    { t: 1000, ev: 'originate', node: 1, seq: 1 },
+    { t: 1000, ev: 'tx', node: 1, seq: 1, origin: 1 },
+    { t: 1062, ev: 'drop', to: 0, why: 'collision' },
+    // Retransmission attempt 1 with incremented seq to evade mesh loop filters
+    { t: 2000, ev: 'retry', node: 1, attempt: 1 },
+    { t: 2000, ev: 'originate', node: 1, seq: 2 },
+    { t: 2000, ev: 'tx', node: 1, seq: 2, origin: 1 },
+    // Duplicate demodulations at multiple intermediate nodes
+    { t: 2062, ev: 'rx', node: 2, from: 1, seq: 2 },
+    { t: 2062, ev: 'rx', node: 3, from: 1, seq: 2 },
+    { t: 2062, ev: 'rx', node: 0, from: 1, seq: 2 },
+    { t: 2062, ev: 'alert', origin: 1, seq: 2, hops: 1, latency_ms: 1062 }
+  ];
+
+  const res = calculateMetrics(events, new Map(), 3000, { status: 'running' });
+  assertStrictEqual(res.lifecycle.uniqueOriginated, 1, 'Scenario 4: Retries do NOT inflate originated count (originated is 1)');
+  assertStrictEqual(res.lifecycle.uniqueDelivered, 1, 'Scenario 4: Unique delivered is 1');
+  assertStrictEqual(res.lifecycle.retries, 1, 'Scenario 4: Retransmission count recorded accurately as 1');
+  assertStrictEqual(res.lifecycle.inFlight, 0, 'Scenario 4: In flight is 0 (delivered on retry)');
+  assertStrictEqual(res.lifecycle.pdr, 100.0, 'Scenario 4: PDR is 100.0%');
+  assertStrictEqual(res.radio.rxTotal, 3, 'Scenario 4: Physical duplicate demodulations recorded in radio layer (3 RXs)');
+}
+
+// Scenario 7.5: Multiple relay transmissions for a single logical message
+{
+  const events = [
+    { t: 1000, ev: 'originate', node: 1, seq: 1 },
+    { t: 1000, ev: 'tx', node: 1, seq: 1, origin: 1 }
+  ];
+
+  // 10 intermediate relay towers forward the packet
+  for (let i = 0; i < 10; ++i) {
+    events.push({ t: 1100 + i * 50, ev: 'tx', node: 100 + i, seq: 1, origin: 1 });
+  }
+  events.push({ t: 1700, ev: 'alert', origin: 1, seq: 1, hops: 5, latency_ms: 700 });
+
+  const res = calculateMetrics(events, new Map(), 2000, { status: 'running' });
+  assertStrictEqual(res.lifecycle.uniqueOriginated, 1, 'Scenario 5: 1 unique originated message');
+  assertStrictEqual(res.lifecycle.uniqueDelivered, 1, 'Scenario 5: 1 unique delivered message');
+  assertStrictEqual(res.lifecycle.relayForwards, 10, 'Scenario 5: Exactly 10 relay forward transmissions recorded');
+  assertStrictEqual(res.radio.relayForwardsTotal, 10, 'Scenario 5: Radio telemetry matches 10 relay transmissions');
+  assertStrictEqual(res.lifecycle.pdr, 100.0, 'Scenario 5: PDR is 100.0% (relay forwards do NOT distort message population)');
+}
+
+// Scenario 7.6: Completed simulation with unresolved messages
+{
+  const events = [
+    { t: 100, ev: 'originate', node: 1, seq: 1 },
+    { t: 200, ev: 'originate', node: 2, seq: 1 },
+    { t: 300, ev: 'originate', node: 3, seq: 1 },
+    { t: 400, ev: 'originate', node: 4, seq: 1 },
+    { t: 500, ev: 'originate', node: 5, seq: 1 },
+    // Deliver 2 messages
+    { t: 600, ev: 'alert', origin: 1, seq: 1, hops: 1, latency_ms: 500 },
+    { t: 700, ev: 'alert', origin: 2, seq: 1, hops: 2, latency_ms: 500 }
+    // 3 messages remained in flight when simulation terminated
+  ];
+
+  const res = calculateMetrics(events, new Map(), 1000, { status: 'completed' });
+  assertStrictEqual(res.lifecycle.uniqueOriginated, 5, 'Scenario 6: 5 originated messages');
+  assertStrictEqual(res.lifecycle.uniqueDelivered, 2, 'Scenario 6: 2 delivered messages');
+  assertStrictEqual(res.lifecycle.unresolved, 3, 'Scenario 6: 3 messages unresolved at session completion');
+  assertStrictEqual(res.lifecycle.inFlight, 0, 'Scenario 6: 0 in flight once completed');
+  assertStrictEqual(res.lifecycle.isProvisional, false, 'Scenario 6: Final PDR is NOT provisional');
+  assertStrictEqual(res.lifecycle.pdr, 40.0, 'Scenario 6: Final PDR is 40.0% using documented terminal policy');
+}
+
+// Scenario 7.7: Node energy consumption telemetry & Fleet Health verification
+{
+  const sim = new SimulationEngine();
+  const trace = [
+    { t: 0, ev: 'meta', duration: 5000 },
+    { t: 0, ev: 'node_init', id: 1, role: 'survivor', battery: 100, initial_battery: 100 },
+    { t: 0, ev: 'node_init', id: 2, role: 'survivor', battery: 100, initial_battery: 100 },
+    { t: 0, ev: 'node_init', id: 3, role: 'survivor', battery: 100, initial_battery: 100 },
+    // Node 1 performs 2 transmissions: 2 * 1.500 mAh = 3.000 mAh (1.0% drop -> 99%)
+    { t: 1000, ev: 'tx', node: 1, seq: 1, energy_mah: 1.500, battery: 100 },
+    { t: 2000, ev: 'tx', node: 1, seq: 1, energy_mah: 3.000, battery: 99 },
+    // Node 2 performs 3 receptions: 3 * 0.300 mAh = 0.900 mAh (0.3% drop -> round(99.7) = 100%)
+    { t: 1062, ev: 'rx', node: 2, from: 1, energy_mah: 0.300, battery: 100 },
+    { t: 2062, ev: 'rx', node: 2, from: 1, energy_mah: 0.600, battery: 100 },
+    { t: 3062, ev: 'rx', node: 2, from: 1, energy_mah: 0.900, battery: 100 }
+    // Node 3 is idle: 0 mAh consumed, battery 100%
+  ];
+
+  sim.loadTrace(trace, null, { id: 'energy_test', name: 'Energy Telemetry Test', mode: 'replay' });
+  sim.seek(4000);
+
+  const n1 = sim.nodes.get(1);
+  const n2 = sim.nodes.get(2);
+  const n3 = sim.nodes.get(3);
+
+  assertStrictEqual(n1.stats.tx, 2, 'Energy Model: Node 1 has 2 TXs');
+  assertStrictEqual(n1.energy_consumed_mah, 3.000, 'Energy Model: Node 1 consumed exactly 3.000 mAh');
+  assertStrictEqual(n1.battery, 99, 'Energy Model: Node 1 battery decreased to 99%');
+
+  assertStrictEqual(n2.stats.rx, 3, 'Energy Model: Node 2 has 3 RXs');
+  assertStrictEqual(n2.energy_consumed_mah, 0.900, 'Energy Model: Node 2 consumed exactly 0.900 mAh');
+  assertStrictEqual(n2.battery, 100, 'Energy Model: Node 2 battery remains 100% (0.3% drain does not round to 99%)');
+
+  assertStrictEqual(n3.stats.tx, 0, 'Energy Model: Node 3 has 0 TXs');
+  assertStrictEqual(n3.energy_consumed_mah, 0.000, 'Energy Model: Node 3 consumed 0.000 mAh');
+  assertStrictEqual(n3.battery, 100, 'Energy Model: Node 3 battery is 100%');
+
+  const m = sim.getMetrics();
+  assertStrictEqual(m.fleet.totalEnergyConsumedMah, 3.900, 'Fleet Health: Total energy consumed across fleet is 3.900 mAh');
+  assertStrictEqual(m.fleet.avgBatteryPct, 100, 'Fleet Health: Fleet average battery rounded is 100%');
+}
+
+// Scenario 7.8: Native Simulator C++ Trace and Metrics Parity
+{
+  const simExe = path.join(rootDir, 'build', 'Release', 'setu_sim.exe');
+  await new Promise((resolve, reject) => {
+    // Run native sim with trace output
+    const proc = spawn(simExe, [
+      '--survivors', '3',
+      '--relays', '2',
+      '--duration', '4000',
+      '--seed', '42',
+      '--trigger', '1:short@500',
+      '--trace', '-'
+    ], { cwd: rootDir });
+
+    let stdout = '';
+    let stderr = '';
+    proc.stdout.on('data', c => { stdout += c.toString(); });
+    proc.stderr.on('data', c => { stderr += c.toString(); });
+
+    proc.on('close', code => {
+      if (code !== 0) return reject(new Error(`Exit code ${code}: ${stderr}`));
+
+      const lines = stdout.trim().split('\n');
+      const traceEvents = [];
+      let summaryObj = null;
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.ev) traceEvents.push(parsed);
+        } catch {}
+      }
+
+      const summaryMatch = stdout.match(/\{\r?\n\s*"seed":[\s\S]*$/);
+      if (summaryMatch) {
+        try {
+          summaryObj = JSON.parse(summaryMatch[0]);
+        } catch {}
+      }
+
+      assert(traceEvents.length > 0, 'Native trace produced valid JSONL events');
+      assert(summaryObj !== null, 'Native simulator produced final summary totals');
+
+      const nativeMetrics = calculateMetrics(traceEvents, new Map(), 4000, { status: 'completed' });
+      assert(nativeMetrics.lifecycle.uniqueOriginated >= 1, 'Native trace originated at least 1 SOS alert');
+      assert(nativeMetrics.lifecycle.uniqueDelivered >= 1, 'Native trace delivered SOS alert to hub');
+      assertStrictEqual(nativeMetrics.lifecycle.pdr, 100.0, 'Native single-trigger run achieves 100.0% PDR');
+      assert(nativeMetrics.radio.txTotal === summaryObj.totals.tx, 'Radio TX totals match native C++ engine totals');
+      assert(nativeMetrics.radio.relayForwardsTotal === summaryObj.totals.relay_tx, 'Relay forwards match native C++ engine relay_tx');
+
+      console.log(`    Native Parity Verified: TX=${nativeMetrics.radio.txTotal}, Relays=${nativeMetrics.radio.relayForwardsTotal}, PDR=${nativeMetrics.lifecycle.pdr}%`);
+      resolve();
+    });
+  });
+}
+
 console.log('\n==========================================================');
 console.log(`  ANALYTICS TEST SUMMARY: ${passedTests} PASSED, ${failedTests} FAILED`);
 console.log('==========================================================\n');
@@ -344,3 +598,4 @@ console.log('==========================================================\n');
 if (failedTests > 0) {
   process.exit(1);
 }
+

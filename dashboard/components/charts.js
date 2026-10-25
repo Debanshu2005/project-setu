@@ -19,15 +19,17 @@ export class ChartsComponent {
 
     const getEvents = cat => eventIndices.get(cat) || [];
 
-    // Chart 1: Lifecycle Items
+    // Chart 1: Lifecycle Items (Pure Logical Survivor Emergency Populations)
     const lifecycleItems = [
       { key: 'originate', label: 'Originated', value: metrics.lifecycle.uniqueOriginated, color: '#06b6d4', desc: 'Distinct survivor SOS alerts' },
-      { key: 'tx_relay', label: 'Relayed', value: metrics.lifecycle.relayForwards, color: '#f59e0b', desc: 'Relay tower forward attempts' },
       { key: 'alert', label: 'Delivered', value: metrics.lifecycle.uniqueDelivered, color: '#10b981', desc: 'Alerts received at Rescue Hub' },
       { key: 'ack', label: 'Confirmed', value: metrics.lifecycle.uniqueAcked, color: '#8b5cf6', desc: 'Alerts with confirmed ACK' },
       { key: 'in_flight', label: 'In Flight', value: metrics.lifecycle.inFlight, color: '#38bdf8', desc: 'Active alerts traversing network' },
       { key: 'gave_up', label: 'Failed', value: metrics.lifecycle.failed, color: '#ef4444', desc: 'Unreachable / retries exhausted' }
     ];
+    if (metrics.lifecycle.unresolved > 0) {
+      lifecycleItems.push({ key: 'unresolved', label: 'Unresolved', value: metrics.lifecycle.unresolved, color: '#f59e0b', desc: 'In flight at session completion' });
+    }
 
     // Chart 2: Drop Causes Items
     const drops = metrics.radio.dropCauses;
@@ -54,7 +56,7 @@ export class ChartsComponent {
       : '#94a3b8';
 
     const pdrBadgeText = metrics.lifecycle.pdr !== null
-      ? `${metrics.pdr} PDR${metrics.lifecycle.isProvisional ? ' (PROVISIONAL)' : ''}`
+      ? `${metrics.lifecycle.pdrDisplay} PDR${metrics.lifecycle.isProvisional ? ' (PROVISIONAL)' : (metrics.session && metrics.session.status === 'completed' ? ' (FINAL)' : '')}`
       : 'PDR: N/A';
 
     this.container.innerHTML = `
@@ -77,13 +79,22 @@ export class ChartsComponent {
           <div class="chart-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <div>
               <span style="font-weight:700; font-size:12px;">SOS Message Lifecycle & Delivery</span>
-              <div style="font-size:10px; color:var(--text-dim);">End-to-End Mission Metrics (Click any bar to filter timeline)</div>
+              <div style="font-size:10px; color:var(--text-dim);">Logical Survivor Emergency Episodes (Click bar to filter timeline)</div>
             </div>
             <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid ${pdrBadgeColor}; color:${pdrBadgeColor}; font-weight:700;">
               ${pdrBadgeText}
             </span>
           </div>
           ${this.renderInteractiveBarChart(lifecycleItems, 'lifecycle')}
+
+          <!-- Mesh Physical Radio Airtime Telemetry -->
+          <div style="margin-top:8px; padding:6px 10px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:10px; font-family:var(--font-mono); color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+            <span>Relay Forwards: <strong style="color:#f59e0b;">${metrics.lifecycle.relayForwards} pkts</strong></span>
+            <span>Retransmissions: <strong style="color:#38bdf8;">${metrics.lifecycle.retries}</strong></span>
+            <span>Suppressed: <strong style="color:#a78bfa;">${metrics.radio.relaySuppressedTotal}</strong></span>
+            <span>Channel TX: <strong style="color:#fff;">${metrics.radio.txTotal}</strong></span>
+            <span>Demod RX: <strong style="color:#fff;">${metrics.radio.rxTotal}</strong></span>
+          </div>
         </div>
 
         <!-- Chart 2: Drop Causes Analysis -->

@@ -621,8 +621,9 @@ class SetuDashboardApp {
       if (Array.isArray(ev.nodes)) {
         for (const n of ev.nodes) {
           const existing = this.sim.nodes.get(n.id);
-          if (existing) {
-            existing.battery = n.battery;
+            if (typeof n.battery === 'number') existing.battery = n.battery;
+            if (typeof n.initial_battery === 'number') existing.initial_battery = n.initial_battery;
+            if (typeof n.energy_consumed_mah === 'number') existing.energy_consumed_mah = n.energy_consumed_mah;
             existing.online = n.online;
             existing.active_sos = n.active_sos;
             existing.gnss_on = n.gnss_on;
@@ -665,12 +666,25 @@ class SetuDashboardApp {
           na.acked = false;
         }
         if (typeof ev.seq === 'number') na.seq = ev.seq;
+        if (typeof ev.energy_mah === 'number') na.energy_consumed_mah = ev.energy_mah;
+        else if (typeof ev.mah === 'number') na.energy_consumed_mah = ev.mah;
+        else na.energy_consumed_mah = Math.round(((na.energy_consumed_mah || 0) + 1.5) * 1000) / 1000;
         if (typeof ev.battery === 'number') na.battery = ev.battery;
+        else na.battery = Math.max(0, Math.round(100 - (na.energy_consumed_mah / 300) * 100));
+        if (na.battery === 0) na.online = false;
       }
     } else if (ev.ev === 'rx') {
       const rxId = ev.node !== undefined ? ev.node : ev.to;
       const nb = this.sim.nodes.get(rxId);
-      if (nb) nb.stats.rx++;
+      if (nb) {
+        nb.stats.rx++;
+        if (typeof ev.energy_mah === 'number') nb.energy_consumed_mah = ev.energy_mah;
+        else if (typeof ev.mah === 'number') nb.energy_consumed_mah = ev.mah;
+        else nb.energy_consumed_mah = Math.round(((nb.energy_consumed_mah || 0) + 0.3) * 1000) / 1000;
+        if (typeof ev.battery === 'number') nb.battery = ev.battery;
+        else nb.battery = Math.max(0, Math.round(100 - (nb.energy_consumed_mah / 300) * 100));
+        if (nb.battery === 0) nb.online = false;
+      }
     } else if (ev.ev === 'alert') {
       // Hub sink alert delivery
       this.sim.alerts.push(ev);
@@ -711,8 +725,10 @@ class SetuDashboardApp {
     } else if (ev.ev === 'battery') {
       const nb = this.sim.nodes.get(ev.node);
       if (nb) {
-        nb.battery = ev.battery;
-        if (nb.initial_battery === undefined) nb.initial_battery = ev.battery;
+        if (typeof ev.battery === 'number') nb.battery = ev.battery;
+        if (typeof ev.mah === 'number') nb.energy_consumed_mah = ev.mah;
+        if (nb.initial_battery === undefined && typeof ev.battery === 'number') nb.initial_battery = ev.battery;
+        if (nb.battery === 0) nb.online = false;
       }
     } else if (ev.ev === 'battery_depleted') {
       const nb = this.sim.nodes.get(ev.node);

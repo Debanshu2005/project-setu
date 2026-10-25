@@ -165,32 +165,51 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
   }
 
   // 1. Message Lifecycle Tracking
-  // Key: `${origin}_${seq}`
-  const messages = new Map();
+  // A logical emergency episode represents a distinct survivor SOS event.
+  // When a survivor node retries (protocol retransmission with incremented sequence number),
+  // it belongs to the same ongoing emergency episode.
+  const episodes = [];
+  const activeEpisodePerNode = new Map(); // nodeId -> episode
+  const seqToEpisode = new Map(); // `${nodeId}_${seq}` -> episode
 
-  const getOrCreateMsg = (origin, seq, t = 0) => {
-    const key = `${origin}_${seq !== undefined && seq !== null ? seq : 'def'}`;
-    if (!messages.has(key)) {
-      messages.set(key, {
-        key,
-        origin,
-        seq: seq !== undefined ? seq : null,
-        originatedAt: t,
-        delivered: false,
-        deliveredAt: null,
-        latencyMs: null,
-        hops: null,
-        acked: false,
-        ackedAt: null,
-        gaveUp: false,
-        gaveUpAt: null,
-        txAttempts: 0,
-        retries: 0,
-        relayForwards: 0,
-        drops: []
-      });
+  const getOrCreateEpisodeOnOriginate = (nodeId, seq, t = 0) => {
+    let ep = activeEpisodePerNode.get(nodeId);
+    // If node has an active episode and this originate is a retransmission (pending retry or ongoing unresolved)
+    if (ep && (ep.pendingRetry || (!ep.delivered && !ep.acked && !ep.gaveUp))) {
+      if (seq !== undefined && seq !== null) {
+        ep.seqs.add(seq);
+        seqToEpisode.set(`${nodeId}_${seq}`, ep);
+      }
+      ep.pendingRetry = false;
+      return ep;
     }
-    return messages.get(key);
+
+    // Otherwise, create a new logical emergency episode
+    const epId = `ep_${nodeId}_${episodes.length + 1}`;
+    ep = {
+      id: epId,
+      node: nodeId,
+      seqs: new Set(seq !== undefined && seq !== null ? [seq] : []),
+      originatedAt: t,
+      delivered: false,
+      deliveredAt: null,
+      latencyMs: null,
+      hops: null,
+      acked: false,
+      ackedAt: null,
+      gaveUp: false,
+      gaveUpAt: null,
+      txAttempts: 0,
+      retries: 0,
+      relayForwards: 0,
+      pendingRetry: false
+    };
+    if (seq !== undefined && seq !== null) {
+      seqToEpisode.set(`${nodeId}_${seq}`, ep);
+    }
+    episodes.push(ep);
+    activeEpisodePerNode.set(nodeId, ep);
+    return ep;
   };
 
   // Drop cause counters and event collections
@@ -212,13 +231,13 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
   let relaySuppressedTotal = 0;
   let dedupDropTotal = 0;
   let retriesTotal = 0;
+  let relayForwardAttemptsTotal = 0;
 
   // Process trace events
   for (const ev of activeEvents) {
     switch (ev.ev) {
       case 'originate': {
-        const msg = getOrCreateMsg(ev.node, ev.seq, ev.t);
-        msg.originatedAt = ev.t;
+        getOrCreateEpisodeOnOriginate(ev.node, ev.seq, ev.t);
         addEventRef('originate', ev);
         addEventRef(`node_${ev.node}`, ev);
         break;
@@ -229,25 +248,29 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
         addEventRef('tx', ev);
         addEventRef(`node_${ev.node}`, ev);
 
-        if (ev.ack || ev.node === 0) {
-          addEventRef('tx_ack', ev);
-          // ACK transmission from Hub or node - NOT an SOS origination
-          break;
-        }
-
         const isRelay = ev.node >= 100 || (ev.origin !== undefined && ev.origin !== ev.node);
         if (isRelay) {
           addEventRef('tx_relay', ev);
-          if (ev.origin !== undefined) {
-            const msg = getOrCreateMsg(ev.origin, ev.seq, ev.t);
-            msg.relayForwards++;
+          relayForwardAttemptsTotal++;
+          if (!ev.ack && ev.origin !== undefined) {
+            const ep = (ev.seq !== undefined ? seqToEpisode.get(`${ev.origin}_${ev.seq}`) : null) || activeEpisodePerNode.get(ev.origin);
+            if (ep) ep.relayForwards++;
           }
-        } else {
+        }
+
+        if (ev.ack || ev.node === 0) {
+          addEventRef('tx_ack', ev);
+          break;
+        }
+
+        if (!isRelay) {
           addEventRef('tx_orig', ev);
-          const msg = getOrCreateMsg(ev.node, ev.seq, ev.t);
-          msg.txAttempts++;
-          if (msg.txAttempts > 1) {
-            msg.retries = Math.max(msg.retries, msg.txAttempts - 1);
+          const ep = (ev.seq !== undefined ? seqToEpisode.get(`${ev.node}_${ev.seq}`) : null) ||
+                     activeEpisodePerNode.get(ev.node) ||
+                     getOrCreateEpisodeOnOriginate(ev.node, ev.seq, ev.t);
+          ep.txAttempts++;
+          if (ep.txAttempts > 1) {
+            ep.retries = Math.max(ep.retries, ep.txAttempts - 1);
             addEventRef('tx_retry', ev);
           }
         }
@@ -317,9 +340,10 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
         retriesTotal++;
         addEventRef('retry', ev);
         addEventRef(`node_${ev.node}`, ev);
-        const msg = getOrCreateMsg(ev.node, ev.seq, ev.t);
-        if (msg.retries === 0 && msg.txAttempts <= 1) {
-          msg.retries = 1;
+        const ep = activeEpisodePerNode.get(ev.node);
+        if (ep) {
+          ep.retries = Math.max(ep.retries, typeof ev.attempt === 'number' ? ev.attempt : (ep.retries + 1));
+          ep.pendingRetry = true;
         }
         break;
       }
@@ -329,42 +353,49 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
         addEventRef(`node_${ev.origin}`, ev);
         addEventRef('node_0', ev); // Delivered to hub
 
-        const msg = getOrCreateMsg(ev.origin, ev.seq, ev.t);
-        msg.delivered = true;
-        msg.deliveredAt = ev.t;
-        msg.hops = ev.hops || 1;
+        const ep = (ev.seq !== undefined ? seqToEpisode.get(`${ev.origin}_${ev.seq}`) : null) || activeEpisodePerNode.get(ev.origin);
+        if (ep) {
+          ep.delivered = true;
+          ep.deliveredAt = ev.t;
+          ep.hops = ev.hops || 1;
 
-        // Accurate latency calculation:
-        // Priority 1: native simulator measured latency_ms
-        // Priority 2: difference between alert time and origination time
-        if (typeof ev.latency_ms === 'number' && ev.latency_ms > 0) {
-          msg.latencyMs = ev.latency_ms;
-        } else if (typeof msg.originatedAt === 'number' && ev.t >= msg.originatedAt) {
-          msg.latencyMs = ev.t - msg.originatedAt;
-        } else {
-          msg.latencyMs = null;
+          // Accurate latency calculation:
+          // Priority 1: native simulator measured latency_ms
+          // Priority 2: difference between alert time and origination time
+          if (typeof ev.latency_ms === 'number' && ev.latency_ms > 0) {
+            ep.latencyMs = ev.latency_ms;
+          } else if (typeof ep.originatedAt === 'number' && ev.t >= ep.originatedAt) {
+            ep.latencyMs = ev.t - ep.originatedAt;
+          } else {
+            ep.latencyMs = null;
+          }
+
+          addEventRef(`hop_${Math.min(5, ep.hops)}`, ev);
         }
-
-        addEventRef(`hop_${Math.min(5, msg.hops)}`, ev);
         break;
       }
 
       case 'ack_rx': {
         addEventRef('ack', ev);
         addEventRef(`node_${ev.node}`, ev);
-        const msg = getOrCreateMsg(ev.node, ev.seq, ev.t);
-        msg.acked = true;
-        msg.ackedAt = ev.t;
+        const refSeq = ev.ref_seq !== undefined ? ev.ref_seq : ev.seq;
+        const ep = (refSeq !== undefined ? seqToEpisode.get(`${ev.node}_${refSeq}`) : null) || activeEpisodePerNode.get(ev.node);
+        if (ep) {
+          ep.acked = true;
+          ep.ackedAt = ev.t;
+        }
         break;
       }
 
       case 'haptic': {
-        if (ev.pattern === 3) { // AckReceived
+        if (ev.pattern === 3 || ev.pattern === 6) { // AckReceived or confirm pattern
           addEventRef('ack', ev);
           addEventRef(`node_${ev.node}`, ev);
-          const msg = getOrCreateMsg(ev.node, ev.seq, ev.t);
-          msg.acked = true;
-          msg.ackedAt = ev.t;
+          const ep = activeEpisodePerNode.get(ev.node);
+          if (ep) {
+            ep.acked = true;
+            ep.ackedAt = ev.t;
+          }
         }
         break;
       }
@@ -372,9 +403,11 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
       case 'gave_up': {
         addEventRef('gave_up', ev);
         addEventRef(`node_${ev.node}`, ev);
-        const msg = getOrCreateMsg(ev.node, ev.seq, ev.t);
-        msg.gaveUp = true;
-        msg.gaveUpAt = ev.t;
+        const ep = activeEpisodePerNode.get(ev.node);
+        if (ep) {
+          ep.gaveUp = true;
+          ep.gaveUpAt = ev.t;
+        }
         break;
       }
 
@@ -408,39 +441,45 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
   }
 
   // Aggregate Message Populations
-  let uniqueOriginated = 0;
+  let uniqueOriginated = episodes.length;
   let uniqueDelivered = 0;
   let uniqueAcked = 0;
   let inFlightCount = 0;
   let failedCount = 0;
+  let unresolvedCount = 0;
   let relayForwardAttempts = 0;
   let totalRetransmissions = 0;
 
   const latencies = [];
   const hopsDistribution = { 1: 0, 2: 0, 3: 0, 4: 0, '5+': 0 };
 
-  for (const [, msg] of messages) {
-    uniqueOriginated++;
-    relayForwardAttempts += msg.relayForwards;
-    totalRetransmissions += msg.retries;
+  const isSimCompleted = session && (session.status === 'completed' || session.status === 'stopped');
 
-    if (msg.delivered) {
+  for (const ep of episodes) {
+    relayForwardAttempts += ep.relayForwards;
+    totalRetransmissions += ep.retries;
+
+    if (ep.delivered) {
       uniqueDelivered++;
-      if (typeof msg.latencyMs === 'number' && msg.latencyMs >= 0) {
-        latencies.push(msg.latencyMs);
+      if (typeof ep.latencyMs === 'number' && ep.latencyMs >= 0) {
+        latencies.push(ep.latencyMs);
       }
-      if (msg.hops === 1) hopsDistribution[1]++;
-      else if (msg.hops === 2) hopsDistribution[2]++;
-      else if (msg.hops === 3) hopsDistribution[3]++;
-      else if (msg.hops === 4) hopsDistribution[4]++;
-      else if (msg.hops >= 5) hopsDistribution['5+']++;
-    } else if (msg.gaveUp) {
+      if (ep.hops === 1) hopsDistribution[1]++;
+      else if (ep.hops === 2) hopsDistribution[2]++;
+      else if (ep.hops === 3) hopsDistribution[3]++;
+      else if (ep.hops === 4) hopsDistribution[4]++;
+      else if (ep.hops >= 5) hopsDistribution['5+']++;
+    } else if (ep.gaveUp) {
       failedCount++;
     } else {
-      inFlightCount++;
+      if (isSimCompleted) {
+        unresolvedCount++;
+      } else {
+        inFlightCount++;
+      }
     }
 
-    if (msg.acked) {
+    if (ep.acked) {
       uniqueAcked++;
     }
   }
@@ -514,7 +553,7 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
       failedNodes,
       depletedNodes,
       avgBatteryPct,
-      totalEnergyConsumedMah: Math.round(totalEnergyConsumedMah * 100) / 100
+      totalEnergyConsumedMah: Math.round(totalEnergyConsumedMah * 1000) / 1000
     },
 
     // SOS Message Lifecycle (End-to-End)
@@ -524,6 +563,7 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
       uniqueAcked,
       inFlight: inFlightCount,
       failed: failedCount,
+      unresolved: unresolvedCount,
       relayForwards: relayForwardAttempts,
       retries: totalRetransmissions,
       pdr,
@@ -539,6 +579,7 @@ export function calculateMetrics(events = [], nodesMap = new Map(), currentTime 
       dedupTotal: dedupDropTotal,
       relaySuppressedTotal,
       retriesTotal,
+      relayForwardsTotal: relayForwardAttemptsTotal,
       dropCauses
     },
 

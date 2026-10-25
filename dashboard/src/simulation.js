@@ -83,6 +83,8 @@ export class SimulationEngine {
           lat_e6: ev.lat_e6 || 0,
           lon_e6: ev.lon_e6 || 0,
           battery: ev.battery !== undefined ? ev.battery : 100,
+          initial_battery: ev.initial_battery !== undefined ? ev.initial_battery : (ev.battery !== undefined ? ev.battery : 100),
+          energy_consumed_mah: typeof ev.energy_consumed_mah === 'number' ? ev.energy_consumed_mah : (typeof ev.energy_mah === 'number' ? ev.energy_mah : 0.0),
           online: ev.online !== false,
           gnss_on: true,
           dr_on: true,
@@ -118,6 +120,8 @@ export class SimulationEngine {
     // Reset all nodes to base state
     for (const [, node] of this.nodes) {
       node.online = true;
+      node.battery = typeof node.initial_battery === 'number' ? node.initial_battery : 100;
+      node.energy_consumed_mah = 0.0;
       node.gnss_on = true;
       node.dr_on = true;
       node.active_sos = false;
@@ -193,14 +197,60 @@ export class SimulationEngine {
           if (n) n.stats.retries++;
           break;
         case 'tx':
-          if (n) n.stats.tx++;
+          if (n) {
+            n.stats.tx++;
+            if (typeof ev.energy_mah === 'number') {
+              n.energy_consumed_mah = ev.energy_mah;
+            } else if (typeof ev.mah === 'number') {
+              n.energy_consumed_mah = ev.mah;
+            } else {
+              n.energy_consumed_mah = Math.round(((n.energy_consumed_mah || 0) + 1.5) * 1000) / 1000;
+            }
+            if (typeof ev.battery === 'number') {
+              n.battery = ev.battery;
+            } else {
+              n.battery = Math.max(0, Math.round(100 - (n.energy_consumed_mah / 300) * 100));
+            }
+            if (n.battery === 0) n.online = false;
+          }
           // If this transmission is currently underway at targetTime
           if (targetTime >= ev.t && targetTime < ev.t + (ev.air || 62)) {
             this.activePackets.push(ev);
           }
           break;
-        case 'rx':
-          if (n) n.stats.rx++;
+        case 'rx': {
+          const rxId = ev.node !== undefined ? ev.node : ev.to;
+          const rxNode = this.nodes.get(rxId);
+          if (rxNode) {
+            rxNode.stats.rx++;
+            if (typeof ev.energy_mah === 'number') {
+              rxNode.energy_consumed_mah = ev.energy_mah;
+            } else if (typeof ev.mah === 'number') {
+              rxNode.energy_consumed_mah = ev.mah;
+            } else {
+              rxNode.energy_consumed_mah = Math.round(((rxNode.energy_consumed_mah || 0) + 0.3) * 1000) / 1000;
+            }
+            if (typeof ev.battery === 'number') {
+              rxNode.battery = ev.battery;
+            } else {
+              rxNode.battery = Math.max(0, Math.round(100 - (rxNode.energy_consumed_mah / 300) * 100));
+            }
+            if (rxNode.battery === 0) rxNode.online = false;
+          }
+          break;
+        }
+        case 'battery':
+          if (n) {
+            if (typeof ev.battery === 'number') n.battery = ev.battery;
+            if (typeof ev.mah === 'number') n.energy_consumed_mah = ev.mah;
+            if (n.battery === 0) n.online = false;
+          }
+          break;
+        case 'battery_depleted':
+          if (n) {
+            n.battery = 0;
+            n.online = false;
+          }
           break;
         case 'drop':
           if (n) n.stats.drop++;
