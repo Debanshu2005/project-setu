@@ -362,13 +362,19 @@ export class SetuApi {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options)
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to start simulation`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to start simulation`);
+    }
     return await res.json();
   }
 
   static async pauseControl() {
     const res = await fetch(`${this.requireBaseUrl()}/api/control/pause`, { method: 'POST' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to pause simulation`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to pause simulation`);
+    }
     return await res.json();
   }
 
@@ -378,13 +384,19 @@ export class SetuApi {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ms })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to step simulation`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to step simulation`);
+    }
     return await res.json();
   }
 
   static async resetControl() {
     const res = await fetch(`${this.requireBaseUrl()}/api/control/reset`, { method: 'POST' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to reset simulation`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to reset simulation`);
+    }
     return await res.json();
   }
 
@@ -393,9 +405,12 @@ export class SetuApi {
     const res = await fetch(`${this.requireBaseUrl()}/api/control/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node: nodeId, kind: cleanKind })
+      body: JSON.stringify({ node: parseInt(nodeId, 10), kind: cleanKind })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to trigger node`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to trigger node`);
+    }
     return await res.json();
   }
 
@@ -414,17 +429,27 @@ export class SetuApi {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to trigger all nodes`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to trigger all nodes`);
+    }
     return await res.json();
   }
 
-  static async setNodeState(payload) {
+  static async setNodeState(payloadOrNodeId, maybeUpdate) {
+    let body = payloadOrNodeId;
+    if (typeof payloadOrNodeId === 'number' || typeof payloadOrNodeId === 'string') {
+      body = { node: parseInt(payloadOrNodeId, 10), ...(maybeUpdate || {}) };
+    }
     const res = await fetch(`${this.requireBaseUrl()}/api/control/node-state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(body)
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to update node state`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to update node state`);
+    }
     return await res.json();
   }
 
@@ -432,9 +457,12 @@ export class SetuApi {
     const res = await fetch(`${this.requireBaseUrl()}/api/control/reposition`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ node: nodeId, x, y })
+      body: JSON.stringify({ node: parseInt(nodeId, 10), x: parseFloat(x), y: parseFloat(y) })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to reposition node`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to reposition node`);
+    }
     return await res.json();
   }
 
@@ -442,9 +470,12 @@ export class SetuApi {
     const res = await fetch(`${this.requireBaseUrl()}/api/control/block-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ a, b, blocked })
+      body: JSON.stringify({ a: parseInt(a, 10), b: parseInt(b, 10), blocked: Boolean(blocked) })
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to toggle link block`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to toggle link block`);
+    }
     return await res.json();
   }
 

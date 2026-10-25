@@ -518,10 +518,17 @@ const server = http.createServer(async (req, res) => {
     try {
       await simManager.ensureStarted();
       const body = await parseBody(req);
-      const node = parseInt(body.node, 10);
-      const kind = String(body.kind || 'short').replace('_', '-');
-      const result = await simManager.sendCommand({ cmd: 'trigger', node, kind });
-      return sendJson(res, 200, { success: true, result }, req);
+      const node = parseInt(body.node !== undefined ? body.node : (body.id !== undefined ? body.id : body.nodeId), 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
+      const rawKind = String(body.kind || 'short').replace('_', '-');
+      const validKinds = ['short', 'double', 'long', 'voice', 'voice-medical', 'voice-trapped'];
+      if (!validKinds.includes(rawKind)) {
+        return sendError(res, 400, `Invalid trigger kind: "${rawKind}". Expected one of: ${validKinds.join(', ')}`, req);
+      }
+      const result = await simManager.sendCommand({ cmd: 'trigger', node, kind: rawKind });
+      return sendJson(res, 200, { success: true, result, node, kind: rawKind }, req);
     } catch (err) {
       return sendError(res, 500, err.message, req);
     }
@@ -549,13 +556,25 @@ const server = http.createServer(async (req, res) => {
     try {
       await simManager.ensureStarted();
       const body = await parseBody(req);
-      const cmdObj = { cmd: 'set_node', node: parseInt(body.node, 10) };
+      const node = parseInt(body.node !== undefined ? body.node : (body.id !== undefined ? body.id : body.nodeId), 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
+      const cmdObj = { cmd: 'set_node', node };
       if (body.online !== undefined) cmdObj.online = Boolean(body.online);
       if (body.gnss !== undefined) cmdObj.gnss = Boolean(body.gnss);
+      else if (body.gnss_on !== undefined) cmdObj.gnss = Boolean(body.gnss_on);
       if (body.dr !== undefined) cmdObj.dr = Boolean(body.dr);
-      if (body.battery !== undefined) cmdObj.battery = parseInt(body.battery, 10);
+      else if (body.dr_on !== undefined) cmdObj.dr = Boolean(body.dr_on);
+      if (body.battery !== undefined) {
+        const batt = parseInt(body.battery, 10);
+        if (isNaN(batt) || batt < 0 || batt > 100) {
+          return sendError(res, 400, 'battery must be an integer between 0 and 100', req);
+        }
+        cmdObj.battery = batt;
+      }
       const result = await simManager.sendCommand(cmdObj);
-      return sendJson(res, 200, { success: true, result }, req);
+      return sendJson(res, 200, { success: true, result, node }, req);
     } catch (err) {
       return sendError(res, 500, err.message, req);
     }
@@ -566,9 +585,15 @@ const server = http.createServer(async (req, res) => {
     try {
       await simManager.ensureStarted();
       const body = await parseBody(req);
-      const node = parseInt(body.node, 10);
+      const node = parseInt(body.node !== undefined ? body.node : body.id, 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
       const x = parseFloat(body.x);
       const y = parseFloat(body.y);
+      if (isNaN(x) || isNaN(y)) {
+        return sendError(res, 400, 'x and y coordinates are required numbers', req);
+      }
       const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
       return sendJson(res, 200, { success: true, result }, req);
     } catch (err) {
@@ -583,9 +608,12 @@ const server = http.createServer(async (req, res) => {
       const body = await parseBody(req);
       const a = parseInt(body.a, 10);
       const b = parseInt(body.b, 10);
+      if (isNaN(a) || isNaN(b)) {
+        return sendError(res, 400, 'a and b node IDs are required integers', req);
+      }
       const blocked = body.blocked !== undefined ? Boolean(body.blocked) : true;
       const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
-      return sendJson(res, 200, { success: true, result }, req);
+      return sendJson(res, 200, { success: true, result, a, b, blocked }, req);
     } catch (err) {
       return sendError(res, 500, err.message, req);
     }

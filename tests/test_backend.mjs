@@ -243,6 +243,106 @@ async function runTests() {
     // Reset simulator
     const resReset = await request('POST', '/api/control/reset');
     assert(resReset.statusCode === 200 && resReset.json?.success === true, 'C++ engine reset cleanly');
+
+    // Subtest: Battery and State Persistence (Phase 3 & Phase 9 requirement)
+    console.log('\n    [Subtest] Testing battery configuration, energy consumption & reset persistence...');
+    
+    // Set Node 2 battery to 35%
+    const resSetBatt = await request('POST', '/api/control/node-state', { node: 2, battery: 35 });
+    assert(resSetBatt.statusCode === 200, 'Setting Node 2 battery to 35% returns HTTP 200');
+
+    // Verify authoritative state in C++ engine reports 35%
+    const resStateBatt1 = await request('GET', '/api/control/state');
+    const node2Pre = resStateBatt1.json?.nodes.find(n => n.id === 2);
+    assert(node2Pre?.battery === 35, `Authoritative C++ state reports 35% battery (got: ${node2Pre?.battery}%)`);
+    assert(node2Pre?.initial_battery === 35, `Node 2 initial_battery set to 35% (got: ${node2Pre?.initial_battery}%)`);
+
+    // Step simulation forward and verify battery does NOT jump back to 100%
+    await request('POST', '/api/control/step', { ms: 1000 });
+    const resStateBatt2 = await request('GET', '/api/control/state');
+    const node2Step = resStateBatt2.json?.nodes.find(n => n.id === 2);
+    assert(node2Step?.battery <= 35 && node2Step?.battery >= 30, `Battery persisted across step without returning to 100% (current: ${node2Step?.battery}%)`);
+
+    // Reset simulator explicitly and verify configured initial battery (35%) is retained
+    await request('POST', '/api/control/reset');
+    const resStateBattReset = await request('GET', '/api/control/state');
+    const node2AfterReset = resStateBattReset.json?.nodes.find(n => n.id === 2);
+    assert(node2AfterReset?.battery === 35, `Battery configuration persisted across simulation reset (got: ${node2AfterReset?.battery}%)`);
+
+    // Test battery depletion cutoff
+    console.log('\n    [Subtest] Testing battery depletion cut-off (0%)...');
+    await request('POST', '/api/control/node-state', { node: 3, battery: 0 });
+    const resStateDepleted = await request('GET', '/api/control/state');
+    const node3Depleted = resStateDepleted.json?.nodes.find(n => n.id === 3);
+    assert(node3Depleted?.battery === 0, 'Node 3 battery set to 0% (depleted)');
+
+    // Depleted node trigger should not generate TX
+    await request('POST', '/api/control/trigger', { node: 3, kind: 'short' });
+    await request('POST', '/api/control/step', { ms: 1000 });
+    const resStatePostDep = await request('GET', '/api/control/state');
+    const node3Post = resStatePostDep.json?.nodes.find(n => n.id === 3);
+    assert(node3Post?.tx_sos === 0, 'Depleted node (0% battery) does not transmit packets');
+
+    // Test invalid battery validation
+    const resInvalidBatt = await request('POST', '/api/control/node-state', { node: 1, battery: 150 });
+    assert(resInvalidBatt.statusCode === 400, 'Invalid battery (150%) rejected with HTTP 400');
+
+    // Subtest: Complete Command Inventory (Phase 4 requirement)
+    console.log('\n    [Subtest] Testing full command set (short, double, long, voice, voice-medical, voice-trapped)...');
+    for (const kind of ['short', 'double', 'long', 'voice', 'voice-medical', 'voice-trapped']) {
+      const resCmd = await request('POST', '/api/control/trigger', { node: 1, kind });
+      assert(resCmd.statusCode === 200, `Trigger "${kind}" accepted with HTTP 200`);
+      assert(resCmd.json?.kind === kind, `Response confirms trigger kind "${kind}"`);
+    }
+
+    // Invalid trigger rejection
+    const resBadKind = await request('POST', '/api/control/trigger', { node: 1, kind: 'teleport' });
+    assert(resBadKind.statusCode === 400, 'Unsupported trigger kind "teleport" rejected with HTTP 400');
+
+    // Step clock forward so voice and button events execute in C++ world
+    await request('POST', '/api/control/step', { ms: 1500 });
+
+    // Subtest: Hardware & Network Fault Controls (Phase 4 requirement)
+    console.log('\n    [Subtest] Testing hardware faults (kill/revive, GNSS toggle, IMU toggle, link blocking)...');
+    
+    // Kill and Revive Node
+    await request('POST', '/api/control/node-state', { node: 1, online: false });
+    const resStateKilled = await request('GET', '/api/control/state');
+    assert(resStateKilled.json?.nodes.find(n => n.id === 1)?.online === false, 'Node 1 marked offline after kill command');
+
+    await request('POST', '/api/control/node-state', { node: 1, online: true });
+    const resStateRevived = await request('GET', '/api/control/state');
+    assert(resStateRevived.json?.nodes.find(n => n.id === 1)?.online === true, 'Node 1 restored online after revive command');
+
+    // GNSS Receiver Toggle
+    await request('POST', '/api/control/node-state', { node: 1, gnss: false });
+    const resStateNoGps = await request('GET', '/api/control/state');
+    assert(resStateNoGps.json?.nodes.find(n => n.id === 1)?.gnss === false, 'GNSS receiver disabled on Node 1');
+
+    await request('POST', '/api/control/node-state', { node: 1, gnss: true });
+    const resStateGpsOn = await request('GET', '/api/control/state');
+    assert(resStateGpsOn.json?.nodes.find(n => n.id === 1)?.gnss === true, 'GNSS receiver restored on Node 1');
+
+    // Dead-Reckoning (IMU) Toggle
+    await request('POST', '/api/control/node-state', { node: 1, dr: false });
+    const resStateNoDr = await request('GET', '/api/control/state');
+    assert(resStateNoDr.json?.nodes.find(n => n.id === 1)?.dr === false, 'IMU Dead-Reckoning disabled on Node 1');
+
+    await request('POST', '/api/control/node-state', { node: 1, dr: true });
+    const resStateDrOn = await request('GET', '/api/control/state');
+    assert(resStateDrOn.json?.nodes.find(n => n.id === 1)?.dr === true, 'IMU Dead-Reckoning restored on Node 1');
+
+    // RF Link Block & Restore
+    const resBlockLink = await request('POST', '/api/control/block-link', { a: 1, b: 2, blocked: true });
+    assert(resBlockLink.statusCode === 200, 'Blocking link between Node 1 and 2 returns HTTP 200');
+    assert(resBlockLink.json?.blocked === true, 'Link block status confirmed in response');
+
+    const resRestoreLink = await request('POST', '/api/control/block-link', { a: 1, b: 2, blocked: false });
+    assert(resRestoreLink.statusCode === 200, 'Restoring link between Node 1 and 2 returns HTTP 200');
+    assert(resRestoreLink.json?.blocked === false, 'Link unblock status confirmed in response');
+
+    const resInvalidLink = await request('POST', '/api/control/block-link', { a: 'not-a-node' });
+    assert(resInvalidLink.statusCode === 400, 'Invalid link block parameters rejected with HTTP 400');
   } catch (err) {
     assert(false, `Simulator lifecycle failed: ${err.message}`);
   }

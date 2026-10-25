@@ -102,6 +102,8 @@ void print_node_state(const World& w) {
               << ",\"x\":" << inf.x << ",\"y\":" << inf.y
               << ",\"lat_e6\":" << inf.lat_e6 << ",\"lon_e6\":" << inf.lon_e6
               << ",\"battery\":" << static_cast<int>(inf.battery)
+              << ",\"initial_battery\":" << static_cast<int>(inf.initial_battery)
+              << ",\"energy_consumed_mah\":" << inf.energy_consumed_mah
               << ",\"online\":" << (inf.online ? "true" : "false")
               << ",\"gnss\":" << (inf.gnss_on ? "true" : "false")
               << ",\"dr\":" << (inf.dr_on ? "true" : "false")
@@ -153,13 +155,15 @@ void print_summary(const World& w, uint32_t seed, uint8_t sf, uint32_t duration)
 
 int run_interactive(int survivors, int relays, double zone, ChannelParams ch, uint32_t seed) {
   std::unique_ptr<World> w;
-  auto init_world = [&](int s_count, int r_count, double z, ChannelParams c, uint32_t sd) {
-    w = make_demo_world(s_count, r_count, z, c, sd);
+  std::map<uint16_t, uint8_t> initial_batteries;
+
+  auto init_world = [&](int s_count, int r_count, double z, ChannelParams c, uint32_t sd, const std::map<uint16_t, uint8_t>& batts) {
+    w = make_demo_world(s_count, r_count, z, c, sd, setu::NodeConfig(), batts);
     w->set_trace(&std::cout);
   };
 
   try {
-    init_world(survivors, relays, zone, ch, seed);
+    init_world(survivors, relays, zone, ch, seed, initial_batteries);
   } catch (const std::exception& e) {
     std::cout << "{\"ok\":false,\"error\":\"" << e.what() << "\"}\n" << std::flush;
     return 1;
@@ -193,10 +197,10 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       else if (kind == "voice") w->wake_word(id, t);
       else if (kind == "voice-medical") {
         w->wake_word(id, t);
-        w->voice_command(id, t + 1500, 1, setu::Hazard::Medical);
+        w->voice_command(id, t + 200, 1, setu::Hazard::Medical);
       } else if (kind == "voice-trapped") {
         w->wake_word(id, t);
-        w->voice_command(id, t + 1500, 1, setu::Hazard::Trapped);
+        w->voice_command(id, t + 200, 1, setu::Hazard::Trapped);
       } else {
         std::cout << "{\"ok\":false,\"cmd\":\"trigger\",\"error\":\"unknown trigger kind\"}\n" << std::flush;
         continue;
@@ -221,8 +225,14 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
       if (line.find("\"online\":") != std::string::npos) w->set_online(id, json_get_bool(line, "online", true));
       if (line.find("\"gnss\":") != std::string::npos) w->set_gnss(id, json_get_bool(line, "gnss", true));
+      else if (line.find("\"gnss_on\":") != std::string::npos) w->set_gnss(id, json_get_bool(line, "gnss_on", true));
       if (line.find("\"dr\":") != std::string::npos) w->set_dead_reckoning(id, json_get_bool(line, "dr", true));
-      if (line.find("\"battery\":") != std::string::npos) w->set_battery(id, static_cast<uint8_t>(json_get_int(line, "battery", 100)));
+      else if (line.find("\"dr_on\":") != std::string::npos) w->set_dead_reckoning(id, json_get_bool(line, "dr_on", true));
+      if (line.find("\"battery\":") != std::string::npos) {
+        uint8_t batt = static_cast<uint8_t>(json_get_int(line, "battery", 100));
+        w->set_battery(id, batt);
+        initial_batteries[id] = batt;
+      }
       std::cout << "{\"ok\":true,\"cmd\":\"set_node\",\"node\":" << id << "}\n" << std::flush;
     } else if (cmd == "reposition") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
@@ -242,7 +252,7 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       print_summary(*w, seed, ch.sf, w->now());
     } else if (cmd == "reset") {
       try {
-        init_world(survivors, relays, zone, ch, seed);
+        init_world(survivors, relays, zone, ch, seed, initial_batteries);
         std::cout << "{\"ok\":true,\"cmd\":\"reset\",\"t\":0,\"nodes\":" << w->node_ids().size() << "}\n" << std::flush;
       } catch (const std::exception& e) {
         std::cout << "{\"ok\":false,\"cmd\":\"reset\",\"error\":\"" << e.what() << "\"}\n" << std::flush;
@@ -255,8 +265,11 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       if (line.find("\"sf\":") != std::string::npos) ch.sf = static_cast<uint8_t>(json_get_int(line, "sf", ch.sf));
       if (line.find("\"loss\":") != std::string::npos) ch.random_loss = json_get_double(line, "loss", ch.random_loss);
       if (line.find("\"path_exp\":") != std::string::npos) ch.path_exp = json_get_double(line, "path_exp", ch.path_exp);
+      if (line.find("\"reset_batteries\":true") != std::string::npos) {
+        initial_batteries.clear();
+      }
       try {
-        init_world(survivors, relays, zone, ch, seed);
+        init_world(survivors, relays, zone, ch, seed, initial_batteries);
         std::cout << "{\"ok\":true,\"cmd\":\"init\",\"t\":0,\"nodes\":" << w->node_ids().size() << "}\n" << std::flush;
       } catch (const std::exception& e) {
         std::cout << "{\"ok\":false,\"cmd\":\"init\",\"error\":\"" << e.what() << "\"}\n" << std::flush;

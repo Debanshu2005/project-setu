@@ -127,68 +127,17 @@ class SetuDashboardApp {
 
     // Inspector node trigger handler (C++ IPC)
     this.inspector.onTrigger = async (nodeId, kind) => {
-      // 1. If currently in replay mode, auto-switch to live digital twin mode
-      if (this.mode !== 'live') {
-        this.toggleOperatingMode();
-      }
-
-      const tn = this.sim.nodes.get(nodeId);
-      if (tn) {
-        tn.pending_trigger = true;
-        this.topo.render();
-        this.updateMetrics();
-        if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
-          this.inspector.renderNode();
-        }
-      }
-
-      this.elStatusDot.classList.add('simulating');
-      this.elStatusText.textContent = `DISPATCHING TRIGGER TO NODE ${nodeId} (${kind.toUpperCase()})...`;
-
-      try {
-        // 2. Dispatch trigger command to native C++ simulator
-        await SetuApi.triggerNode(nodeId, kind);
-
-        // 3. Step clock forward deterministically by 1000ms so button debounce elapses and LoRa RF packets transmit
-        await SetuApi.stepControl(1000);
-
-        // 4. Fetch confirmed native state
-        await this.syncLiveEngineState();
-
-        const fresh = this.sim.nodes.get(nodeId);
-        if (fresh) {
-          fresh.pending_trigger = false;
-          if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
-            this.inspector.inspectNode(fresh);
-          }
-        }
-
-        this.elStatusDot.classList.remove('simulating');
-        const isSosConfirmed = fresh && (fresh.active_sos || fresh.active);
-        this.elStatusText.textContent = isSosConfirmed
-          ? `NODE ${nodeId} SOS TRANSMITTING (${kind.toUpperCase()}) — CONFIRMED BY NATIVE ENGINE`
-          : `NODE ${nodeId} TRIGGER PROCESSED (${kind.toUpperCase()}) — NATIVE QUEUES DRAINED`;
-      } catch (err) {
-        this.elStatusDot.classList.remove('simulating');
-        if (tn) {
-          tn.pending_trigger = false;
-          this.topo.render();
-        }
-        this.elStatusText.textContent = `TRIGGER FAILED: ${err.message}`;
-        alert(`Trigger failed: ${err.message}`);
-      }
+      await this.executeNodeTrigger(nodeId, kind);
     };
 
     // Inspector hardware fault toggle handler
     this.inspector.onStateChange = async (nodeId, stateUpdate) => {
-      if (this.mode === 'live') {
-        try {
-          await SetuApi.setNodeState(nodeId, stateUpdate);
-          this.elStatusText.textContent = `UPDATED NODE ${nodeId} STATE: ${JSON.stringify(stateUpdate)}`;
-        } catch (err) {
-          console.warn('Set node state failed:', err);
-        }
-      }
+      await this.executeNodeStateChange(nodeId, stateUpdate);
+    };
+
+    // Inspector link blocking toggle handler
+    this.inspector.onLinkToggle = async (a, b, blocked) => {
+      await this.executeLinkToggle(a, b, blocked);
     };
 
     // 3. Timeline
@@ -199,10 +148,10 @@ class SetuDashboardApp {
     const chartsEl = document.getElementById('chartsContainer');
     this.charts = new ChartsComponent(chartsEl, this.sim);
 
-    // 5. Left Panel: SOS Console
+    // 5. Left Panel: Operator Command & SOS Injection Console
     const sosConsoleEl = document.getElementById('sosConsoleContainer');
-    this.console = new SosConsoleComponent(sosConsoleEl, this.sim, trigger => {
-      this.handleInjectTrigger(trigger);
+    this.console = new SosConsoleComponent(sosConsoleEl, this.sim, async cmdObj => {
+      return await this.executeOperatorCommand(cmdObj);
     });
   }
 
@@ -283,6 +232,7 @@ class SetuDashboardApp {
         if (this.mode === 'live') {
           await SetuApi.resetControl();
           await this.syncLiveEngineState();
+          this.elStatusText.textContent = 'SIMULATION RESET TO INITIAL STATE (CONFIGURED BATTERY LEVELS PRESERVED)';
         } else {
           this.sim.seek(0);
         }
@@ -557,8 +507,9 @@ class SetuDashboardApp {
   }
 
   updatePlayButton() {
-    this.btnPlay.textContent = this.sim.isPlaying ? '❚❚' : '▶';
-    this.btnPlay.title = this.sim.isPlaying ? 'Pause Simulation' : 'Play Simulation';
+    const isPlaying = this.mode === 'live' ? this.isEngineRunning : this.sim.isPlaying;
+    this.btnPlay.textContent = isPlaying ? '❚❚' : '▶';
+    this.btnPlay.title = isPlaying ? 'Pause Simulation' : (this.mode === 'live' ? 'Run / Resume Live Simulation' : 'Play Replay');
   }
 
   updateScrubber() {
@@ -573,7 +524,17 @@ class SetuDashboardApp {
 
   updateMetrics() {
     const m = this.sim.getMetrics();
-    this.metricSimState.textContent = this.sim.isPlaying ? 'RUNNING' : (m.clockMs >= m.durationMs ? 'COMPLETED' : 'PAUSED');
+    if (this.mode === 'live') {
+      this.metricSimState.textContent = this.isEngineRunning ? 'RUNNING (LIVE)' : (m.clockMs === 0 ? 'READY' : 'PAUSED (LIVE)');
+      this.metricSimState.style.background = this.isEngineRunning ? 'rgba(16, 185, 129, 0.2)' : 'rgba(56, 189, 248, 0.2)';
+      this.metricSimState.style.borderColor = this.isEngineRunning ? '#10b981' : '#38bdf8';
+      this.metricSimState.style.color = this.isEngineRunning ? '#34d399' : '#7dd3fc';
+    } else {
+      this.metricSimState.textContent = this.sim.isPlaying ? 'REPLAYING' : (m.clockMs >= m.durationMs ? 'COMPLETED' : 'PAUSED (REPLAY)');
+      this.metricSimState.style.background = 'rgba(245, 158, 11, 0.2)';
+      this.metricSimState.style.borderColor = '#f59e0b';
+      this.metricSimState.style.color = '#fcd34d';
+    }
     this.metricClock.textContent = `${(m.clockMs / 1000).toFixed(1)}s`;
     this.metricNodes.textContent = m.totalNodes;
     this.metricOnline.textContent = `${m.onlineNodes} / ${m.totalNodes}`;
@@ -726,6 +687,18 @@ class SetuDashboardApp {
     } else if (ev.ev === 'retry') {
       const nn = this.sim.nodes.get(ev.node);
       if (nn) nn.stats.retries++;
+    } else if (ev.ev === 'battery') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) {
+        nb.battery = ev.battery;
+        if (nb.initial_battery === undefined) nb.initial_battery = ev.battery;
+      }
+    } else if (ev.ev === 'battery_depleted') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) {
+        nb.battery = 0;
+        nb.online = false;
+      }
     }
 
     // Clean up finished packet rings
@@ -745,6 +718,114 @@ class SetuDashboardApp {
     this.topo.render();
   }
 
+  async executeNodeTrigger(nodeId, kind) {
+    if (this.mode !== 'live') {
+      this.toggleOperatingMode();
+    }
+
+    const tn = this.sim.nodes.get(nodeId);
+    if (tn) {
+      tn.pending_trigger = true;
+      this.topo.render();
+      this.updateMetrics();
+      if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
+        this.inspector.renderNode();
+      }
+    }
+
+    this.elStatusDot.classList.add('simulating');
+    this.elStatusText.textContent = `DISPATCHING TRIGGER TO NODE ${nodeId} (${kind.toUpperCase()})...`;
+
+    try {
+      await SetuApi.triggerNode(nodeId, kind);
+      // Step forward deterministically by 1000ms so button release / voice pipeline elapses and RF transmits
+      await SetuApi.stepControl(1000);
+      await this.syncLiveEngineState();
+
+      const fresh = this.sim.nodes.get(nodeId);
+      if (fresh) {
+        fresh.pending_trigger = false;
+        if (this.inspector.selectedNode && this.inspector.selectedNode.id === nodeId) {
+          this.inspector.inspectNode(fresh);
+        }
+      }
+
+      this.elStatusDot.classList.remove('simulating');
+      const isSosConfirmed = fresh && (fresh.active_sos || fresh.active);
+      this.elStatusText.textContent = isSosConfirmed
+        ? `NODE ${nodeId} SOS TRANSMITTING (${kind.toUpperCase()}) — CONFIRMED BY NATIVE ENGINE`
+        : `NODE ${nodeId} TRIGGER PROCESSED (${kind.toUpperCase()}) — NATIVE QUEUES DRAINED`;
+      return { ok: true, node: nodeId, kind };
+    } catch (err) {
+      this.elStatusDot.classList.remove('simulating');
+      if (tn) {
+        tn.pending_trigger = false;
+        this.topo.render();
+      }
+      this.elStatusText.textContent = `TRIGGER FAILED: ${err.message}`;
+      throw err;
+    }
+  }
+
+  async executeNodeStateChange(nodeId, stateUpdate) {
+    if (this.mode !== 'live') {
+      this.toggleOperatingMode();
+    }
+    try {
+      await SetuApi.setNodeState(nodeId, stateUpdate);
+      await this.syncLiveEngineState();
+      this.elStatusText.textContent = `UPDATED NODE ${nodeId} STATE: ${JSON.stringify(stateUpdate)}`;
+      return { ok: true, node: nodeId, update: stateUpdate };
+    } catch (err) {
+      console.warn('Set node state failed:', err);
+      this.elStatusText.textContent = `NODE STATE UPDATE FAILED: ${err.message}`;
+      throw err;
+    }
+  }
+
+  async executeLinkToggle(a, b, blocked) {
+    if (this.mode !== 'live') {
+      this.toggleOperatingMode();
+    }
+    try {
+      await SetuApi.blockLink(a, b, blocked);
+      let found = false;
+      for (const l of this.sim.links) {
+        if ((l.a === a && l.b === b) || (l.a === b && l.b === a)) {
+          l.blocked = blocked;
+          found = true;
+          break;
+        }
+      }
+      if (!found && blocked) {
+        this.sim.links.push({ a, b, blocked: true, rssi: -130, dist: 500 });
+      }
+      this.topo.render();
+      if (this.inspector && this.inspector.selectedNode) {
+        this.inspector.renderNode();
+      }
+      this.elStatusText.textContent = `LINK BETWEEN NODE ${a} AND ${b} ${blocked ? 'BLOCKED' : 'RESTORED'}`;
+      return { ok: true, a, b, blocked };
+    } catch (err) {
+      console.warn('Toggle link failed:', err);
+      this.elStatusText.textContent = `LINK TOGGLE FAILED: ${err.message}`;
+      throw err;
+    }
+  }
+
+  async executeOperatorCommand(cmdObj) {
+    if (!cmdObj) return;
+    if (cmdObj.type === 'trigger') {
+      return await this.executeNodeTrigger(cmdObj.nodeId, cmdObj.kind);
+    }
+    if (cmdObj.type === 'state') {
+      return await this.executeNodeStateChange(cmdObj.nodeId, cmdObj.update);
+    }
+    if (cmdObj.type === 'link') {
+      return await this.executeLinkToggle(cmdObj.a, cmdObj.b, cmdObj.blocked);
+    }
+  }
+
   async syncLiveEngineState() {
     try {
       const selectedId = this.inspector && this.inspector.selectedNode ? this.inspector.selectedNode.id : null;
@@ -762,6 +843,8 @@ class SetuDashboardApp {
             x: n.x,
             y: n.y,
             battery: n.battery,
+            initial_battery: n.initial_battery !== undefined ? n.initial_battery : (n.battery !== undefined ? n.battery : 100),
+            energy_consumed_mah: typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah : 0,
             online: n.online,
             active_sos: n.active,
             ack_received: n.acked,
@@ -812,8 +895,9 @@ class SetuDashboardApp {
         this.topo.render();
         this.updateMetrics();
         this.sim.notify('sync');
-        if (this.console && typeof this.console.populateSurvivors === 'function') {
-          this.console.populateSurvivors();
+        if (this.console) {
+          if (typeof this.console.populateNodes === 'function') this.console.populateNodes();
+          else if (typeof this.console.populateSurvivors === 'function') this.console.populateSurvivors();
         }
 
         // Re-inspect the currently selected node reference so it is never stale or orphaned

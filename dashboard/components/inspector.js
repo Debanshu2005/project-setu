@@ -11,6 +11,7 @@ export class InspectorComponent {
     this.currentPacket = null;
     this.onTrigger = null;      // (nodeId, kind) => void
     this.onStateChange = null;  // (nodeId, stateUpdate) => void
+    this.onLinkToggle = null;   // (a, b, blocked) => void
 
     this.sim.subscribe((engine, type) => {
       if (this.currentNode) {
@@ -78,6 +79,10 @@ export class InspectorComponent {
     const posY = typeof n.y === 'number' ? n.y.toFixed(1) : '0.0';
     const posProv = n.gnss_on ? 'GNSS 3D Satellite Fix' : n.dr_on ? 'Dead-Reckoning (MPU-6050 IMU)' : 'Unknown / Signal Lost';
 
+    const curBatt = n.battery !== undefined ? n.battery : 100;
+    const initBatt = n.initial_battery !== undefined ? n.initial_battery : curBatt;
+    const consumedMah = typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah.toFixed(2) : '0.00';
+
     let controlsHtml = '';
     if (n.role === 'survivor') {
       controlsHtml = `
@@ -114,19 +119,21 @@ export class InspectorComponent {
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Node Power State:</span>
               <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
-                ${n.online ? 'Simulate Node Failure (Go Offline)' : 'Restore Node (Bring Online)'}
+                ${n.online ? 'Kill Node (Offline)' : 'Restore Node (Online)'}
               </button>
             </div>
 
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span>Battery Level: <strong id="lblBatteryVal">${n.battery}%</strong></span>
-              <input type="range" id="sliderBattery" min="0" max="100" value="${n.battery}" style="width: 100px; cursor: pointer;" />
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+              <span>Battery:</span>
+              <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
+              <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
+              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>GNSS Satellite Receiver:</span>
               <button id="btnToggleGnss" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.gnss_on ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}; border: 1px solid ${n.gnss_on ? '#10b981' : '#ef4444'}; color: ${n.gnss_on ? '#34d399' : '#f87171'};">
-                ${n.gnss_on ? 'GNSS Fix Active' : 'GNSS Denied (Lost)'}
+                ${n.gnss_on ? 'GNSS Active' : 'GNSS Denied (Lost)'}
               </button>
             </div>
 
@@ -153,11 +160,56 @@ export class InspectorComponent {
                 ${n.online ? 'Disable Tower (Offline)' : 'Enable Tower (Online)'}
               </button>
             </div>
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-              <span>Backup Battery: <strong id="lblBatteryVal">${n.battery}%</strong></span>
-              <input type="range" id="sliderBattery" min="0" max="100" value="${n.battery}" style="width: 100px; cursor: pointer;" />
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+              <span>Backup Battery:</span>
+              <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
+              <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
+              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>
             </div>
           </div>
+        </div>
+      `;
+    }
+
+    // Connected RF Links Table
+    const nodeLinks = (this.sim.links || []).filter(l => l.a === n.id || l.b === n.id);
+    let linksHtml = '';
+    if (nodeLinks.length > 0) {
+      linksHtml = `
+        <div class="wire-breakdown-card">
+          <div class="wire-header" style="color: #38bdf8;">
+            <span>Connected RF Links & Obstructions (${nodeLinks.length})</span>
+          </div>
+          <table class="field-table" style="font-size: 10px;">
+            <thead>
+              <tr style="color: var(--text-dim); text-align: left;">
+                <th>Peer</th>
+                <th>Dist</th>
+                <th>RSSI</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${nodeLinks.map(l => {
+                const peerId = l.a === n.id ? l.b : l.a;
+                const isBlocked = Boolean(l.blocked);
+                return `
+                  <tr>
+                    <td class="field-name">Node ${peerId}</td>
+                    <td class="field-val">${l.dist}m</td>
+                    <td class="field-val" style="color: ${l.rssi >= -90 ? '#10b981' : l.rssi >= -110 ? '#f59e0b' : '#ef4444'}">${l.rssi} dBm</td>
+                    <td class="field-val" style="color: ${isBlocked ? '#ef4444' : '#10b981'}; font-weight: 700;">${isBlocked ? 'BLOCKED' : 'ACTIVE'}</td>
+                    <td>
+                      <button class="btn btn-toggle-link" data-peer="${peerId}" data-blocked="${isBlocked}" style="padding: 2px 6px; font-size: 9px; background: ${isBlocked ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${isBlocked ? '#10b981' : '#ef4444'}; color: ${isBlocked ? '#34d399' : '#fca5a5'};">
+                        ${isBlocked ? 'Restore' : 'Block'}
+                      </button>
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
         </div>
       `;
     }
@@ -174,16 +226,26 @@ export class InspectorComponent {
 
       ${controlsHtml}
 
-      <div class="metrics-grid" style="margin-top: 8px; margin-bottom: 12px;">
+      <div class="metrics-grid" style="margin-top: 8px; margin-bottom: 12px; grid-template-columns: repeat(2, 1fr);">
         <div class="metric-card">
-          <div class="metric-label">Battery Level</div>
-          <div class="metric-value">${n.battery !== undefined ? n.battery : 100}<span class="metric-unit">%</span></div>
+          <div class="metric-label">Current Battery</div>
+          <div class="metric-value" style="color: ${curBatt > 50 ? '#10b981' : curBatt > 20 ? '#f59e0b' : '#ef4444'}">${curBatt}<span class="metric-unit">%</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Initial Configured</div>
+          <div class="metric-value" style="color: #38bdf8;">${initBatt}<span class="metric-unit">%</span></div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-label">Energy Consumed</div>
+          <div class="metric-value" style="color: #f59e0b;">${consumedMah}<span class="metric-unit">mAh</span></div>
         </div>
         <div class="metric-card">
           <div class="metric-label">Airtime Used</div>
           <div class="metric-value">${(stats.tx || 0) * 62}<span class="metric-unit">ms</span></div>
         </div>
       </div>
+
+      ${linksHtml}
 
       <div class="wire-breakdown-card">
         <div class="wire-header">
@@ -252,20 +314,33 @@ export class InspectorComponent {
       });
     }
 
-    // 3. Battery Slider
+    // 3. Battery Slider & Direct Set
     const sliderBattery = this.nodeContainer.querySelector('#sliderBattery');
-    const lblBattery = this.nodeContainer.querySelector('#lblBatteryVal');
-    if (sliderBattery) {
+    const numBattery = this.nodeContainer.querySelector('#numBattery');
+    const btnApplyBattery = this.nodeContainer.querySelector('#btnApplyBattery');
+
+    if (sliderBattery && numBattery) {
       sliderBattery.addEventListener('input', e => {
-        const val = parseInt(e.target.value, 10);
-        lblBattery.textContent = `${val}%`;
+        numBattery.value = e.target.value;
       });
-      sliderBattery.addEventListener('change', e => {
-        const val = parseInt(e.target.value, 10);
+      numBattery.addEventListener('input', e => {
+        sliderBattery.value = e.target.value;
+      });
+    }
+
+    if (btnApplyBattery && numBattery) {
+      btnApplyBattery.addEventListener('click', () => {
+        const val = parseInt(numBattery.value, 10);
+        if (isNaN(val) || val < 0 || val > 100) {
+          alert('Battery must be an integer between 0 and 100');
+          return;
+        }
         n.battery = val;
+        n.initial_battery = val;
         if (this.onStateChange) {
           this.onStateChange(n.id, { battery: val });
         }
+        this.renderNode();
       });
     }
 
@@ -294,6 +369,18 @@ export class InspectorComponent {
         this.renderNode();
       });
     }
+
+    // 6. Link Toggle Buttons
+    this.nodeContainer.querySelectorAll('.btn-toggle-link').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const peer = parseInt(btn.dataset.peer, 10);
+        const currentBlocked = btn.dataset.blocked === 'true';
+        const newBlocked = !currentBlocked;
+        if (this.onLinkToggle) {
+          this.onLinkToggle(n.id, peer, newBlocked);
+        }
+      });
+    });
   }
 
   renderPacket() {

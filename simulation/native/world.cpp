@@ -37,8 +37,29 @@ struct World::SimNode {
   bool gnss_on = true, dr_on = true;
   uint32_t gnss_lost_at = 0;
   uint8_t battery = 100;
+  uint8_t initial_battery = 100;
+  double battery_fraction = 100.0;
+  double energy_consumed_mah = 0.0;
   std::mt19937 rng;
   std::normal_distribution<double> gauss{0.0, 1.0};
+
+  void consume_energy(double pct, const char* reason) {
+    if (!online || battery == 0) return;
+    battery_fraction = std::max(0.0, battery_fraction - pct);
+    uint8_t new_batt = static_cast<uint8_t>(std::clamp(std::round(battery_fraction), 0.0, 100.0));
+    energy_consumed_mah += (pct / 100.0) * w.ch_.battery_capacity_mah;
+    if (new_batt != battery) {
+      battery = new_batt;
+      char b[96];
+      std::snprintf(b, sizeof b, ",\"battery\":%u,\"why\":\"%s\",\"mah\":%.2f",
+                    static_cast<unsigned int>(battery), reason, energy_consumed_mah);
+      w.trace_event("battery", id, b);
+      if (battery == 0) {
+        online = false;
+        w.trace_event("battery_depleted", id, ",\"why\":\"battery_exhausted\"");
+      }
+    }
+  }
 
   // Virtual FreeRTOS Queues (matching app_main.cpp)
   setu::fitl::VirtualQueue<setu::fitl::ButtonEvent, 16> button_queue;
@@ -157,8 +178,13 @@ struct World::SimNode {
 
   std::unique_ptr<setu::Node> node;
 
-  SimNode(World& world, const setu::NodeConfig& cfg, double px, double py)
-      : w(world), id(cfg.node_id), x(px), y(py), rng(world.seed_ * 2654435761u + cfg.node_id) {
+  SimNode(World& world, const setu::NodeConfig& cfg, double px, double py, uint8_t init_batt = 100)
+      : w(world), id(cfg.node_id), x(px), y(py),
+        battery(std::min<uint8_t>(100, init_batt)),
+        initial_battery(std::min<uint8_t>(100, init_batt)),
+        battery_fraction(std::min<uint8_t>(100, init_batt)),
+        rng(world.seed_ * 2654435761u + cfg.node_id) {
+    if (battery == 0) online = false;
     setu::Hal h;
     h.clock = &clock;
     h.rng = &rand;
@@ -179,11 +205,11 @@ World::World(const ChannelParams& ch, uint32_t seed)
     : ch_(ch), seed_(seed), sens_(setu::lora_sensitivity_dbm(ch.sf)), rng_(seed) {}
 World::~World() = default;
 
-uint16_t World::add_node(const setu::NodeConfig& cfg, double x, double y) {
+uint16_t World::add_node(const setu::NodeConfig& cfg, double x, double y, uint8_t initial_battery) {
   setu::NodeConfig c = cfg;
   c.sf = ch_.sf;  // one radio configuration for the whole network: node and channel must agree
   c.bw_hz = ch_.bw_hz;
-  nodes_[c.node_id] = std::make_unique<SimNode>(*this, c, x, y);
+  nodes_[c.node_id] = std::make_unique<SimNode>(*this, c, x, y, initial_battery);
   return c.node_id;
 }
 
@@ -252,7 +278,27 @@ void World::set_dead_reckoning(uint16_t id, bool on) {
   nodes_.at(id)->dr_on = on;
   trace_event(on ? "dr_on" : "dr_off", id);
 }
-void World::set_battery(uint16_t id, uint8_t pct) { nodes_.at(id)->battery = pct; }
+void World::set_battery(uint16_t id, uint8_t pct) {
+  auto it = nodes_.find(id);
+  if (it == nodes_.end()) return;
+  auto& n = *it->second;
+  pct = std::min<uint8_t>(100, pct);
+  n.battery = pct;
+  n.initial_battery = pct;
+  n.battery_fraction = pct;
+  if (pct > 0 && !n.online && n.battery == 0) {
+    n.online = true;
+    trace_event("node_revive", id, ",\"why\":\"battery_recharged\"");
+  }
+  char b[64];
+  std::snprintf(b, sizeof b, ",\"battery\":%u,\"why\":\"manual_set\"", static_cast<unsigned int>(pct));
+  trace_event("battery", id, b);
+  if (pct == 0 && n.online) {
+    n.online = false;
+    trace_event("battery_depleted", id, ",\"why\":\"battery_exhausted\"");
+  }
+}
+
 void World::block_link(uint16_t a, uint16_t b, bool blocked) {
   auto k = std::minmax(a, b);
   if (blocked) blocked_.insert({k.first, k.second});
@@ -299,17 +345,22 @@ void World::button_press(uint16_t id, uint32_t at, uint32_t hold) {
 }
 void World::wake_word(uint16_t id, uint32_t at) {
   schedule(at, [this, id] {
-    if (nodes_.at(id)->online) {
-      trace_event("wake_word", id);
+    if (nodes_.at(id)->online && nodes_.at(id)->battery > 0) {
+      char b[64];
+      std::snprintf(b, sizeof b, ",\"phrase\":\"Setu\",\"window_ms\":3500");
+      trace_event("wake_word", id, b);
       node(id).on_wake_word();
     }
   });
 }
 void World::voice_command(uint16_t id, uint32_t at, uint8_t contact, setu::Hazard hz) {
   schedule(at, [this, id, contact, hz] {
-    if (nodes_.at(id)->online) {
-      char b[64];
-      std::snprintf(b, sizeof b, ",\"hazard\":%d,\"contact\":%u", static_cast<int>(hz), contact);
+    if (nodes_.at(id)->online && nodes_.at(id)->battery > 0) {
+      const char* hz_name = (hz == setu::Hazard::Medical) ? "medical" :
+                            (hz == setu::Hazard::Trapped) ? "trapped" : "general";
+      char b[96];
+      std::snprintf(b, sizeof b, ",\"hazard\":%d,\"hazard_name\":\"%s\",\"contact\":%u,\"recognized\":true",
+                    static_cast<int>(hz), hz_name, contact);
       trace_event("voice_command", id, b);
       node(id).on_voice_command(contact, hz);
     }
@@ -371,11 +422,16 @@ void World::trace_event(const char* ev, uint16_t node, const char* extra) {
 // ------------------------------------------------------------------ radio
 
 bool World::start_tx(uint16_t from, const uint8_t* d, size_t n) {
+  auto node_it = nodes_.find(from);
+  if (node_it == nodes_.end() || !node_it->second->online || node_it->second->battery == 0) {
+    return false;
+  }
   for (auto& t : txs_)
     if (t.from == from && now_ < t.end) return false;  // already transmitting
   const uint32_t air = setu::lora_airtime_ms(n, ch_.sf, ch_.bw_hz);
   txs_.push_back({from, now_, now_ + air, std::vector<uint8_t>(d, d + n)});
   counters_.tx++;
+  node_it->second->consume_energy(ch_.tx_energy_pct, "tx");
   if (trace_) {
     setu::Packet p;
     setu::parse(d, n, p);
@@ -401,7 +457,7 @@ void World::finish_tx(const Tx& tx) {
   std::uniform_real_distribution<double> u01(0.0, 1.0);
   for (auto& kv : nodes_) {
     const uint16_t r = kv.first;
-    if (r == tx.from || !kv.second->online) continue;
+    if (r == tx.from || !kv.second->online || kv.second->battery == 0) continue;
     const double mean = mean_rssi(tx.from, r);
     if (mean < sens_ - 6.0) continue;  // far outside range: not worth tracing
     const double rssi = mean + fade(rng_);
@@ -442,6 +498,7 @@ void World::finish_tx(const Tx& tx) {
       continue;
     }
     counters_.delivered++;
+    kv.second->consume_energy(ch_.rx_energy_pct, "rx");
     std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f", tx.from, rssi);
     trace_event("rx", r, b);
     firmware_radio_isr(r, tx.data.data(), tx.data.size(),
@@ -458,9 +515,17 @@ void World::run_until(uint32_t t_end) {
       it = actions_.erase(it);
       fn();
     }
+    // Idle energy consumption every 1000ms
+    if (now_ > 0 && now_ % 1000 == 0 && ch_.idle_energy_pct_per_s > 0) {
+      for (auto& kv : nodes_) {
+        if (kv.second->online && kv.second->battery > 0) {
+          kv.second->consume_energy(ch_.idle_energy_pct_per_s, "idle");
+        }
+      }
+    }
     // 2. every online device drains virtual FreeRTOS queues and runs real firmware tick
     for (auto& kv : nodes_)
-      if (kv.second->online) kv.second->drain_queues_and_tick();
+      if (kv.second->online && kv.second->battery > 0) kv.second->drain_queues_and_tick();
     // 3. transmissions that end now are delivered
     std::vector<Tx> done;
     for (auto& t : txs_)
@@ -521,10 +586,10 @@ void World::trigger_all_survivors(setu::Hazard hz, uint32_t delay_spread_ms, con
       button_press(id, t, 1700);
     } else if (kind == "voice-medical") {
       wake_word(id, t);
-      voice_command(id, t + 1500, 1, setu::Hazard::Medical);
+      voice_command(id, t + 200, 1, setu::Hazard::Medical);
     } else if (kind == "voice-trapped") {
       wake_word(id, t);
-      voice_command(id, t + 1500, 1, setu::Hazard::Trapped);
+      voice_command(id, t + 200, 1, setu::Hazard::Trapped);
     } else {
       button_press(id, t, 150);
     }
@@ -542,6 +607,8 @@ SimNodeInfo World::get_node_info(uint16_t id) const {
   info.y = n.y;
   xy_to_e6(n.x, n.y, info.lat_e6, info.lon_e6);
   info.battery = n.battery;
+  info.initial_battery = n.initial_battery;
+  info.energy_consumed_mah = n.energy_consumed_mah;
   info.online = n.online;
   info.gnss_on = n.gnss_on;
   info.dr_on = n.dr_on;
@@ -570,7 +637,8 @@ std::vector<SimNodeInfo> World::get_all_nodes_info() const {
 // ------------------------------------------------------------------ demo topology
 
 std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, const ChannelParams& ch,
-                                       uint32_t seed, const setu::NodeConfig& base) {
+                                       uint32_t seed, const setu::NodeConfig& base,
+                                       const std::map<uint16_t, uint8_t>& initial_batteries) {
   for (uint32_t s = seed; s < seed + 500; s++) {
     auto w = std::make_unique<World>(ch, s);
     std::mt19937 r(s);
@@ -578,18 +646,21 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
     setu::NodeConfig c = base;
     c.node_id = 0;
     c.role = setu::Role::Hub;
-    w->add_node(c, 60, 60);
+    uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+    w->add_node(c, 60, 60, hub_batt);
     const int cols = 3, rows = std::max(1, (relays + cols - 1) / cols);
     for (int i = 0; i < relays; i++) {
       c.node_id = static_cast<uint16_t>(100 + i);
       c.role = setu::Role::Relay;
+      uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
       w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jitter(r),
-                  (i / cols + 1) * zone / (rows + 1) + jitter(r));
+                  (i / cols + 1) * zone / (rows + 1) + jitter(r), r_batt);
     }
     for (int i = 0; i < survivors; i++) {
       c.node_id = static_cast<uint16_t>(i + 1);
       c.role = setu::Role::Survivor;
-      w->add_node(c, pos(r), pos(r));
+      uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+      w->add_node(c, pos(r), pos(r), s_batt);
     }
     if (w->planned_connected()) return w;
   }

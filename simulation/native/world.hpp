@@ -27,6 +27,11 @@ struct ChannelParams {
   double capture_db = 6.0;       // stronger signal survives a collision if this much louder
   double random_loss = 0.0;      // extra independent packet loss probability
   double connect_margin_db = 3.0;  // margin used when judging planned connectivity
+  // Configurable battery consumption simulation parameters
+  double tx_energy_pct = 0.5;          // energy consumed per LoRa transmission (%)
+  double rx_energy_pct = 0.1;          // energy consumed per packet reception (%)
+  double idle_energy_pct_per_s = 0.01; // energy consumed per second idle standby (%)
+  double battery_capacity_mah = 300.0; // nominal 1S LiPo capacity
 };
 
 struct AlertRecord {
@@ -49,6 +54,8 @@ struct SimNodeInfo {
   double x = 0, y = 0;
   int32_t lat_e6 = 0, lon_e6 = 0;
   uint8_t battery = 100;
+  uint8_t initial_battery = 100;
+  double energy_consumed_mah = 0.0;
   bool online = true;
   bool gnss_on = true;
   bool dr_on = true;
@@ -69,7 +76,7 @@ class World {
   World(const ChannelParams& ch, uint32_t seed);
   ~World();
 
-  uint16_t add_node(const setu::NodeConfig& cfg, double x, double y);
+  uint16_t add_node(const setu::NodeConfig& cfg, double x, double y, uint8_t initial_battery = 100);
 
   // --- environment / fault injection ---
   void set_online(uint16_t id, bool on);
@@ -144,6 +151,7 @@ class World {
 // planned topology is connected. Hub id 0, relays 100.., survivors 1..N.
 std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone_m,
                                        const ChannelParams& ch, uint32_t seed,
-                                       const setu::NodeConfig& base = setu::NodeConfig());
+                                       const setu::NodeConfig& base = setu::NodeConfig(),
+                                       const std::map<uint16_t, uint8_t>& initial_batteries = {});
 
 }  // namespace sim
