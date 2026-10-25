@@ -400,6 +400,19 @@ export class SetuApi {
     return await res.json();
   }
 
+  static async initControl(params = {}) {
+    const res = await fetch(`${this.requireBaseUrl()}/api/control/init`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(params)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to initialize simulation`);
+    }
+    return await res.json();
+  }
+
   static async triggerNode(nodeId, kind = 'short') {
     const cleanKind = String(kind || 'short').replace('_', '-');
     const res = await fetch(`${this.requireBaseUrl()}/api/control/trigger`, {

@@ -231,9 +231,22 @@ export class TopologyVisualizer {
     }
 
     // 4. Nodes
-    for (const [, n] of this.sim.nodes) {
-      if (this.matchesFilter(n)) {
-        this.drawNode(n);
+    if (this.sim.nodes.size === 0) {
+      ctx.save();
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.6)';
+      ctx.font = '14px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('NO NODES LOADED', rect.width / 2, rect.height / 2 - 12);
+      ctx.font = '12px Inter, -apple-system, BlinkMacSystemFont, sans-serif';
+      ctx.fillStyle = 'rgba(148, 163, 184, 0.4)';
+      ctx.fillText('Connect to backend (⚡ Backend) or load a scenario to view topology', rect.width / 2, rect.height / 2 + 12);
+      ctx.restore();
+    } else {
+      for (const [, n] of this.sim.nodes) {
+        if (this.matchesFilter(n)) {
+          this.drawNode(n);
+        }
       }
     }
   }

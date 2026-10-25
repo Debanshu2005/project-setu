@@ -621,6 +621,7 @@ class SetuDashboardApp {
       if (Array.isArray(ev.nodes)) {
         for (const n of ev.nodes) {
           const existing = this.sim.nodes.get(n.id);
+          if (existing) {
             if (typeof n.battery === 'number') existing.battery = n.battery;
             if (typeof n.initial_battery === 'number') existing.initial_battery = n.initial_battery;
             if (typeof n.energy_consumed_mah === 'number') existing.energy_consumed_mah = n.energy_consumed_mah;
@@ -668,10 +669,10 @@ class SetuDashboardApp {
         if (typeof ev.seq === 'number') na.seq = ev.seq;
         if (typeof ev.energy_mah === 'number') na.energy_consumed_mah = ev.energy_mah;
         else if (typeof ev.mah === 'number') na.energy_consumed_mah = ev.mah;
-        else na.energy_consumed_mah = Math.round(((na.energy_consumed_mah || 0) + 1.5) * 1000) / 1000;
-        if (typeof ev.battery === 'number') na.battery = ev.battery;
-        else na.battery = Math.max(0, Math.round(100 - (na.energy_consumed_mah / 300) * 100));
-        if (na.battery === 0) na.online = false;
+        if (typeof ev.battery === 'number') {
+          na.battery = ev.battery;
+          if (na.battery === 0) na.online = false;
+        }
       }
     } else if (ev.ev === 'rx') {
       const rxId = ev.node !== undefined ? ev.node : ev.to;
@@ -680,10 +681,10 @@ class SetuDashboardApp {
         nb.stats.rx++;
         if (typeof ev.energy_mah === 'number') nb.energy_consumed_mah = ev.energy_mah;
         else if (typeof ev.mah === 'number') nb.energy_consumed_mah = ev.mah;
-        else nb.energy_consumed_mah = Math.round(((nb.energy_consumed_mah || 0) + 0.3) * 1000) / 1000;
-        if (typeof ev.battery === 'number') nb.battery = ev.battery;
-        else nb.battery = Math.max(0, Math.round(100 - (nb.energy_consumed_mah / 300) * 100));
-        if (nb.battery === 0) nb.online = false;
+        if (typeof ev.battery === 'number') {
+          nb.battery = ev.battery;
+          if (nb.battery === 0) nb.online = false;
+        }
       }
     } else if (ev.ev === 'alert') {
       // Hub sink alert delivery
@@ -1062,17 +1063,31 @@ class SetuDashboardApp {
   }
 
   async loadInitialData() {
-    // 0. Ensure backend URL is resolved before proceeding
-    await SetuApi.ensureResolved();
+    // 0. Ensure backend URL is resolved before proceeding (with 5s safety timeout)
+    try {
+      await Promise.race([
+        SetuApi.ensureResolved(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Backend resolution timed out')), 5000))
+      ]);
+    } catch (resolveErr) {
+      console.warn('Backend resolution notice:', resolveErr.message);
+    }
 
-    // 1. Fetch server status with wake-up handling for Render Free sleep
     const base = SetuApi.getBaseUrl();
-    const isLocal = typeof window !== 'undefined' && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-
     this.elStatusDot.style.background = '#38bdf8';
     this.elStatusText.textContent = `CONNECTING TO SIMULATOR (${base || 'AUTO'})...`;
 
-    let status = await SetuApi.getStatus();
+    // 1. Fetch server status with wake-up handling for Render Free sleep
+    let status = { status: 'offline' };
+    try {
+      status = await Promise.race([
+        SetuApi.getStatus(),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('Status check timed out (5s)')), 5000))
+      ]);
+    } catch (statErr) {
+      status = { status: 'offline', error: statErr.message };
+    }
+
     if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render'))) {
       this.elStatusDot.style.background = '#f59e0b';
       this.elStatusText.textContent = 'WAKING UP RENDER ENGINE... (Cold start may take ~30s)';
@@ -1085,103 +1100,64 @@ class SetuDashboardApp {
     if (status.status === 'online') {
       this.elStatusDot.style.background = '#10b981';
       this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
+
+      // 2. Connect SSE live event stream (guarded so SSE failure never blocks state sync)
+      try {
+        this.initLiveEventStream();
+      } catch (sseErr) {
+        console.warn('SSE stream initialization notice:', sseErr);
+      }
+
+      // 3. Sync live engine state from native C++ World
+      await this.syncLiveEngineState();
+
+      // If native engine currently has 0 nodes (uninitialized), initialize valid session with native engine
+      if (this.sim.nodes.size === 0) {
+        try {
+          await SetuApi.initControl({ survivors: 20, relays: 5, zone: 1200, seed: 7 });
+          await this.syncLiveEngineState();
+        } catch (initErr) {
+          console.warn('Initial session initialization notice:', initErr);
+        }
+      }
+
+      // 4. Fetch scenarios for selector with clear diagnostics
+      try {
+        this.scenarios = await SetuApi.getScenarios();
+        if (this.scenarios && this.scenarios.length > 0) {
+          this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
+            <option value="${sc.id}">${sc.name}</option>
+          `).join('');
+        } else {
+          this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
+        }
+      } catch (err) {
+        console.warn('Could not load scenarios list:', err.message);
+        this.elScenarioSelect.innerHTML = '<option value="">Scenarios unavailable</option>';
+      }
+
+      if (this.sim.nodes.size > 0) {
+        this.elStatusText.textContent = `CORE C++ ENGINE ONLINE — ${this.sim.nodes.size} NODES ACTIVE (READY)`;
+      } else {
+        this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE — 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
+      }
     } else {
       this.elStatusDot.style.background = '#ef4444';
       this.elStatusText.textContent = status.status === 'unconfigured'
         ? 'CONFIGURE BACKEND URL (Click ⚡ Backend)'
         : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click ⚡ Backend to check URL.`;
+
+      this.elScenarioSelect.innerHTML = '<option value="">Backend offline - scenarios unavailable</option>';
     }
 
-    // 2. Connect SSE live event stream (guarded so SSE failure never blocks state sync)
-    try {
-      this.initLiveEventStream();
-    } catch (sseErr) {
-      console.warn('SSE stream initialization notice:', sseErr);
-    }
-
-    // 3. Sync live engine state from native C++ World
-    await this.syncLiveEngineState();
-
-    // 4. Fetch scenarios for selector with clear diagnostics
-    try {
-      this.scenarios = await SetuApi.getScenarios();
-      if (this.scenarios && this.scenarios.length > 0) {
-        this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
-          <option value="${sc.id}">${sc.name}</option>
-        `).join('');
-      } else {
-        this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
-      }
-    } catch (err) {
-      console.warn('Could not load scenarios list:', err.message);
-      this.elScenarioSelect.innerHTML = '<option value="">Scenarios unavailable</option>';
-      this.elStatusText.textContent = `SCENARIOS ERROR: ${err.message}`;
-    }
-
-    // 5. If engine state has no nodes (e.g. offline or starting), initialize default topology so the canvas and inspector are immediately populated
-    if (this.sim.nodes.size === 0) {
-      this.initDefaultTopology();
-    }
-
-    // Auto-inspect Node 1 by default so the right-side Inspector panel is immediately populated
+    // Auto-inspect Node 1 if nodes exist
     const defaultNode = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
     if (defaultNode && this.inspector) {
       this.inspector.inspectNode(defaultNode);
     }
-  }
 
-  initDefaultTopology() {
-    this.sim.isLiveEngine = false;
-    this.sim.isFallbackDemo = true;
-    this.sim.nodes.clear();
-    this.sim.links = [];
-    // 1 Hub at (150, 150)
-    this.sim.nodes.set(0, {
-      id: 0, role: 'hub', x: 150, y: 150, lat_e6: 28613900, lon_e6: 77209000,
-      battery: 100, online: true, gnss_on: true, dr_on: true, active_sos: false, acked: false, gave_up: false,
-      stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
-    });
-    // 5 Relays on a loose grid
-    const relayCoords = [[380, 200], [680, 240], [350, 480], [650, 520], [920, 380]];
-    relayCoords.forEach((c, idx) => {
-      const rid = 100 + idx;
-      this.sim.nodes.set(rid, {
-        id: rid, role: 'relay', x: c[0], y: c[1], lat_e6: 28613900 + c[0] * 10, lon_e6: 77209000 + c[1] * 10,
-        battery: 100, online: true, gnss_on: true, dr_on: true, active_sos: false, acked: false, gave_up: false,
-        stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
-      });
-    });
-    // 20 Survivors scattered
-    for (let i = 1; i <= 20; i++) {
-      const angle = (i / 20) * 2 * Math.PI;
-      const dist = 220 + (i % 5) * 110;
-      const sx = Math.round(520 + dist * Math.cos(angle));
-      const sy = Math.round(380 + dist * Math.sin(angle));
-      this.sim.nodes.set(i, {
-        id: i, role: 'survivor', x: sx, y: sy, lat_e6: 28613900 + sx * 10, lon_e6: 77209000 + sy * 10,
-        battery: 85 + (i % 16), online: true, gnss_on: true, dr_on: true, active_sos: false, acked: false, gave_up: false,
-        stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
-      });
-    }
-    // Calculate radio links based on log-distance model
-    const nodeList = Array.from(this.sim.nodes.values());
-    for (let i = 0; i < nodeList.length; ++i) {
-      for (let j = i + 1; j < nodeList.length; ++j) {
-        const na = nodeList[i];
-        const nb = nodeList[j];
-        const d = Math.hypot(na.x - nb.x, na.y - nb.y);
-        const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, d) / 10.0));
-        if (rssi >= -120.0) {
-          this.sim.links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(d * 10) / 10, blocked: false });
-        }
-      }
-    }
-    this.topo.fitToScreen();
-    this.topo.render();
     this.updateMetrics();
-    if (this.console && typeof this.console.populateSurvivors === 'function') {
-      this.console.populateSurvivors();
-    }
+    this.topo.render();
   }
 
   async loadScenario(scenarioId) {
