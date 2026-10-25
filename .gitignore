@@ -9,6 +9,13 @@ cmake-build-*/
 *.ilk
 *.idb
 
+# PlatformIO build outputs
+.pio/
+sdkconfig.esp32*
+**/workspace.json
+**/workspacememory.md
+**/graphify-out/
+
 # Dependency directories
 node_modules/
 

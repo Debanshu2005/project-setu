@@ -856,9 +856,9 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
 #if defined(ESP_PLATFORM)
     i2c_config_t conf = {};
     conf.mode = I2C_MODE_MASTER;
-    conf.sda_io_num = sda_;
+    conf.sda_io_num = static_cast<gpio_num_t>(sda_);
     conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.scl_io_num = scl_;
+    conf.scl_io_num = static_cast<gpio_num_t>(scl_);
     conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
     conf.master.clk_speed = 400000;
 

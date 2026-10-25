@@ -189,7 +189,10 @@ void Node::on_radio_rx(const uint8_t* data, size_t len) {
     if (now_unix > 0 && now_unix > p.ts && (now_unix - p.ts) > cfg_.max_packet_age_s) {
       stats_.rx_expired++;
       char b[64];
-      std::snprintf(b, sizeof b, ",\"origin\":%u,\"seq\":%u,\"age_s\":%u", p.node_id, p.seq, now_unix - p.ts);
+      std::snprintf(b, sizeof b, ",\"origin\":%u,\"seq\":%u,\"age_s\":%u",
+                    static_cast<unsigned int>(p.node_id),
+                    static_cast<unsigned int>(p.seq),
+                    static_cast<unsigned int>(now_unix - p.ts));
       trace_ev("expired_drop", b);
       return;
     }

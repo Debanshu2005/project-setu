@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.16)
-project(setu CXX)
+
+if(DEFINED ENV{IDF_PATH})
+  # ESP-IDF Target Firmware Build (PlatformIO or native idf.py)
+  set(EXTRA_COMPONENT_DIRS "firmware/main")
+  include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+  project(project_setu_firmware)
+else()
+  # Native Host Build (MSVC, Linux GCC, Simulator, Unit Tests, Integration Tests)
+  project(setu CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -45,3 +53,6 @@ add_executable(setu_integration_tests tests/integration/test_mesh.cpp tests/unit
 target_link_libraries(setu_integration_tests PRIVATE setu_world)
 target_include_directories(setu_integration_tests PRIVATE tests/unit)
 add_test(NAME integration COMMAND setu_integration_tests)
+
+endif() # NOT DEFINED ENV{IDF_PATH}
+
