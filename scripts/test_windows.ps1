@@ -92,9 +92,14 @@ try {
     }
 
     # 4. End-to-end Backend API & C++ Protocol Integration Tests
-    Write-Host "`n[4/4] Automated Backend REST/SSE & Protocol Verification..." -ForegroundColor Cyan
+    Write-Host "`n[4/5] Automated Backend REST/SSE & Protocol Verification..." -ForegroundColor Cyan
     & node tests/test_backend.mjs
     if ($LASTEXITCODE -ne 0) { throw "Backend integration tests failed!" }
+
+    # 5. Authoritative Analytics & Simulation Integrity Tests
+    Write-Host "`n[5/5] Authoritative Analytics & Simulation Integrity Verification..." -ForegroundColor Cyan
+    & node tests/test_analytics.mjs
+    if ($LASTEXITCODE -ne 0) { throw "Analytics verification tests failed!" }
 
     Write-Host "`n==========================================================" -ForegroundColor Green
     Write-Host "  ALL TESTS PASSED SUCCESSFULLY!" -ForegroundColor Green

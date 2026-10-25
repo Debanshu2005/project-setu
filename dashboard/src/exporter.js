@@ -5,15 +5,29 @@ export class Exporter {
     const metrics = sim.getMetrics();
     const data = {
       project: 'Project Setu Disaster Response Simulation',
-      version: '1.0.0-verified',
+      version: '2.0.0-verified',
       timestamp: new Date().toISOString(),
+      session: sim.session || { mode: 'unknown', name: 'default' },
       meta: sim.meta,
-      metrics,
+      metrics: {
+        clockMs: metrics.clockMs,
+        durationMs: metrics.durationMs,
+        pdr: metrics.pdr,
+        latency: metrics.latency,
+        lifecycle: metrics.lifecycle,
+        radio: metrics.radio,
+        fleet: metrics.fleet,
+        hopDistribution: metrics.hopDistribution
+      },
       nodes: Array.from(sim.nodes.values()).map(n => ({
         id: n.id,
         role: n.role,
         online: n.online,
+        initial_battery: n.initial_battery !== undefined ? n.initial_battery : 100,
         battery: n.battery,
+        energy_consumed_mah: typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah : 0,
+        gnss_on: n.gnss_on !== false,
+        dr_on: n.dr_on !== false,
         active_sos: n.active_sos,
         acked: n.acked,
         stats: n.stats
@@ -22,7 +36,7 @@ export class Exporter {
     };
 
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    this.downloadBlob(blob, `setu_sim_report_${sim.meta.seed}_${Date.now()}.json`);
+    this.downloadBlob(blob, `setu_sim_report_${sim.session?.id || sim.meta.seed}_${Date.now()}.json`);
   }
 
   static exportCsv(sim) {
@@ -31,7 +45,11 @@ export class Exporter {
       'NodeID',
       'Role',
       'Online',
-      'BatteryPct',
+      'InitialBatteryPct',
+      'CurrentBatteryPct',
+      'EnergyConsumedMah',
+      'GNSS_Fix',
+      'IMU_DR',
       'ActiveSOS',
       'Acked',
       'TX_Count',
@@ -46,20 +64,24 @@ export class Exporter {
       n.id,
       n.role,
       n.online ? '1' : '0',
+      n.initial_battery !== undefined ? n.initial_battery : 100,
       n.battery,
+      typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah.toFixed(3) : '0.000',
+      n.gnss_on !== false ? '1' : '0',
+      n.dr_on !== false ? '1' : '0',
       n.active_sos ? '1' : '0',
       n.acked ? '1' : '0',
-      n.stats.tx,
-      n.stats.rx,
-      n.stats.drop,
-      n.stats.dedup,
-      n.stats.suppressed,
-      n.stats.retries
+      (n.stats && n.stats.tx) || 0,
+      (n.stats && n.stats.rx) || 0,
+      (n.stats && n.stats.drop) || 0,
+      (n.stats && n.stats.dedup) || 0,
+      (n.stats && n.stats.suppressed) || 0,
+      (n.stats && n.stats.retries) || 0
     ]);
 
     const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    this.downloadBlob(blob, `setu_nodes_metrics_${sim.meta.seed}_${Date.now()}.csv`);
+    this.downloadBlob(blob, `setu_nodes_metrics_${sim.session?.id || sim.meta.seed}_${Date.now()}.csv`);
   }
 
   static downloadBlob(blob, filename) {

@@ -157,13 +157,18 @@ struct World::SimNode {
     SimNode& n;
     explicit Sink(SimNode& s) : n(s) {}
     void on_alert(const setu::Packet& p, uint32_t t) override {
-      n.w.alerts_.push_back({p.node_id, p.hazard, p.contact, p.hop, p.flags, p.battery, t});
+      uint32_t latency = 0;
+      auto it = n.w.orig_time_.find({p.node_id, p.seq});
+      if (it != n.w.orig_time_.end()) {
+        latency = (t >= it->second) ? (t - it->second) : 0;
+      }
+      n.w.alerts_.push_back({p.node_id, p.hazard, p.contact, p.hop, p.flags, p.battery, t, latency});
       if (n.w.trace_) {
-        char b[160];
+        char b[192];
         std::snprintf(b, sizeof b,
-                      ",\"origin\":%u,\"hazard\":%d,\"hops\":%u,\"seq\":%u,\"lat_e6\":%ld,\"lon_e6\":%ld,\"battery\":%u,\"flags\":%u,\"contact\":%u",
+                      ",\"origin\":%u,\"hazard\":%d,\"hops\":%u,\"seq\":%u,\"lat_e6\":%ld,\"lon_e6\":%ld,\"battery\":%u,\"flags\":%u,\"contact\":%u,\"latency_ms\":%u",
                       p.node_id, static_cast<int>(p.hazard), p.hop, p.seq, static_cast<long>(p.lat_e6),
-                      static_cast<long>(p.lon_e6), p.battery, p.flags, p.contact);
+                      static_cast<long>(p.lon_e6), p.battery, p.flags, p.contact, latency);
         n.w.trace_event("alert", n.id, b);
       }
     }
@@ -172,6 +177,13 @@ struct World::SimNode {
     SimNode& n;
     explicit Trace(SimNode& s) : n(s) {}
     void on_node_event(uint16_t node_id, const char* ev, const char* extra) override {
+      if (std::strcmp(ev, "originate") == 0 && extra) {
+        const char* p = std::strstr(extra, "\"seq\":");
+        if (p) {
+          uint16_t sq = static_cast<uint16_t>(std::atoi(p + 6));
+          n.w.orig_time_[{node_id, sq}] = n.w.now_;
+        }
+      }
       n.w.trace_event(ev, node_id, extra);
     }
   } trace_sink{*this};

@@ -8,6 +8,7 @@ import { TimelineComponent } from '../components/timeline.js';
 import { InspectorComponent } from '../components/inspector.js';
 import { SosConsoleComponent } from '../components/console.js';
 import { ChartsComponent } from '../components/charts.js';
+import { NodeHealthComponent } from '../components/node_health.js';
 
 class SetuDashboardApp {
   constructor() {
@@ -144,11 +145,30 @@ class SetuDashboardApp {
     const timelineEl = document.getElementById('timelineContainer');
     this.timeline = new TimelineComponent(timelineEl, this.sim, this.topo);
 
-    // 4. Charts
+    // 4. Charts with interactive click-to-timeline navigation
     const chartsEl = document.getElementById('chartsContainer');
-    this.charts = new ChartsComponent(chartsEl, this.sim);
+    this.charts = new ChartsComponent(chartsEl, this.sim, (category, label, events) => {
+      this.switchTab('tab-timeline');
+      if (this.timeline && typeof this.timeline.filterByCustomEvents === 'function') {
+        this.timeline.filterByCustomEvents(events, label);
+      }
+    });
 
-    // 5. Left Panel: Operator Command & SOS Injection Console
+    // 5. Fleet Node Health Component
+    const nodeHealthEl = document.getElementById('nodeHealthContainer');
+    if (nodeHealthEl) {
+      this.nodeHealth = new NodeHealthComponent(nodeHealthEl, this.sim, nodeId => {
+        const node = this.sim.nodes.get(nodeId);
+        if (node) {
+          this.topo.selectedNodeId = nodeId;
+          this.inspector.inspectNode(node);
+          this.switchTab('tab-inspector');
+          this.topo.render();
+        }
+      });
+    }
+
+    // 6. Left Panel: Operator Command & SOS Injection Console
     const sosConsoleEl = document.getElementById('sosConsoleContainer');
     this.console = new SosConsoleComponent(sosConsoleEl, this.sim, async cmdObj => {
       return await this.executeOperatorCommand(cmdObj);
@@ -231,7 +251,8 @@ class SetuDashboardApp {
       this.btnReset.addEventListener('click', async () => {
         if (this.mode === 'live') {
           await SetuApi.resetControl();
-          await this.syncLiveEngineState();
+          await this.syncLiveEngineState(true);
+          this.timeline.setEvents();
           this.elStatusText.textContent = 'SIMULATION RESET TO INITIAL STATE (CONFIGURED BATTERY LEVELS PRESERVED)';
         } else {
           this.sim.seek(0);
@@ -541,7 +562,7 @@ class SetuDashboardApp {
     this.metricAlertsDelivered.textContent = m.alertsTotal;
     this.metricAlertsPending.textContent = m.alertsPending;
     this.metricPdr.textContent = m.pdr;
-    this.metricLatency.textContent = `${m.avgLatencyMs}ms`;
+    this.metricLatency.textContent = m.latencyDisplay;
     this.metricTx.textContent = m.txTotal;
     this.metricRx.textContent = m.rxTotal;
     this.metricDrops.textContent = m.dropTotal;
@@ -826,50 +847,102 @@ class SetuDashboardApp {
     }
   }
 
-  async syncLiveEngineState() {
+  async syncLiveEngineState(isReset = false) {
     try {
       const selectedId = this.inspector && this.inspector.selectedNode ? this.inspector.selectedNode.id : null;
       const cState = await SetuApi.getControlState();
       if (cState && cState.nodes) {
         this.sim.isLiveEngine = true;
         this.sim.isFallbackDemo = false;
-        this.sim.loadTrace([]);
-        // Re-populate nodes from native engine
-        this.sim.nodes.clear();
+
+        if (isReset) {
+          this.sim.session = {
+            id: `live_${Date.now()}`,
+            name: 'Live Digital Twin',
+            mode: 'live',
+            status: 'ready',
+            scenarioId: null,
+            isProvisional: false
+          };
+          this.sim.events = [];
+          this.sim.alerts = [];
+          this.sim.activePackets = [];
+          this.sim.currentTime = 0;
+          this.sim.nodes.clear();
+        } else {
+          this.sim.session.mode = 'live';
+          this.sim.session.name = 'Live Digital Twin';
+        }
+
+        // Populate / update nodes from native engine
         for (const n of cState.nodes) {
-          this.sim.nodes.set(n.id, {
-            id: n.id,
-            role: n.role,
-            x: n.x,
-            y: n.y,
-            battery: n.battery,
-            initial_battery: n.initial_battery !== undefined ? n.initial_battery : (n.battery !== undefined ? n.battery : 100),
-            energy_consumed_mah: typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah : 0,
-            online: n.online,
-            active_sos: n.active,
-            ack_received: n.acked,
-            active: n.active,
-            acked: n.acked,
-            gave_up: n.gave_up,
-            seq: n.seq,
-            duty_used_ms: n.duty_used_ms,
-            button_q: n.button_q !== undefined ? n.button_q : 0,
-            radio_q: n.radio_q !== undefined ? n.radio_q : 0,
-            button_q_ovf: n.button_q_ovf !== undefined ? n.button_q_ovf : 0,
-            radio_q_ovf: n.radio_q_ovf !== undefined ? n.radio_q_ovf : 0,
-            gnss_on: n.gnss !== undefined ? n.gnss : true,
-            dr_on: n.dr !== undefined ? n.dr : true,
-            lat_e6: n.lat_e6,
-            lon_e6: n.lon_e6,
-            stats: {
+          const existing = this.sim.nodes.get(n.id);
+          if (existing && !isReset) {
+            existing.role = n.role;
+            existing.x = n.x;
+            existing.y = n.y;
+            existing.battery = n.battery;
+            if (n.initial_battery !== undefined) existing.initial_battery = n.initial_battery;
+            if (typeof n.energy_consumed_mah === 'number') existing.energy_consumed_mah = n.energy_consumed_mah;
+            existing.online = n.online;
+            existing.active_sos = n.active;
+            existing.ack_received = n.acked;
+            existing.active = n.active;
+            existing.acked = n.acked;
+            existing.gave_up = n.gave_up;
+            existing.seq = n.seq;
+            existing.duty_used_ms = n.duty_used_ms;
+            existing.button_q = n.button_q !== undefined ? n.button_q : existing.button_q;
+            existing.radio_q = n.radio_q !== undefined ? n.radio_q : existing.radio_q;
+            existing.button_q_ovf = n.button_q_ovf !== undefined ? n.button_q_ovf : existing.button_q_ovf;
+            existing.radio_q_ovf = n.radio_q_ovf !== undefined ? n.radio_q_ovf : existing.radio_q_ovf;
+            existing.gnss_on = n.gnss !== undefined ? n.gnss : existing.gnss_on;
+            existing.dr_on = n.dr !== undefined ? n.dr : existing.dr_on;
+            existing.lat_e6 = n.lat_e6;
+            existing.lon_e6 = n.lon_e6;
+            existing.stats = {
               tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
               rx: n.rx_total || 0,
-              drop: 0,
+              drop: existing.stats ? existing.stats.drop : 0,
               dedup: n.rx_dup || 0,
               suppressed: n.relay_suppressed || 0,
               retries: n.retries || 0
-            }
-          });
+            };
+          } else {
+            this.sim.nodes.set(n.id, {
+              id: n.id,
+              role: n.role,
+              x: n.x,
+              y: n.y,
+              battery: n.battery,
+              initial_battery: n.initial_battery !== undefined ? n.initial_battery : (n.battery !== undefined ? n.battery : 100),
+              energy_consumed_mah: typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah : 0,
+              online: n.online,
+              active_sos: n.active,
+              ack_received: n.acked,
+              active: n.active,
+              acked: n.acked,
+              gave_up: n.gave_up,
+              seq: n.seq,
+              duty_used_ms: n.duty_used_ms,
+              button_q: n.button_q !== undefined ? n.button_q : 0,
+              radio_q: n.radio_q !== undefined ? n.radio_q : 0,
+              button_q_ovf: n.button_q_ovf !== undefined ? n.button_q_ovf : 0,
+              radio_q_ovf: n.radio_q_ovf !== undefined ? n.radio_q_ovf : 0,
+              gnss_on: n.gnss !== undefined ? n.gnss : true,
+              dr_on: n.dr !== undefined ? n.dr : true,
+              lat_e6: n.lat_e6,
+              lon_e6: n.lon_e6,
+              stats: {
+                tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
+                rx: n.rx_total || 0,
+                drop: 0,
+                dedup: n.rx_dup || 0,
+                suppressed: n.relay_suppressed || 0,
+                retries: n.retries || 0
+              }
+            });
+          }
         }
         if (cState.links && cState.links.length > 0) {
           this.sim.links = cState.links;
@@ -1110,7 +1183,14 @@ class SetuDashboardApp {
 
       const traceFilename = `${scenarioId}.jsonl`;
       const events = await SetuApi.fetchTrace(traceFilename);
-      this.sim.loadTrace(events);
+      const sessionInfo = {
+        id: `replay_${scenarioId}_${Date.now()}`,
+        name: `Scenario Replay: ${scenarioId}`,
+        mode: 'replay',
+        scenarioId: scenarioId,
+        status: 'ready'
+      };
+      this.sim.loadTrace(events, null, sessionInfo);
       this.timeline.setEvents();
 
       this.elStatusDot.classList.remove('simulating');
@@ -1145,11 +1225,18 @@ class SetuDashboardApp {
       } else if (result.traceFilename) {
         events = await SetuApi.fetchTrace(result.traceFilename);
       }
-      this.sim.loadTrace(events, result.summary);
+      const sessionInfo = {
+        id: `live_${sc.id}_${Date.now()}`,
+        name: `Live Scenario: ${sc.name}`,
+        mode: 'live',
+        scenarioId: sc.id,
+        status: 'completed'
+      };
+      this.sim.loadTrace(events, result.summary, sessionInfo);
       this.timeline.setEvents();
 
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `SIMULATION COMPLETE: ${events.length} EVENTS RECORDED`;
+      this.elStatusText.textContent = `SIMULATION COMPLETE: ${events.length} EVENTS RECORDED (${sc.name})`;
     } catch (err) {
       alert(`Simulation failed: ${err.message}`);
       this.elStatusDot.classList.remove('simulating');
@@ -1196,11 +1283,18 @@ class SetuDashboardApp {
       } else if (result.traceFilename) {
         events = await SetuApi.fetchTrace(result.traceFilename);
       }
-      this.sim.loadTrace(events, result.summary);
+      const sessionInfo = {
+        id: `custom_${seed}_${Date.now()}`,
+        name: `Custom Sim (Seed ${seed}, ${survivors} Surv, ${relays} Rel)`,
+        mode: 'custom',
+        scenarioId: 'custom',
+        status: 'ready'
+      };
+      this.sim.loadTrace(events, result.summary, sessionInfo);
       this.timeline.setEvents();
 
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `CUSTOM SIMULATION READY (${events.length} EVENTS)`;
+      this.elStatusText.textContent = `CUSTOM SIMULATION READY (${events.length} EVENTS, SEED ${seed})`;
       this.sim.play();
     } catch (err) {
       alert(`Custom simulation failed: ${err.message}`);

@@ -1,8 +1,17 @@
 // Project Setu - Simulation State Engine & Playback Controller
+import { calculateMetrics } from './metrics.js';
 
 export class SimulationEngine {
   constructor() {
     this.events = [];
+    this.session = {
+      id: `ses_${Date.now()}`,
+      name: 'Live Digital Twin',
+      mode: 'live',
+      status: 'idle',
+      scenarioId: null,
+      isProvisional: false
+    };
     this.meta = {
       duration: 30000,
       seed: 7,
@@ -46,10 +55,13 @@ export class SimulationEngine {
     }
   }
 
-  loadTrace(events, summary = null) {
+  loadTrace(events, summary = null, sessionInfo = null) {
     this.pause();
     this.events = events || [];
     this.summary = summary;
+    if (sessionInfo) {
+      this.session = { ...this.session, ...sessionInfo };
+    }
     this.currentTime = 0;
     this.nodes.clear();
     this.links = [];
@@ -263,58 +275,35 @@ export class SimulationEngine {
   }
 
   getMetrics() {
-    let totalNodes = this.nodes.size;
-    let onlineNodes = 0;
-    let failedNodes = 0;
-    let totalTx = 0;
-    let totalRx = 0;
-    let totalDrop = 0;
-    let totalDedup = 0;
-    let totalSuppressed = 0;
-    let totalRetries = 0;
-    let activeSosCount = 0;
-    let ackedCount = 0;
-
-    for (const [, n] of this.nodes) {
-      if (n.online) onlineNodes++;
-      else failedNodes++;
-      totalTx += n.stats.tx;
-      totalRx += n.stats.rx;
-      totalDrop += n.stats.drop;
-      totalDedup += n.stats.dedup;
-      totalSuppressed += n.stats.suppressed;
-      totalRetries += n.stats.retries;
-      if (n.active_sos) activeSosCount++;
-      if (n.acked) ackedCount++;
-    }
-
-    const totalPackets = totalRx + totalDrop;
-    const pdr = totalPackets > 0 ? ((totalRx / totalPackets) * 100).toFixed(1) : '100.0';
-
-    // Latency from alerts
-    let avgLatency = 0;
-    if (this.alerts.length > 0) {
-      const sum = this.alerts.reduce((acc, a) => acc + (a.latency_ms || 1500), 0);
-      avgLatency = Math.round(sum / this.alerts.length);
-    }
+    const calculated = calculateMetrics(this.events, this.nodes, this.currentTime, this.session);
 
     return {
       clockMs: Math.round(this.currentTime),
       durationMs: this.meta.duration,
-      totalNodes,
-      onlineNodes,
-      failedNodes,
-      alertsTotal: this.alerts.length,
-      alertsPending: activeSosCount,
-      alertsAcked: ackedCount,
-      txTotal: totalTx,
-      rxTotal: totalRx,
-      dropTotal: totalDrop,
-      dedupTotal: totalDedup,
-      relaySuppressedTotal: totalSuppressed,
-      retriesTotal: totalRetries,
-      pdr: `${pdr}%`,
-      avgLatencyMs: avgLatency
+      totalNodes: calculated.fleet.totalNodes,
+      onlineNodes: calculated.fleet.onlineNodes,
+      failedNodes: calculated.fleet.failedNodes,
+      depletedNodes: calculated.fleet.depletedNodes,
+      alertsTotal: calculated.lifecycle.uniqueDelivered,
+      alertsPending: calculated.lifecycle.inFlight,
+      alertsAcked: calculated.lifecycle.uniqueAcked,
+      txTotal: calculated.radio.txTotal,
+      rxTotal: calculated.radio.rxTotal,
+      dropTotal: calculated.radio.dropTotal,
+      dedupTotal: calculated.radio.dedupTotal,
+      relaySuppressedTotal: calculated.radio.relaySuppressedTotal,
+      retriesTotal: calculated.radio.retriesTotal,
+      pdr: calculated.lifecycle.pdrDisplay,
+      avgLatencyMs: calculated.latency.avgMs !== null ? calculated.latency.avgMs : 0,
+      latencyDisplay: calculated.latency.display,
+      lifecycle: calculated.lifecycle,
+      fleet: calculated.fleet,
+      radio: calculated.radio,
+      latency: calculated.latency,
+      hopDistribution: calculated.hopDistribution,
+      eventIndices: calculated.eventIndices,
+      session: calculated.session,
+      contract: calculated.contract
     };
   }
 }

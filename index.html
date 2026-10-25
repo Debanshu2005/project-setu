@@ -95,7 +95,7 @@
           </div>
           <div class="metric-card">
             <div class="metric-label">Delivery Ratio</div>
-            <div class="metric-value" id="metricPdr" style="color:var(--cyan-main);">100%</div>
+            <div class="metric-value" id="metricPdr" style="color:var(--cyan-main);">N/A</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">Alerts Delivered</div>
@@ -107,7 +107,7 @@
           </div>
           <div class="metric-card">
             <div class="metric-label">End-to-End Latency</div>
-            <div class="metric-value" id="metricLatency">0<span class="metric-unit">ms</span></div>
+            <div class="metric-value" id="metricLatency">N/A</div>
           </div>
           <div class="metric-card">
             <div class="metric-label">Relays Suppressed</div>
@@ -171,6 +171,7 @@
         <button class="tab-btn active" data-tab="tab-inspector">Inspector</button>
         <button class="tab-btn" data-tab="tab-timeline">Timeline</button>
         <button class="tab-btn" data-tab="tab-charts">Analytics</button>
+        <button class="tab-btn" data-tab="tab-node-health">Fleet Health</button>
       </nav>
 
       <!-- Tab 1: Inspector (Node & Packet Wire Breakdown) -->
@@ -187,6 +188,11 @@
       <!-- Tab 3: Analytics Charts -->
       <section class="tab-content" id="tab-charts">
         <div id="chartsContainer"></div>
+      </section>
+
+      <!-- Tab 4: Fleet Node Health -->
+      <section class="tab-content" id="tab-node-health" style="padding:10px;">
+        <div id="nodeHealthContainer"></div>
       </section>
     </aside>
 

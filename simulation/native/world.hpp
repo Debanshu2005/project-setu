@@ -42,6 +42,7 @@ struct AlertRecord {
   uint8_t flags;
   uint8_t battery;
   uint32_t t_ms;
+  uint32_t latency_ms = 0;
 };
 
 struct Counters {
@@ -143,6 +144,7 @@ class World {
   std::multimap<uint32_t, std::function<void()>> actions_;
   std::vector<AlertRecord> alerts_;
   std::vector<std::pair<uint16_t, uint32_t>> acks_;
+  std::map<std::pair<uint16_t, uint16_t>, uint32_t> orig_time_;
   Counters counters_;
   std::ostream* trace_ = nullptr;
 };

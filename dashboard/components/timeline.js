@@ -9,6 +9,8 @@ export class TimelineComponent {
     this.filterType = 'all';
     this.searchQuery = '';
     this.selectedEvent = null;
+    this.customEventSet = null;
+    this.customFilterLabel = null;
 
     this.init();
     this.sim.subscribe((engine, type) => {
@@ -35,6 +37,12 @@ export class TimelineComponent {
         </select>
       </div>
 
+      <!-- Custom Analytics Filter Banner -->
+      <div id="customFilterBanner" style="display:none; margin-bottom:8px; padding:6px 10px; background:rgba(56,189,248,0.12); border:1px solid #38bdf8; border-radius:var(--radius-sm); font-size:11px; justify-content:space-between; align-items:center;">
+        <span>Filter: <strong id="lblCustomFilter" style="color:#38bdf8;"></strong></span>
+        <button id="btnClearCustomFilter" class="btn" style="padding:2px 8px; font-size:10px; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5;">Clear</button>
+      </div>
+
       <!-- Event Explainability Inspector Card -->
       <div id="eventDetailsCard" style="display:none; margin-bottom:10px; background:var(--bg-surface); border:1px solid var(--cyan-main); border-radius:var(--radius-sm); padding:10px; font-size:11px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
@@ -54,6 +62,7 @@ export class TimelineComponent {
     const searchInput = this.container.querySelector('#timelineSearch');
     const filterSelect = this.container.querySelector('#timelineFilter');
     const btnCloseDetail = this.container.querySelector('#btnCloseEventDetail');
+    const btnClearFilter = this.container.querySelector('#btnClearCustomFilter');
 
     searchInput.addEventListener('input', e => {
       this.searchQuery = e.target.value.toLowerCase().trim();
@@ -72,6 +81,38 @@ export class TimelineComponent {
         if (card) card.style.display = 'none';
       });
     }
+
+    if (btnClearFilter) {
+      btnClearFilter.addEventListener('click', () => {
+        this.clearCustomFilter();
+      });
+    }
+  }
+
+  filterByCustomEvents(events, label) {
+    this.customEventSet = new Set(events);
+    this.customFilterLabel = label;
+    const banner = this.container.querySelector('#customFilterBanner');
+    const lbl = this.container.querySelector('#lblCustomFilter');
+    if (banner && lbl) {
+      lbl.textContent = `${label} (${events.length} event${events.length === 1 ? '' : 's'})`;
+      banner.style.display = 'flex';
+    }
+    this.render();
+
+    // Select and explain first matching event
+    if (events && events.length > 0) {
+      this.selectedEvent = events[0];
+      this.renderEventDetailCard(events[0]);
+    }
+  }
+
+  clearCustomFilter() {
+    this.customEventSet = null;
+    this.customFilterLabel = null;
+    const banner = this.container.querySelector('#customFilterBanner');
+    if (banner) banner.style.display = 'none';
+    this.render();
   }
 
   setEvents() {
@@ -84,6 +125,9 @@ export class TimelineComponent {
 
     const filtered = this.sim.events.filter(ev => {
       if (['meta', 'node_init', 'link_init'].includes(ev.ev)) return false;
+
+      // Custom event filter from charts or node inspection
+      if (this.customEventSet && !this.customEventSet.has(ev)) return false;
 
       // Filter by category
       if (this.filterType === 'alert' && ev.ev !== 'alert') return false;
