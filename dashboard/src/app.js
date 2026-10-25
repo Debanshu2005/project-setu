@@ -18,6 +18,8 @@ class SetuDashboardApp {
     this.mode = 'live'; // 'live' (Interactive Digital Twin) or 'replay' (Trace Scrubber)
     this.isEngineRunning = false;
     this.eventSource = null;
+    this.isInitializing = false;
+    this.initPromise = null;
 
     this.backendModalInitialized = false;
 
@@ -85,97 +87,149 @@ class SetuDashboardApp {
 
   initComponents() {
     // 1. Topology
-    const canvas = document.getElementById('topologyCanvas');
-    this.topo = new TopologyVisualizer(canvas, this.sim);
+    try {
+      const canvas = document.getElementById('topologyCanvas');
+      if (canvas) {
+        this.topo = new TopologyVisualizer(canvas, this.sim);
 
-    // Dynamic node repositioning in topology
-    this.topo.onNodeReposition = async (id, x, y) => {
-      if (this.mode === 'live') {
-        try {
-          await SetuApi.repositionNode(id, x, y);
-          this.elStatusText.textContent = `REPOSITIONED NODE ${id} TO (${x}, ${y}) - LINKS RECALCULATED`;
-          // Recalculate radio connectivity dynamically for new geometry
-          const links = [];
-          const nodeList = Array.from(this.sim.nodes.values());
-          for (let i = 0; i < nodeList.length; ++i) {
-            for (let j = i + 1; j < nodeList.length; ++j) {
-              const na = nodeList[i];
-              const nb = nodeList[j];
-              const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
-              const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, dist) / 10.0));
-              if (rssi >= -120.0) {
-                links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(dist * 10) / 10, blocked: false });
+        // Dynamic node repositioning in topology
+        this.topo.onNodeReposition = async (id, x, y) => {
+          if (this.mode === 'live') {
+            try {
+              await SetuApi.repositionNode(id, x, y);
+              this.elStatusText.textContent = `REPOSITIONED NODE ${id} TO (${x}, ${y}) - LINKS RECALCULATED`;
+              // Recalculate radio connectivity dynamically for new geometry
+              const links = [];
+              const nodeList = Array.from(this.sim.nodes.values());
+              for (let i = 0; i < nodeList.length; ++i) {
+                for (let j = i + 1; j < nodeList.length; ++j) {
+                  const na = nodeList[i];
+                  const nb = nodeList[j];
+                  const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
+                  const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, dist) / 10.0));
+                  if (rssi >= -120.0) {
+                    links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(dist * 10) / 10, blocked: false });
+                  }
+                }
               }
+              this.sim.links = links;
+              this.topo.render();
+            } catch (e) {
+              console.warn('Reposition failed:', e);
             }
           }
-          this.sim.links = links;
-          this.topo.render();
-        } catch (e) {
-          console.warn('Reposition failed:', e);
-        }
+        };
       }
-    };
+    } catch (topoErr) {
+      console.error('Topology initialization error:', topoErr);
+    }
 
     // 2. Right Panels: Inspector, Timeline, Charts
-    const nodeInspectorEl = document.getElementById('nodeInspectorContent');
-    const packetInspectorEl = document.getElementById('packetInspectorContent');
-    this.inspector = new InspectorComponent(nodeInspectorEl, packetInspectorEl, this.sim);
+    try {
+      const nodeInspectorEl = document.getElementById('nodeInspectorContent');
+      const packetInspectorEl = document.getElementById('packetInspectorContent');
+      if (nodeInspectorEl && packetInspectorEl) {
+        this.inspector = new InspectorComponent(nodeInspectorEl, packetInspectorEl, this.sim);
 
-    this.topo.onNodeSelect = node => {
-      this.inspector.inspectNode(node);
-      this.switchTab('tab-inspector');
-    };
+        if (this.topo) {
+          this.topo.onNodeSelect = node => {
+            this.inspector.inspectNode(node);
+            this.switchTab('tab-inspector');
+          };
+        }
 
-    // Inspector node trigger handler (C++ IPC)
-    this.inspector.onTrigger = async (nodeId, kind) => {
-      await this.executeNodeTrigger(nodeId, kind);
-    };
+        // Inspector node trigger handler (C++ IPC)
+        this.inspector.onTrigger = async (nodeId, kind) => {
+          await this.executeNodeTrigger(nodeId, kind);
+        };
 
-    // Inspector hardware fault toggle handler
-    this.inspector.onStateChange = async (nodeId, stateUpdate) => {
-      await this.executeNodeStateChange(nodeId, stateUpdate);
-    };
+        // Inspector hardware fault toggle handler
+        this.inspector.onStateChange = async (nodeId, stateUpdate) => {
+          await this.executeNodeStateChange(nodeId, stateUpdate);
+        };
 
-    // Inspector link blocking toggle handler
-    this.inspector.onLinkToggle = async (a, b, blocked) => {
-      await this.executeLinkToggle(a, b, blocked);
-    };
+        // Inspector link blocking toggle handler
+        this.inspector.onLinkToggle = async (a, b, blocked) => {
+          await this.executeLinkToggle(a, b, blocked);
+        };
+      }
+    } catch (inspErr) {
+      console.error('Inspector initialization error:', inspErr);
+    }
 
     // 3. Timeline
-    const timelineEl = document.getElementById('timelineContainer');
-    this.timeline = new TimelineComponent(timelineEl, this.sim, this.topo);
+    try {
+      const timelineEl = document.getElementById('timelineContainer');
+      if (timelineEl) {
+        this.timeline = new TimelineComponent(timelineEl, this.sim, this.topo);
+      }
+    } catch (timeErr) {
+      console.error('Timeline initialization error:', timeErr);
+    }
 
     // 4. Charts with interactive click-to-timeline navigation
-    const chartsEl = document.getElementById('chartsContainer');
-    this.charts = new ChartsComponent(chartsEl, this.sim, (category, label, events) => {
-      this.switchTab('tab-timeline');
-      if (this.timeline && typeof this.timeline.filterByCustomEvents === 'function') {
-        this.timeline.filterByCustomEvents(events, label);
+    try {
+      const chartsEl = document.getElementById('chartsContainer');
+      if (chartsEl) {
+        this.charts = new ChartsComponent(chartsEl, this.sim, (category, label, events) => {
+          this.switchTab('tab-timeline');
+          if (this.timeline && typeof this.timeline.filterByCustomEvents === 'function') {
+            this.timeline.filterByCustomEvents(events, label);
+          }
+        });
       }
-    });
+    } catch (chartsErr) {
+      console.error('Charts initialization error:', chartsErr);
+    }
 
     // 5. Fleet Node Health Component
-    const nodeHealthEl = document.getElementById('nodeHealthContainer');
-    if (nodeHealthEl) {
-      this.nodeHealth = new NodeHealthComponent(nodeHealthEl, this.sim, nodeId => {
-        const node = this.sim.nodes.get(nodeId);
-        if (node) {
-          this.topo.selectedNodeId = nodeId;
-          this.inspector.inspectNode(node);
-          this.switchTab('tab-inspector');
-          this.topo.render();
-        }
-      });
+    try {
+      const nodeHealthEl = document.getElementById('nodeHealthContainer');
+      if (nodeHealthEl) {
+        this.nodeHealth = new NodeHealthComponent(nodeHealthEl, this.sim, nodeId => {
+          const node = this.sim.nodes.get(nodeId);
+          if (node) {
+            if (this.topo) this.topo.selectedNodeId = nodeId;
+            if (this.inspector) this.inspector.inspectNode(node);
+            this.switchTab('tab-inspector');
+            if (this.topo) this.topo.render();
+          }
+        });
+      }
+    } catch (healthErr) {
+      console.error('NodeHealth initialization error:', healthErr);
     }
 
     // 6. Left Panel: Operator Command & SOS Injection Console
-    const sosConsoleEl = document.getElementById('sosConsoleContainer');
-    this.console = new SosConsoleComponent(sosConsoleEl, this.sim, async cmdObj => {
-      return await this.executeOperatorCommand(cmdObj);
-    });
+    try {
+      const sosConsoleEl = document.getElementById('sosConsoleContainer');
+      if (sosConsoleEl) {
+        this.console = new SosConsoleComponent(sosConsoleEl, this.sim, async cmdObj => {
+          return await this.executeOperatorCommand(cmdObj);
+        });
+      }
+    } catch (consoleErr) {
+      console.error('SosConsole initialization error:', consoleErr);
+    }
   }
 
   initEvents() {
+    // Status text and dot click to retry connection if offline or in error
+    if (this.elStatusText) {
+      this.elStatusText.style.cursor = 'pointer';
+      this.elStatusText.title = 'Click to retry connection to simulator';
+      this.elStatusText.addEventListener('click', () => {
+        this.loadInitialData();
+      });
+    }
+    if (this.elStatusDot) {
+      this.elStatusDot.style.cursor = 'pointer';
+      this.elStatusDot.title = 'Click to retry connection to simulator';
+      this.elStatusDot.addEventListener('click', () => {
+        this.loadInitialData();
+      });
+    }
+
     // Mode Switch Button
     if (this.btnToggleMode) {
       this.btnToggleMode.addEventListener('click', () => {
@@ -587,6 +641,15 @@ class SetuDashboardApp {
   }
 
   initLiveEventStream() {
+    if (this.eventSource) {
+      try {
+        this.eventSource.close();
+      } catch (closeErr) {
+        console.warn('Error closing prior eventSource:', closeErr);
+      }
+      this.eventSource = null;
+    }
+
     this.eventSource = SetuApi.connectEvents(
       eventData => {
         if (this.mode !== 'live') return;
@@ -1063,101 +1126,135 @@ class SetuDashboardApp {
   }
 
   async loadInitialData() {
-    // 0. Ensure backend URL is resolved before proceeding (with 5s safety timeout)
-    try {
-      await Promise.race([
-        SetuApi.ensureResolved(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Backend resolution timed out')), 5000))
-      ]);
-    } catch (resolveErr) {
-      console.warn('Backend resolution notice:', resolveErr.message);
+    if (this.isInitializing) {
+      return this.initPromise;
     }
 
-    const base = SetuApi.getBaseUrl();
-    this.elStatusDot.style.background = '#38bdf8';
-    this.elStatusText.textContent = `CONNECTING TO SIMULATOR (${base || 'AUTO'})...`;
-
-    // 1. Fetch server status with wake-up handling for Render Free sleep
-    let status = { status: 'offline' };
-    try {
-      status = await Promise.race([
-        SetuApi.getStatus(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('Status check timed out (5s)')), 5000))
-      ]);
-    } catch (statErr) {
-      status = { status: 'offline', error: statErr.message };
-    }
-
-    if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render'))) {
-      this.elStatusDot.style.background = '#f59e0b';
-      this.elStatusText.textContent = 'WAKING UP RENDER ENGINE... (Cold start may take ~30s)';
-      const ping = await SetuApi.pingBackend(base, 25000);
-      if (ping.ok) {
-        status = await SetuApi.getStatus();
-      }
-    }
-
-    if (status.status === 'online') {
-      this.elStatusDot.style.background = '#10b981';
-      this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
-
-      // 2. Connect SSE live event stream (guarded so SSE failure never blocks state sync)
+    this.isInitializing = true;
+    this.initPromise = (async () => {
       try {
-        this.initLiveEventStream();
-      } catch (sseErr) {
-        console.warn('SSE stream initialization notice:', sseErr);
-      }
-
-      // 3. Sync live engine state from native C++ World
-      await this.syncLiveEngineState();
-
-      // If native engine currently has 0 nodes (uninitialized), initialize valid session with native engine
-      if (this.sim.nodes.size === 0) {
+        // 0. Ensure backend URL is resolved before proceeding (with 5s safety timeout)
         try {
-          await SetuApi.initControl({ survivors: 20, relays: 5, zone: 1200, seed: 7 });
-          await this.syncLiveEngineState();
-        } catch (initErr) {
-          console.warn('Initial session initialization notice:', initErr);
+          await Promise.race([
+            SetuApi.ensureResolved(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Backend resolution timed out')), 5000))
+          ]);
+        } catch (resolveErr) {
+          console.warn('Backend resolution notice:', resolveErr.message);
         }
-      }
 
-      // 4. Fetch scenarios for selector with clear diagnostics
-      try {
-        this.scenarios = await SetuApi.getScenarios();
-        if (this.scenarios && this.scenarios.length > 0) {
-          this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
-            <option value="${sc.id}">${sc.name}</option>
-          `).join('');
+        const base = SetuApi.getBaseUrl();
+        if (this.elStatusDot) this.elStatusDot.style.background = '#38bdf8';
+        if (this.elStatusText) this.elStatusText.textContent = `CONNECTING TO SIMULATOR (${base || 'AUTO'})...`;
+
+        // 1. Fetch server status with wake-up handling for Render Free sleep
+        let status = { status: 'offline' };
+        try {
+          status = await SetuApi.getStatus(6000);
+        } catch (statErr) {
+          status = { status: 'offline', error: statErr.message };
+        }
+
+        if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render'))) {
+          if (this.elStatusDot) this.elStatusDot.style.background = '#f59e0b';
+          if (this.elStatusText) this.elStatusText.textContent = 'WAKING UP RENDER ENGINE... (Cold start may take ~30s)';
+          const ping = await SetuApi.pingBackend(base, 25000);
+          if (ping.ok) {
+            try {
+              status = await SetuApi.getStatus(6000);
+            } catch (retryErr) {
+              status = { status: 'offline', error: retryErr.message };
+            }
+          }
+        }
+
+        if (status.status === 'online') {
+          if (this.elStatusDot) this.elStatusDot.style.background = '#10b981';
+          if (this.elStatusText) this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
+
+          // 2. Connect SSE live event stream (guarded so SSE failure never blocks state sync)
+          try {
+            this.initLiveEventStream();
+          } catch (sseErr) {
+            console.warn('SSE stream initialization notice:', sseErr);
+          }
+
+          // 3. Sync live engine state from native C++ World
+          try {
+            await this.syncLiveEngineState();
+          } catch (syncErr) {
+            console.warn('Initial live engine state sync notice:', syncErr);
+          }
+
+          // If native engine currently has 0 nodes (uninitialized), initialize valid session with native engine
+          if (this.sim.nodes.size === 0) {
+            try {
+              await SetuApi.initControl({ survivors: 20, relays: 5, zone: 1200, seed: 7 }, 8000);
+              await this.syncLiveEngineState();
+            } catch (initErr) {
+              console.warn('Initial session initialization notice:', initErr);
+            }
+          }
+
+          // 4. Fetch scenarios for selector with clear diagnostics
+          try {
+            this.scenarios = await SetuApi.getScenarios(6000);
+            if (this.elScenarioSelect) {
+              if (this.scenarios && this.scenarios.length > 0) {
+                this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
+                  <option value="${sc.id}">${sc.name}</option>
+                `).join('');
+              } else {
+                this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
+              }
+            }
+          } catch (err) {
+            console.warn('Could not load scenarios list:', err.message);
+            if (this.elScenarioSelect) this.elScenarioSelect.innerHTML = '<option value="">Scenarios unavailable</option>';
+          }
+
+          if (this.elStatusText) {
+            if (this.sim.nodes.size > 0) {
+              this.elStatusText.textContent = `CORE C++ ENGINE ONLINE — ${this.sim.nodes.size} NODES ACTIVE (READY)`;
+            } else {
+              this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE — 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
+            }
+          }
         } else {
-          this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
+          if (this.elStatusDot) this.elStatusDot.style.background = '#ef4444';
+          if (this.elStatusText) {
+            this.elStatusText.textContent = status.status === 'unconfigured'
+              ? 'CONFIGURE BACKEND URL (Click ⚡ Backend)'
+              : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click ⚡ Backend to check URL or click here to retry.`;
+          }
+
+          if (this.elScenarioSelect) this.elScenarioSelect.innerHTML = '<option value="">Backend offline - scenarios unavailable</option>';
         }
-      } catch (err) {
-        console.warn('Could not load scenarios list:', err.message);
-        this.elScenarioSelect.innerHTML = '<option value="">Scenarios unavailable</option>';
+
+        // Auto-inspect Node 1 if nodes exist
+        const defaultNode = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
+        if (defaultNode && this.inspector) {
+          try {
+            this.inspector.inspectNode(defaultNode);
+          } catch (inspErr) {
+            console.warn('Default node inspector notice:', inspErr);
+          }
+        }
+      } catch (fatalErr) {
+        console.error('Fatal initialization error:', fatalErr);
+        if (this.elStatusDot) this.elStatusDot.style.background = '#ef4444';
+        if (this.elStatusText) {
+          this.elStatusText.textContent = `INITIALIZATION ERROR: ${fatalErr.message}. Click here to retry.`;
+        }
+      } finally {
+        this.isInitializing = false;
+        this.initPromise = null;
+        this.updateMetrics();
+        if (this.topo) this.topo.render();
       }
+    })();
 
-      if (this.sim.nodes.size > 0) {
-        this.elStatusText.textContent = `CORE C++ ENGINE ONLINE — ${this.sim.nodes.size} NODES ACTIVE (READY)`;
-      } else {
-        this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE — 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
-      }
-    } else {
-      this.elStatusDot.style.background = '#ef4444';
-      this.elStatusText.textContent = status.status === 'unconfigured'
-        ? 'CONFIGURE BACKEND URL (Click ⚡ Backend)'
-        : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click ⚡ Backend to check URL.`;
-
-      this.elScenarioSelect.innerHTML = '<option value="">Backend offline - scenarios unavailable</option>';
-    }
-
-    // Auto-inspect Node 1 if nodes exist
-    const defaultNode = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
-    if (defaultNode && this.inspector) {
-      this.inspector.inspectNode(defaultNode);
-    }
-
-    this.updateMetrics();
-    this.topo.render();
+    return this.initPromise;
   }
 
   async loadScenario(scenarioId) {

@@ -207,6 +207,22 @@ export class SetuApi {
     return this.baseUrl;
   }
 
+  static async fetchWithTimeout(url, options = {}, timeoutMs = 8000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const response = await fetch(url, { ...options, signal: controller.signal });
+      clearTimeout(timer);
+      return response;
+    } catch (err) {
+      clearTimeout(timer);
+      if (err.name === 'AbortError') {
+        throw new Error(`Request timed out after ${timeoutMs}ms: ${url}`);
+      }
+      throw err;
+    }
+  }
+
   static async pingBackend(url = null, timeoutMs = 8000) {
     const target = (url || this.getBaseUrl()).replace(/\/+$/, '');
     if (!target) return { ok: false, error: 'No backend URL configured' };
@@ -226,14 +242,14 @@ export class SetuApi {
     }
   }
 
-  static async getStatus() {
+  static async getStatus(timeoutMs = 6000) {
     await this.ensureResolved();
     try {
       const base = this.getBaseUrl();
       if (!base && typeof window !== 'undefined' && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
         return { status: 'unconfigured', error: 'Backend URL not configured. Click ⚡ Backend to connect.' };
       }
-      const res = await fetch(`${base}/api/status`);
+      const res = await this.fetchWithTimeout(`${base}/api/status`, {}, timeoutMs);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (err) {
@@ -242,14 +258,14 @@ export class SetuApi {
     }
   }
 
-  static async getScenarios() {
+  static async getScenarios(timeoutMs = 8000) {
     await this.ensureResolved();
     const base = this.getBaseUrl();
     const primaryUrl = `${base}/api/scenarios`;
     let primaryErr = null;
 
     try {
-      const res = await fetch(primaryUrl);
+      const res = await this.fetchWithTimeout(primaryUrl, {}, timeoutMs);
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) return data;
@@ -263,7 +279,7 @@ export class SetuApi {
     // Secondary fallback: if primary was a remote cross-origin backend, try local relative /api/scenarios (e.g. Vercel Lambda)
     if (base && typeof window !== 'undefined' && window.location) {
       try {
-        const fallbackRes = await fetch('/api/scenarios');
+        const fallbackRes = await this.fetchWithTimeout('/api/scenarios', {}, 4000);
         if (fallbackRes.ok) {
           const data = await fallbackRes.json();
           if (Array.isArray(data) && data.length > 0) return data;
@@ -280,9 +296,9 @@ export class SetuApi {
     return [];
   }
 
-  static async getTraces() {
+  static async getTraces(timeoutMs = 6000) {
     try {
-      const res = await fetch(`${this.getBaseUrl()}/api/traces`);
+      const res = await this.fetchWithTimeout(`${this.getBaseUrl()}/api/traces`, {}, timeoutMs);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     } catch (err) {
@@ -291,13 +307,13 @@ export class SetuApi {
     }
   }
 
-  static async fetchTrace(filename) {
+  static async fetchTrace(filename, timeoutMs = 10000) {
     const base = this.getBaseUrl();
     let res = null;
     let fetchError = null;
 
     try {
-      res = await fetch(`${base}/api/trace/${encodeURIComponent(filename)}`);
+      res = await this.fetchWithTimeout(`${base}/api/trace/${encodeURIComponent(filename)}`, {}, timeoutMs);
     } catch (err) {
       fetchError = err;
     }
@@ -305,7 +321,7 @@ export class SetuApi {
     // Fallback: try relative path (e.g. Vercel serverless trace route)
     if ((!res || !res.ok) && base && typeof window !== 'undefined' && window.location) {
       try {
-        const fallbackRes = await fetch(`/api/trace/${encodeURIComponent(filename)}`);
+        const fallbackRes = await this.fetchWithTimeout(`/api/trace/${encodeURIComponent(filename)}`, {}, 5000);
         if (fallbackRes.ok) {
           res = fallbackRes;
           fetchError = null;
@@ -328,12 +344,12 @@ export class SetuApi {
     return events;
   }
 
-  static async runSimulation(payload) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/simulate`, {
+  static async runSimulation(payload, timeoutMs = 15000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/simulate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload)
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const errData = await res.json().catch(() => ({ error: res.statusText }));
       throw new Error(errData.error || `HTTP ${res.status}`);
@@ -341,27 +357,27 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async stopSimulation() {
-    const res = await fetch(`${this.requireBaseUrl()}/api/simulate/stop`, { method: 'POST' });
+  static async stopSimulation(timeoutMs = 5000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/simulate/stop`, { method: 'POST' }, timeoutMs);
     return await res.json();
   }
 
-  static async uploadTrace(content) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/upload-trace`, {
+  static async uploadTrace(content, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/upload-trace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ content })
-    });
+    }, timeoutMs);
     if (!res.ok) throw new Error('Upload failed');
     return await res.json();
   }
 
-  static async startControl(options = {}) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/start`, {
+  static async startControl(options = {}, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/start`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(options)
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to start simulation`);
@@ -369,8 +385,8 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async pauseControl() {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/pause`, { method: 'POST' });
+  static async pauseControl(timeoutMs = 6000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/pause`, { method: 'POST' }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to pause simulation`);
@@ -378,12 +394,12 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async stepControl(ms = 100) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/step`, {
+  static async stepControl(ms = 100, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/step`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ ms })
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to step simulation`);
@@ -391,8 +407,8 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async resetControl() {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/reset`, { method: 'POST' });
+  static async resetControl(timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/reset`, { method: 'POST' }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to reset simulation`);
@@ -400,12 +416,12 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async initControl(params = {}) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/init`, {
+  static async initControl(params = {}, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/init`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(params)
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to initialize simulation`);
@@ -413,13 +429,13 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async triggerNode(nodeId, kind = 'short') {
+  static async triggerNode(nodeId, kind = 'short', timeoutMs = 8000) {
     const cleanKind = String(kind || 'short').replace('_', '-');
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/trigger`, {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/trigger`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node: parseInt(nodeId, 10), kind: cleanKind })
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to trigger node`);
@@ -427,7 +443,7 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async triggerAll(payload = {}, jitter = 0) {
+  static async triggerAll(payload = {}, jitter = 0, timeoutMs = 10000) {
     const delay = typeof payload === 'string'
       ? (typeof jitter === 'number' ? jitter : parseInt(jitter, 10) || 0)
       : (typeof payload.delay_ms !== 'undefined' ? (parseInt(payload.delay_ms, 10) || 0) : (parseInt(jitter, 10) || 0));
@@ -437,11 +453,11 @@ export class SetuApi {
     const mode = delay > 0 ? 'staggered' : 'immediate';
 
     const body = { kind, mode, delay_ms: delay };
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/trigger-all`, {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/trigger-all`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to trigger all nodes`);
@@ -449,16 +465,16 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async setNodeState(payloadOrNodeId, maybeUpdate) {
+  static async setNodeState(payloadOrNodeId, maybeUpdate, timeoutMs = 8000) {
     let body = payloadOrNodeId;
     if (typeof payloadOrNodeId === 'number' || typeof payloadOrNodeId === 'string') {
       body = { node: parseInt(payloadOrNodeId, 10), ...(maybeUpdate || {}) };
     }
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/node-state`, {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/node-state`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body)
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to update node state`);
@@ -466,12 +482,12 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async repositionNode(nodeId, x, y) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/reposition`, {
+  static async repositionNode(nodeId, x, y, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/reposition`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ node: parseInt(nodeId, 10), x: parseFloat(x), y: parseFloat(y) })
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to reposition node`);
@@ -479,12 +495,12 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async blockLink(a, b, blocked = true) {
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/block-link`, {
+  static async blockLink(a, b, blocked = true, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/block-link`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ a: parseInt(a, 10), b: parseInt(b, 10), blocked: Boolean(blocked) })
-    });
+    }, timeoutMs);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || `HTTP ${res.status}: Failed to toggle link block`);
@@ -492,23 +508,23 @@ export class SetuApi {
     return await res.json();
   }
 
-  static async getControlState() {
+  static async getControlState(timeoutMs = 8000) {
     await this.ensureResolved();
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/state`);
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/state`, {}, timeoutMs);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get node state`);
     return await res.json();
   }
 
-  static async getControlSummary() {
+  static async getControlSummary(timeoutMs = 8000) {
     await this.ensureResolved();
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/summary`);
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/summary`, {}, timeoutMs);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get summary`);
     return await res.json();
   }
 
-  static async getControlStatus() {
+  static async getControlStatus(timeoutMs = 6000) {
     await this.ensureResolved();
-    const res = await fetch(`${this.requireBaseUrl()}/api/control/status`);
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/status`, {}, timeoutMs);
     if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get control status`);
     return await res.json();
   }
