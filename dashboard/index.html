@@ -201,6 +201,7 @@
         <button class="tab-btn active" data-tab="tab-inspector">Inspector</button>
         <button class="tab-btn" data-tab="tab-timeline">Timeline</button>
         <button class="tab-btn" data-tab="tab-charts">Analytics</button>
+        <button class="tab-btn" data-tab="tab-scientific" id="tabBtnScientific" title="Open scientific plots and domain visualizations">🔬 Scientific</button>
         <button class="tab-btn" data-tab="tab-node-health">Fleet Health</button>
       </nav>
 
@@ -217,13 +218,70 @@
 
       <!-- Tab 3: Analytics Charts -->
       <section class="tab-content" id="tab-charts" style="padding:10px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <strong style="font-size:12px; color:#fff;">Scientific Analytics</strong>
-          <button class="btn" id="btnExpandAnalytics" style="font-size:10px; padding:2px 8px; border-color:#06b6d4; color:#67e8f9;">
-            ⛶ Open Full Workspace
-          </button>
+        <div style="background:rgba(6,182,212,0.08); border:1px solid rgba(6,182,212,0.3); border-radius:6px; padding:10px; margin-bottom:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <strong style="font-size:12px; color:#fff; display:flex; align-items:center; gap:6px;">
+              <span>🔬</span> Scientific Visualizations
+            </strong>
+            <button class="btn" id="btnExpandAnalytics" style="font-size:10px; padding:3px 8px; border-color:#06b6d4; color:#67e8f9; font-weight:700;">
+              ⛶ Open Full Workspace
+            </button>
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+            Research-grade engineering models: RSSI vs Distance, Latency CDF, Mesh Routing, Collisions, Energy, and GNSS Trajectories.
+          </div>
+          <div style="display:flex; gap:4px; flex-wrap:wrap;" class="quick-domain-shortcuts">
+            <button class="btn btn-domain-quick" data-domain="radio" style="font-size:9px; padding:2px 6px;">📡 Radio</button>
+            <button class="btn btn-domain-quick" data-domain="delivery" style="font-size:9px; padding:2px 6px;">📦 Delivery</button>
+            <button class="btn btn-domain-quick" data-domain="topology" style="font-size:9px; padding:2px 6px;">🕸️ Routing</button>
+            <button class="btn btn-domain-quick" data-domain="congestion" style="font-size:9px; padding:2px 6px;">💥 Collisions</button>
+            <button class="btn btn-domain-quick" data-domain="energy" style="font-size:9px; padding:2px 6px;">🔋 Energy</button>
+            <button class="btn btn-domain-quick" data-domain="positioning" style="font-size:9px; padding:2px 6px;">📍 Position</button>
+            <button class="btn btn-domain-quick" data-domain="sos_ack" style="font-size:9px; padding:2px 6px;">🚨 SOS/ACK</button>
+            <button class="btn btn-domain-quick" data-domain="comparison" style="font-size:9px; padding:2px 6px;">⚖️ Compare</button>
+          </div>
         </div>
         <div id="chartsContainer"></div>
+      </section>
+
+      <!-- Tab 3B: Dedicated Scientific Analytics Tab -->
+      <section class="tab-content" id="tab-scientific" style="padding:10px;">
+        <div style="display:flex; flex-direction:column; gap:10px;">
+          <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <strong style="font-size:12px; color:#fff;">Network Analytics Engine</strong>
+              <button class="btn" id="btnLaunchScientificFull" style="font-size:10px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc; font-weight:700;">
+                ⛶ Expand Workspace
+              </button>
+            </div>
+            <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+              Select an engineering domain below to analyze simulation measurements against theoretical wireless models:
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
+              <button class="btn btn-sidebar-domain" data-domain="radio" style="font-size:10px; text-align:left; padding:5px 8px;">📡 Radio & Path Loss</button>
+              <button class="btn btn-sidebar-domain" data-domain="delivery" style="font-size:10px; text-align:left; padding:5px 8px;">📦 Latency CDF & PDR</button>
+              <button class="btn btn-sidebar-domain" data-domain="topology" style="font-size:10px; text-align:left; padding:5px 8px;">🕸️ Multi-Hop Routing</button>
+              <button class="btn btn-sidebar-domain" data-domain="congestion" style="font-size:10px; text-align:left; padding:5px 8px;">💥 Channel Impairments</button>
+              <button class="btn btn-sidebar-domain" data-domain="energy" style="font-size:10px; text-align:left; padding:5px 8px;">🔋 Battery Drain (mAh)</button>
+              <button class="btn btn-sidebar-domain" data-domain="positioning" style="font-size:10px; text-align:left; padding:5px 8px;">📍 GNSS Trajectory & Error</button>
+              <button class="btn btn-sidebar-domain" data-domain="sos_ack" style="font-size:10px; text-align:left; padding:5px 8px;">🚨 Two-Way SOS/ACK</button>
+              <button class="btn btn-sidebar-domain" data-domain="comparison" style="font-size:10px; text-align:left; padding:5px 8px;">⚖️ Multi-Run Compare</button>
+            </div>
+          </div>
+
+          <!-- Quick Preview Canvas in Sidebar -->
+          <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+              <span style="font-weight:700; font-size:11px; color:#fff;" id="lblSidebarQuickChart">Quick Plot: RSSI vs Distance</span>
+              <span class="badge" id="badgeSidebarMetric" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:9px;">
+                Log-Distance Model
+              </span>
+            </div>
+            <div style="height:200px; position:relative;">
+              <canvas id="canvasSidebarQuick" style="width:100%; height:100%; display:block;"></canvas>
+            </div>
+          </div>
+        </div>
       </section>
 
       <!-- Tab 4: Fleet Node Health -->

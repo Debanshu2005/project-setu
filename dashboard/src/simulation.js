@@ -101,6 +101,7 @@ export class SimulationEngine {
 
     this.nodes = new Map(); // id -> node state
     this.links = []; // array of { a, b, rssi, dist, blocked }
+    this.initialLinkDistances = new Map(); // "minId_maxId" -> initial link distance in meters
     this.alerts = []; // array of alerts
     this.activePackets = []; // currently transmitting packets
     this.summary = null;
@@ -143,6 +144,7 @@ export class SimulationEngine {
     this.currentTime = 0;
     this.nodes.clear();
     this.links = [];
+    this.initialLinkDistances = new Map();
     this.alerts = [];
     this.activePackets = [];
 
@@ -183,6 +185,10 @@ export class SimulationEngine {
           dist: ev.dist,
           blocked: false
         });
+        if (typeof ev.dist === 'number') {
+          const lk = `${Math.min(ev.a, ev.b)}_${Math.max(ev.a, ev.b)}`;
+          this.initialLinkDistances.set(lk, ev.dist);
+        }
       }
     }
 

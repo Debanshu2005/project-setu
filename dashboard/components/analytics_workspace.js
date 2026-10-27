@@ -46,7 +46,44 @@ export class AnalyticsWorkspaceComponent {
       this.refresh();
     });
 
+    this.onWindowResize = () => {
+      if (this.container && this.container.offsetParent !== null) {
+        this.renderDomainView();
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('resize', this.onWindowResize);
+    }
+
     this.initLayout();
+  }
+
+  destroy() {
+    if (typeof window !== 'undefined' && this.onWindowResize) {
+      window.removeEventListener('resize', this.onWindowResize);
+    }
+  }
+
+  setDomain(domain) {
+    if (!domain) return;
+    const aliases = {
+      'radio_propagation': 'radio',
+      'packet_delivery': 'delivery',
+      'relay_bottlenecks': 'topology',
+      'congestion': 'congestion',
+      'energy_battery': 'energy',
+      'positioning_gnss': 'positioning',
+      'sos_ack': 'sos_ack',
+      'comparison': 'comparison'
+    };
+    const norm = aliases[domain] || domain;
+    this.activeDomain = norm;
+    if (this.container) {
+      this.container.querySelectorAll('.domain-pill').forEach(pill => {
+        pill.classList.toggle('active', pill.dataset.domain === norm);
+      });
+      this.renderDomainView();
+    }
   }
 
   initLayout() {
@@ -135,7 +172,7 @@ export class AnalyticsWorkspaceComponent {
       html += `<option value="${n.id}">Node ${n.id} (${roleStr})</option>`;
     }
     sel.innerHTML = html;
-    if (Array.from(sel.options).some(o => o.value === currentVal)) {
+    if (sel.options && Array.from(sel.options).some(o => o.value === currentVal)) {
       sel.value = currentVal;
     } else {
       this.filterNodeId = 'all';
@@ -317,33 +354,52 @@ export class AnalyticsWorkspaceComponent {
         </div>
       </div>
 
-      <!-- Plot 3D: Link-Quality Matrix Heatmap -->
-      <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column; margin-top:4px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div>
-            <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3D: Node-to-Node Link Quality Matrix Heatmap</span>
-            <div style="font-size:10px; color:var(--text-dim);">
-              Pairwise link telemetry. Distinguishes Absent links, Unobserved candidate links, and Measured links with sample counts.
-            </div>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+        <!-- Plot 3C: Signal-to-Noise Ratio (SNR) vs Distance -->
+        <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3C: Signal-to-Noise Ratio (SNR) vs Distance</span>
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+              Noise Floor: -119 dBm (125 kHz)
+            </span>
           </div>
-          <div style="display:flex; align-items:center; gap:6px;">
-            <label for="selHeatmapMetric" style="font-size:10px; color:var(--text-muted);">Metric:</label>
-            <select class="select-input" id="selHeatmapMetric" style="font-size:10px; padding:2px 6px;">
-              <option value="rssi" ${this.heatmapMetric === 'rssi' ? 'selected' : ''}>RSSI (dBm)</option>
-              <option value="prr" ${this.heatmapMetric === 'prr' ? 'selected' : ''}>Packet Reception Rate (PRR %)</option>
-              <option value="loss_rate" ${this.heatmapMetric === 'loss_rate' ? 'selected' : ''}>Packet Loss Rate (%)</option>
-            </select>
+          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+            Observed radio SNR compared against SX1262 LoRa demodulation limits across Spreading Factors (SF7/SF10/SF12).
+          </div>
+          <div style="flex:1; min-height:260px; position:relative;">
+            <canvas id="canvasSnrDistance" style="width:100%; height:100%; display:block;"></canvas>
           </div>
         </div>
-        <div style="height:320px; position:relative;">
-          <canvas id="canvasHeatmap" style="width:100%; height:100%; display:block;"></canvas>
+
+        <!-- Plot 3D: Link-Quality Matrix Heatmap -->
+        <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div>
+              <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3D: Node-to-Node Link Quality Matrix Heatmap</span>
+              <div style="font-size:10px; color:var(--text-dim);">
+                Pairwise link telemetry across mesh nodes. Distinguishes Absent, Unobserved, and Measured links.
+              </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:6px;">
+              <label for="selHeatmapMetric" style="font-size:10px; color:var(--text-muted);">Metric:</label>
+              <select class="select-input" id="selHeatmapMetric" style="font-size:10px; padding:2px 6px;">
+                <option value="rssi" ${this.heatmapMetric === 'rssi' ? 'selected' : ''}>RSSI (dBm)</option>
+                <option value="prr" ${this.heatmapMetric === 'prr' ? 'selected' : ''}>Packet Reception Rate (PRR %)</option>
+                <option value="loss_rate" ${this.heatmapMetric === 'loss_rate' ? 'selected' : ''}>Packet Loss Rate (%)</option>
+              </select>
+            </div>
+          </div>
+          <div style="flex:1; min-height:260px; position:relative;">
+            <canvas id="canvasHeatmap" style="width:100%; height:100%; display:block;"></canvas>
+          </div>
         </div>
       </div>
     `;
 
-    // 1. Prepare RSSI vs Distance Observations
+    // 1. Prepare RSSI, Path Loss, and SNR Observations
     const rssiPoints = [];
     const pathLossPoints = [];
+    const snrPoints = [];
 
     for (const ev of this.sim.events) {
       if (ev.ev === 'rx' && typeof ev.rssi === 'number') {
@@ -357,10 +413,30 @@ export class AnalyticsWorkspaceComponent {
             if (txNode.id !== fid && rxNode.id !== fid) continue;
           }
 
-          const dist = Math.hypot(txNode.x - rxNode.x, txNode.y - rxNode.y);
+          // Prioritize recorded observation distance over current node positions
+          let dist = null;
+          if (typeof ev.dist === 'number') dist = ev.dist;
+          else if (typeof ev.distance === 'number') dist = ev.distance;
+          else if (this.sim.initialLinkDistances) {
+            const lk = `${Math.min(ev.from, rxId)}_${Math.max(ev.from, rxId)}`;
+            dist = this.sim.initialLinkDistances.get(lk) ?? null;
+          }
+          if (dist === null) {
+            const lnk = this.sim.links?.find(l => (l.a === ev.from && l.b === rxId) || (l.a === rxId && l.b === ev.from));
+            if (lnk && typeof lnk.dist === 'number') {
+              dist = lnk.dist;
+            } else {
+              dist = Math.hypot(txNode.x - rxNode.x, txNode.y - rxNode.y);
+            }
+          }
+
+          const dVal = Math.round(dist * 10) / 10;
+          const rVal = Math.round(ev.rssi * 10) / 10;
+          const snrVal = typeof ev.snr === 'number' ? Math.round(ev.snr * 10) / 10 : Math.round((ev.rssi - (-119.0)) * 10) / 10;
+
           rssiPoints.push({
-            x: Math.round(dist * 10) / 10,
-            y: Math.round(ev.rssi * 10) / 10,
+            x: dVal,
+            y: rVal,
             nodeA: txNode.id,
             nodeB: rxNode.id,
             success: true,
@@ -369,8 +445,16 @@ export class AnalyticsWorkspaceComponent {
 
           const measuredPL = LORA_RADIO_CONSTANTS.txPowerDbm - ev.rssi;
           pathLossPoints.push({
-            x: Math.round(dist * 10) / 10,
+            x: dVal,
             y: Math.round(measuredPL * 10) / 10,
+            nodeA: txNode.id,
+            nodeB: rxNode.id,
+            success: true
+          });
+
+          snrPoints.push({
+            x: dVal,
+            y: snrVal,
             nodeA: txNode.id,
             nodeB: rxNode.id,
             success: true
@@ -381,7 +465,17 @@ export class AnalyticsWorkspaceComponent {
         const rxId = ev.node !== undefined ? ev.node : ev.to;
         const rxNode = this.sim.nodes.get(rxId);
         if (txNode && rxNode) {
-          const dist = Math.hypot(txNode.x - rxNode.x, txNode.y - rxNode.y);
+          let dist = null;
+          if (typeof ev.dist === 'number') dist = ev.dist;
+          else if (typeof ev.distance === 'number') dist = ev.distance;
+          else if (this.sim.initialLinkDistances) {
+            const lk = `${Math.min(ev.from, rxId)}_${Math.max(ev.from, rxId)}`;
+            dist = this.sim.initialLinkDistances.get(lk) ?? null;
+          }
+          if (dist === null) {
+            dist = Math.hypot(txNode.x - rxNode.x, txNode.y - rxNode.y);
+          }
+
           rssiPoints.push({
             x: Math.round(dist * 10) / 10,
             y: sens - 2.0, // Sub-sensitivity drop
@@ -389,6 +483,47 @@ export class AnalyticsWorkspaceComponent {
             nodeB: rxNode.id,
             success: false,
             linkMargin: -2.0
+          });
+        }
+      }
+    }
+
+    // Populate baseline scenario links if no transmissions have completed yet (useful non-empty initial state)
+    if (rssiPoints.length === 0 && Array.isArray(this.sim.links) && this.sim.links.length > 0) {
+      for (const l of this.sim.links) {
+        if (this.filterNodeId !== 'all') {
+          const fid = parseInt(this.filterNodeId, 10);
+          if (l.a !== fid && l.b !== fid) continue;
+        }
+        if (typeof l.dist === 'number' && typeof l.rssi === 'number') {
+          const dist = Math.round(l.dist * 10) / 10;
+          const rssi = Math.round(l.rssi * 10) / 10;
+          rssiPoints.push({
+            x: dist,
+            y: rssi,
+            nodeA: l.a,
+            nodeB: l.b,
+            success: !l.blocked,
+            linkMargin: Math.round((rssi - sens) * 10) / 10,
+            label: `Baseline Link: Node ${l.a} ➔ ${l.b}`
+          });
+          const measuredPL = Math.round((LORA_RADIO_CONSTANTS.txPowerDbm - rssi) * 10) / 10;
+          pathLossPoints.push({
+            x: dist,
+            y: measuredPL,
+            nodeA: l.a,
+            nodeB: l.b,
+            success: !l.blocked,
+            label: `Baseline Link: Node ${l.a} ➔ ${l.b}`
+          });
+          const snr = Math.round((rssi - (-119.0)) * 10) / 10;
+          snrPoints.push({
+            x: dist,
+            y: snr,
+            nodeA: l.a,
+            nodeB: l.b,
+            success: !l.blocked,
+            label: `Baseline SNR: Node ${l.a} ➔ ${l.b}`
           });
         }
       }
@@ -428,6 +563,25 @@ export class AnalyticsWorkspaceComponent {
         ]
       });
       plot3B.setData(pathLossPoints);
+    }
+
+    // Render Plot 3C: Signal-to-Noise Ratio (SNR)
+    const canvas3C = container.querySelector('#canvasSnrDistance');
+    if (canvas3C) {
+      const plot3C = new ScientificScatterPlot(canvas3C, {
+        title: 'Signal-to-Noise Ratio (SNR) vs Distance',
+        xLabel: 'Distance (m)',
+        yLabel: 'SNR (dB)',
+        yUnit: 'dB',
+        yMin: -25,
+        yMax: 20,
+        thresholds: [
+          { y: -7.5, label: 'SF7 Demod Limit (-7.5 dB)', color: '#10b981' },
+          { y: -15.0, label: 'SF10 Demod Limit (-15.0 dB)', color: '#f59e0b' },
+          { y: -20.0, label: 'SF12 Sensitivity Floor (-20.0 dB)', color: '#ef4444' }
+        ]
+      });
+      plot3C.setData(snrPoints);
     }
 
     // Render Plot 3D Heatmap
@@ -490,21 +644,41 @@ export class AnalyticsWorkspaceComponent {
         </div>
       </div>
 
-      <!-- Plot 4C: Throughput vs Time -->
-      <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column; margin-top:4px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-          <div>
-            <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4C: Delivered Network Throughput vs Simulation Time</span>
-            <div style="font-size:10px; color:var(--text-dim);">
-              Windowed rate of delivered payload data (bps) and delivered packet rate (pps) over a 2.0s measurement window.
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+        <!-- Plot 4C: Throughput vs Time -->
+        <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div>
+              <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4C: Delivered Network Throughput vs Time</span>
+              <div style="font-size:10px; color:var(--text-dim);">
+                Windowed rate of delivered payload data (bps) and offered packet load (pps) over a 2.0s window.
+              </div>
             </div>
+            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;">
+              Payload: 200 bits/packet
+            </span>
           </div>
-          <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;">
-            Payload: 200 bits/packet
-          </span>
+          <div style="height:250px; position:relative;">
+            <canvas id="canvasThroughput" style="width:100%; height:100%; display:block;"></canvas>
+          </div>
         </div>
-        <div style="height:250px; position:relative;">
-          <canvas id="canvasThroughput" style="width:100%; height:100%; display:block;"></canvas>
+
+        <!-- Plot 4D: Packet Loss Rate vs Distance -->
+        <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <div>
+              <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4D: Packet Loss Rate vs Distance</span>
+              <div style="font-size:10px; color:var(--text-dim);">
+                Observed radio drop probability binned across transmission distances.
+              </div>
+            </div>
+            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size:10px;">
+              Channel Loss Curve
+            </span>
+          </div>
+          <div style="height:250px; position:relative;">
+            <canvas id="canvasLossVsDistance" style="width:100%; height:100%; display:block;"></canvas>
+          </div>
         </div>
       </div>
     `;
@@ -595,6 +769,64 @@ export class AnalyticsWorkspaceComponent {
         }
       ]);
     }
+
+    // Plot 4D: Packet Loss vs Distance
+    const canvas4D = container.querySelector('#canvasLossVsDistance');
+    if (canvas4D) {
+      const binWidth = 100;
+      const binStats = new Map();
+      for (const ev of this.sim.events) {
+        if (ev.ev === 'rx' || (ev.ev === 'drop' && (ev.why === 'weak' || ev.why === 'collision' || ev.why === 'loss'))) {
+          let d = null;
+          if (typeof ev.dist === 'number') d = ev.dist;
+          else if (typeof ev.distance === 'number') d = ev.distance;
+          else {
+            const rxId = ev.node !== undefined ? ev.node : ev.to;
+            const lk = `${Math.min(ev.from, rxId)}_${Math.max(ev.from, rxId)}`;
+            d = this.sim.initialLinkDistances?.get(lk) ?? null;
+            if (d === null) {
+              const na = this.sim.nodes.get(ev.from);
+              const nb = this.sim.nodes.get(rxId);
+              if (na && nb) d = Math.hypot(na.x - nb.x, na.y - nb.y);
+            }
+          }
+          if (d !== null && d >= 0) {
+            const binCenter = Math.floor(d / binWidth) * binWidth + binWidth / 2;
+            if (!binStats.has(binCenter)) binStats.set(binCenter, { total: 0, dropped: 0 });
+            const s = binStats.get(binCenter);
+            s.total++;
+            if (ev.ev === 'drop') s.dropped++;
+          }
+        }
+      }
+
+      const lossPoints = Array.from(binStats.entries())
+        .map(([x, s]) => ({ x, y: s.total > 0 ? Math.round((s.dropped / s.total) * 1000) / 10 : 0 }))
+        .sort((a, b) => a.x - b.x);
+
+      const plot4D = new ScientificLineChart(canvas4D, {
+        title: 'Packet Loss Probability vs Distance',
+        xLabel: 'Distance (m)',
+        yLabel: 'Loss Rate (%)',
+        yUnit: '%',
+        yMin: 0,
+        yMax: 100,
+        thresholds: [
+          { y: 50, label: '50% Marginal Boundary', color: '#f59e0b', dash: [3, 3] },
+          { y: 90, label: '90% Severe Outage Limit', color: '#ef4444', dash: [4, 4] }
+        ]
+      });
+      plot4D.setSeries([
+        {
+          name: 'Empirical Loss Rate (%)',
+          data: lossPoints.length > 0 ? lossPoints : [{ x: 50, y: 0 }, { x: 500, y: 100 }],
+          color: '#ef4444',
+          lineWidth: 2.2,
+          fillArea: true,
+          fillColor: 'rgba(239, 68, 68, 0.12)'
+        }
+      ]);
+    }
   }
 
   // =========================================================================
@@ -603,8 +835,42 @@ export class AnalyticsWorkspaceComponent {
   renderTopologyRelayView(container) {
     const relayStats = calculateRelayAnalytics(this.sim.nodes, this.sim.events);
     const routes = reconstructPacketRoutes(this.sim.events, this.sim.nodes);
+    const metrics = this.sim.getMetrics();
 
     container.innerHTML = `
+      <!-- Plots 5A & 5B: Hop Distribution & Relay Forwarding Activity -->
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px;">
+        <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-weight:700; font-size:12px; color:#fff;">Plot 5A: End-to-End Hop-Count Distribution</span>
+            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px;">
+              Path Length (Hops)
+            </span>
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+            Distribution of network hops required for survivor messages to reach the Rescue Hub sink.
+          </div>
+          <div style="flex:1; min-height:220px; position:relative;">
+            <canvas id="canvasHopDistribution" style="width:100%; height:100%; display:block;"></canvas>
+          </div>
+        </div>
+
+        <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+            <span style="font-weight:700; font-size:12px; color:#fff;">Plot 5B: Relay Forwarding Traffic Activity vs Time</span>
+            <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24; font-size:10px;">
+              Tower Forward Dynamics
+            </span>
+          </div>
+          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+            Rate of re-broadcast forwarded packets across active relay towers over simulation time.
+          </div>
+          <div style="flex:1; min-height:220px; position:relative;">
+            <canvas id="canvasRelayActivity" style="width:100%; height:100%; display:block;"></canvas>
+          </div>
+        </div>
+      </div>
+
       <!-- Relay Bottleneck & Traffic Analytics Table -->
       <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; margin-bottom:12px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
@@ -714,6 +980,59 @@ export class AnalyticsWorkspaceComponent {
         </div>
       </div>
     `;
+
+    // Render Plot 5A: Hop Count Distribution
+    const canvasHop = container.querySelector('#canvasHopDistribution');
+    if (canvasHop) {
+      const hopDist = metrics.hopDistribution || [];
+      const hopPoints = hopDist.map(h => ({ x: h.hop, y: h.count }));
+      const plotHop = new ScientificLineChart(canvasHop, {
+        title: 'Delivered Messages by Hop Count',
+        xLabel: 'Hop Count',
+        yLabel: 'Delivered Count',
+        yUnit: 'pkts',
+        yMin: 0
+      });
+      plotHop.setSeries([
+        {
+          name: 'Delivered Episodes',
+          data: hopPoints.length > 0 ? hopPoints : [{ x: 1, y: 0 }],
+          color: '#38bdf8',
+          lineWidth: 2.2,
+          fillArea: true,
+          fillColor: 'rgba(56, 189, 248, 0.12)'
+        }
+      ]);
+    }
+
+    // Render Plot 5B: Relay Activity
+    const canvasRelay = container.querySelector('#canvasRelayActivity');
+    if (canvasRelay) {
+      const duration = this.sim.meta.duration || 30000;
+      const step = 2000;
+      const relayActivityPoints = [];
+      for (let t = 0; t <= duration; t += step) {
+        const count = this.sim.events.filter(e => e.ev === 'tx' && e.node >= 100 && e.t >= t && e.t < t + step).length;
+        relayActivityPoints.push({ x: t / 1000.0, y: count });
+      }
+      const plotRelay = new ScientificLineChart(canvasRelay, {
+        title: 'Relay Forward Transmissions / 2s Window',
+        xLabel: 'Simulation Time (s)',
+        yLabel: 'Forwards per Window',
+        yUnit: 'fwd/2s',
+        yMin: 0
+      });
+      plotRelay.setSeries([
+        {
+          name: 'Relay Forward Traffic',
+          data: relayActivityPoints,
+          color: '#f59e0b',
+          lineWidth: 2.0,
+          fillArea: true,
+          fillColor: 'rgba(245, 158, 11, 0.12)'
+        }
+      ]);
+    }
   }
 
   // =========================================================================
@@ -855,6 +1174,22 @@ export class AnalyticsWorkspaceComponent {
           </div>
         </div>
       </div>
+
+      <!-- Subsystem Energy Consumption Breakdown -->
+      <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div>
+            <span style="font-weight:700; font-size:12px; color:#fff;">Subsystem Energy Breakdown & Battery Life Projections</span>
+            <div style="font-size:10px; color:var(--text-dim);">
+              Energy apportioned across LoRa TX (120 mA @ +14 dBm), LoRa RX listening (15 mA), and MCU standby / sensing (1.5 mA).
+            </div>
+          </div>
+          <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;" id="badgeTotalEnergy">
+            Fleet Energy Drain
+          </span>
+        </div>
+        <div id="energyBreakdownGrid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;"></div>
+      </div>
     `;
 
     // 1. Build battery timeline series
@@ -933,6 +1268,56 @@ export class AnalyticsWorkspaceComponent {
         yMin: 0
       });
       plotEnergy.setData(points);
+    }
+
+    // 3. Subsystem Breakdown Cards
+    const breakdownGrid = container.querySelector('#energyBreakdownGrid');
+    if (breakdownGrid) {
+      const totalTxEvents = this.sim.events.filter(e => e.ev === 'tx').length;
+      const totalRxEvents = this.sim.events.filter(e => e.ev === 'rx' || e.ev === 'fwd').length;
+      const avgAirtimeMs = 62.0; // LoRa SF7 20-byte payload airtime
+      const txEnergyMah = (totalTxEvents * avgAirtimeMs / 3600000.0) * LORA_RADIO_CONSTANTS.txCurrentMa;
+      const rxEnergyMah = (totalRxEvents * avgAirtimeMs / 3600000.0) * LORA_RADIO_CONSTANTS.rxCurrentMa;
+      const nodeCount = Math.max(1, nodes.length);
+      const totalFleetDurationHours = ((duration / 1000.0) * nodeCount) / 3600.0;
+      const activeHours = ((totalTxEvents + totalRxEvents) * avgAirtimeMs) / 3600000.0;
+      const standbyEnergyMah = Math.max(0, totalFleetDurationHours - activeHours) * LORA_RADIO_CONSTANTS.idleCurrentMa;
+      const totalEnergyMah = txEnergyMah + rxEnergyMah + standbyEnergyMah;
+
+      const txPct = totalEnergyMah > 0 ? ((txEnergyMah / totalEnergyMah) * 100).toFixed(1) : '0.0';
+      const rxPct = totalEnergyMah > 0 ? ((rxEnergyMah / totalEnergyMah) * 100).toFixed(1) : '0.0';
+      const standbyPct = totalEnergyMah > 0 ? ((standbyEnergyMah / totalEnergyMah) * 100).toFixed(1) : '0.0';
+
+      const meanNodeCurrentMa = (totalEnergyMah / (duration / 3600000.0)) / nodeCount;
+      const projectedLifeHours = meanNodeCurrentMa > 0 ? (LORA_RADIO_CONSTANTS.nominalBatteryMah / meanNodeCurrentMa).toFixed(1) : '300.0';
+
+      breakdownGrid.innerHTML = `
+        <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:4px; padding:8px 10px;">
+          <div style="font-size:10px; color:var(--text-dim);">LoRa TX (120 mA)</div>
+          <div style="font-size:16px; font-weight:700; color:#ef4444; font-family:var(--font-mono); margin:2px 0;">${txEnergyMah.toFixed(3)} mAh</div>
+          <div style="font-size:10px; color:#f87171;">${txPct}% of total drain (${totalTxEvents} bursts)</div>
+        </div>
+        <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2); border-radius:4px; padding:8px 10px;">
+          <div style="font-size:10px; color:var(--text-dim);">LoRa RX (15 mA)</div>
+          <div style="font-size:16px; font-weight:700; color:#38bdf8; font-family:var(--font-mono); margin:2px 0;">${rxEnergyMah.toFixed(3)} mAh</div>
+          <div style="font-size:10px; color:#7dd3fc;">${rxPct}% of total drain (${totalRxEvents} pkts)</div>
+        </div>
+        <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:4px; padding:8px 10px;">
+          <div style="font-size:10px; color:var(--text-dim);">MCU Standby (1.5 mA)</div>
+          <div style="font-size:16px; font-weight:700; color:#10b981; font-family:var(--font-mono); margin:2px 0;">${standbyEnergyMah.toFixed(3)} mAh</div>
+          <div style="font-size:10px; color:#34d399;">${standbyPct}% of total drain (idle baseline)</div>
+        </div>
+        <div style="background:rgba(192,132,252,0.06); border:1px solid rgba(192,132,252,0.2); border-radius:4px; padding:8px 10px;">
+          <div style="font-size:10px; color:var(--text-dim);">Mean Battery Projection</div>
+          <div style="font-size:16px; font-weight:700; color:#c084fc; font-family:var(--font-mono); margin:2px 0;">${projectedLifeHours}h</div>
+          <div style="font-size:10px; color:#e9d5ff;">Estimated survivor node endurance</div>
+        </div>
+      `;
+
+      const badge = container.querySelector('#badgeTotalEnergy');
+      if (badge) {
+        badge.textContent = `Fleet Total: ${totalEnergyMah.toFixed(3)} mAh`;
+      }
     }
   }
 
@@ -1121,6 +1506,22 @@ export class AnalyticsWorkspaceComponent {
           </div>
         </div>
       </div>
+
+      <!-- Retry Count vs Eventual Delivery Analysis -->
+      <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; margin-top:12px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <div>
+            <span style="font-weight:700; font-size:12px; color:#fff;">SOS Retries vs Eventual Delivery & Confirmation</span>
+            <div style="font-size:10px; color:var(--text-dim);">
+              Correlation between exponential backoff retransmission count and ultimate two-way delivery success.
+            </div>
+          </div>
+          <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+            Protocol Reliability
+          </span>
+        </div>
+        <div id="retryDeliveryStatsContainer"></div>
+      </div>
     `;
 
     const m = this.sim.getMetrics();
@@ -1183,6 +1584,99 @@ export class AnalyticsWorkspaceComponent {
       plotAck.setCdfs([
         { name: 'Current Run', ecdfObj: ecdf, color: '#c084fc' }
       ]);
+    }
+
+    // 3. Retry Count vs Eventual Delivery Analysis Table
+    const retryContainer = container.querySelector('#retryDeliveryStatsContainer');
+    if (retryContainer) {
+      // Analyze episodes per origin
+      const originEpisodes = new Map();
+      for (const ev of this.sim.events) {
+        if (ev.ev === 'originate') {
+          originEpisodes.set(ev.node, {
+            origin: ev.node,
+            originatedAt: ev.t,
+            retries: 0,
+            deliveredToHub: false,
+            deliveryLatencyMs: null,
+            acked: false,
+            ackLatencyMs: null
+          });
+        }
+      }
+
+      for (const ev of this.sim.events) {
+        const ep = originEpisodes.get(ev.node || ev.src);
+        if (ep) {
+          if (ev.ev === 'retry') {
+            ep.retries++;
+          } else if ((ev.ev === 'arrive' || (ev.ev === 'rx' && ev.node === 0)) && !ep.deliveredToHub) {
+            ep.deliveredToHub = true;
+            ep.deliveryLatencyMs = Math.max(0, ev.t - ep.originatedAt);
+          } else if (ev.ev === 'ack_rx' && !ep.acked) {
+            ep.acked = true;
+            ep.ackLatencyMs = Math.max(0, ev.t - ep.originatedAt);
+          }
+        }
+      }
+
+      // Group into retry bins
+      const bins = [
+        { label: '0 Retries (First-Shot Transmission)', maxR: 0, eps: [] },
+        { label: '1 Retry (First Backoff Attempt)', maxR: 1, eps: [] },
+        { label: '2 Retries (Second Backoff Attempt)', maxR: 2, eps: [] },
+        { label: '3+ Retries (Extended Backoff Retransmissions)', maxR: 999, eps: [] }
+      ];
+
+      for (const ep of originEpisodes.values()) {
+        if (ep.retries === 0) bins[0].eps.push(ep);
+        else if (ep.retries === 1) bins[1].eps.push(ep);
+        else if (ep.retries === 2) bins[2].eps.push(ep);
+        else bins[3].eps.push(ep);
+      }
+
+      const totalEpisodes = originEpisodes.size;
+
+      retryContainer.innerHTML = `
+        <div style="overflow-x:auto;">
+          <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left; font-family:var(--font-mono);">
+            <thead>
+              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size:10px;">
+                <th style="padding:6px;">Retransmission Tier</th>
+                <th style="padding:6px;">Episodes</th>
+                <th style="padding:6px;">Share (%)</th>
+                <th style="padding:6px;">Delivered to Hub</th>
+                <th style="padding:6px;">PDR (%)</th>
+                <th style="padding:6px;">Confirmed Return ACK</th>
+                <th style="padding:6px;">Mean Delivery Latency</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${totalEpisodes === 0 ? '<tr><td colspan="7" style="padding:10px; text-align:center; color:#64748b;">No SOS transmissions recorded in this run. Trigger an SOS or run simulation to populate.</td></tr>' :
+                bins.map(b => {
+                  const count = b.eps.length;
+                  const share = totalEpisodes > 0 ? ((count / totalEpisodes) * 100).toFixed(1) : '0.0';
+                  const delivCount = b.eps.filter(e => e.deliveredToHub).length;
+                  const pdr = count > 0 ? ((delivCount / count) * 100).toFixed(1) : 'N/A';
+                  const ackCount = b.eps.filter(e => e.acked).length;
+                  const latencies = b.eps.filter(e => e.deliveredToHub && typeof e.deliveryLatencyMs === 'number').map(e => e.deliveryLatencyMs);
+                  const meanLat = latencies.length > 0 ? (latencies.reduce((s, v) => s + v, 0) / latencies.length).toFixed(0) + ' ms' : 'N/A';
+                  return `
+                    <tr style="border-bottom:1px solid rgba(255,255,255,0.04);">
+                      <td style="padding:6px; font-weight:700; color:#38bdf8;">${b.label}</td>
+                      <td style="padding:6px; color:#fff;">${count}</td>
+                      <td style="padding:6px; color:#94a3b8;">${share}%</td>
+                      <td style="padding:6px; color:#10b981;">${delivCount}</td>
+                      <td style="padding:6px; font-weight:700; color:${pdr !== 'N/A' && parseFloat(pdr) >= 80 ? '#10b981' : (pdr !== 'N/A' && parseFloat(pdr) >= 50 ? '#f59e0b' : '#ef4444')};">${pdr}%</td>
+                      <td style="padding:6px; color:#c084fc;">${ackCount} (${count > 0 ? ((ackCount / count) * 100).toFixed(1) : 0}%)</td>
+                      <td style="padding:6px; color:#fbbf24;">${meanLat}</td>
+                    </tr>
+                  `;
+                }).join('')}
+            </tbody>
+          </table>
+        </div>
+      `;
     }
   }
 

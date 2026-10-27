@@ -10,6 +10,8 @@ import { SosConsoleComponent } from '../components/console.js';
 import { ChartsComponent } from '../components/charts.js';
 import { NodeHealthComponent } from '../components/node_health.js';
 import { AnalyticsWorkspaceComponent } from '../components/analytics_workspace.js';
+import { ScientificScatterPlot, ScientificCdfPlot } from '../components/scientific_charts.js';
+import { calculateTheoreticalRssi, calculateEcdf } from './scientific_metrics.js';
 
 class SetuDashboardApp {
   constructor() {
@@ -51,6 +53,14 @@ class SetuDashboardApp {
     this.containerTopologyView = document.getElementById('containerTopologyView');
     this.containerAnalyticsView = document.getElementById('containerAnalyticsView');
     this.selTopologyOverlay = document.getElementById('selTopologyOverlay');
+
+    // Sidebar Scientific Workspace Elements
+    this.tabBtnScientific = document.getElementById('tabBtnScientific');
+    this.btnLaunchScientificFull = document.getElementById('btnLaunchScientificFull');
+    this.canvasSidebarQuick = document.getElementById('canvasSidebarQuick');
+    this.lblSidebarQuickChart = document.getElementById('lblSidebarQuickChart');
+    this.badgeSidebarMetric = document.getElementById('badgeSidebarMetric');
+    this.sidebarDomainSelector = document.getElementById('sidebarDomainSelector');
 
     // Live Mode & Trigger All Header Actions
     this.btnToggleMode = document.getElementById('btnToggleMode');
@@ -447,6 +457,13 @@ class SetuDashboardApp {
     this.sim.subscribe((engine, type) => {
       this.updateMetrics();
       this.updateScrubber();
+      if (this.analyticsWorkspace && this.containerAnalyticsView && this.containerAnalyticsView.style.display !== 'none') {
+        this.analyticsWorkspace.refresh();
+      }
+      const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab;
+      if (activeTab === 'tab-scientific') {
+        this.renderSidebarQuickChart();
+      }
       if (type === 'play' || type === 'pause' || type === 'complete') {
         this.updatePlayButton();
       }
@@ -524,37 +541,44 @@ class SetuDashboardApp {
     this.initBackendModal();
 
     // View mode switching: Topology vs Scientific Analytics
-    if (this.btnModeTopology && this.btnModeAnalytics) {
-      const setViewMode = (mode) => {
-        const isTopo = (mode === 'topology');
-        if (this.btnModeTopology) {
-          this.btnModeTopology.classList.toggle('active', isTopo);
-          this.btnModeTopology.style.background = isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
-          this.btnModeTopology.style.color = isTopo ? '#38bdf8' : 'var(--text-muted)';
-        }
-        if (this.btnModeAnalytics) {
-          this.btnModeAnalytics.classList.toggle('active', !isTopo);
-          this.btnModeAnalytics.style.background = !isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
-          this.btnModeAnalytics.style.color = !isTopo ? '#38bdf8' : 'var(--text-muted)';
-        }
-        if (this.containerTopologyView) this.containerTopologyView.style.display = isTopo ? 'block' : 'none';
-        if (this.containerAnalyticsView) {
-          this.containerAnalyticsView.style.display = !isTopo ? 'block' : 'none';
-          if (!isTopo && this.analyticsWorkspace) {
-            this.analyticsWorkspace.refresh();
-          }
-        }
-        if (isTopo && this.topo) {
-          this.topo.resize();
-          this.topo.render();
-        }
-      };
+    if (this.btnModeTopology) {
+      this.btnModeTopology.addEventListener('click', () => this.setViewMode('topology'));
+    }
+    if (this.btnModeAnalytics) {
+      this.btnModeAnalytics.addEventListener('click', () => this.setViewMode('analytics'));
+    }
+    if (this.btnExpandAnalytics) {
+      this.btnExpandAnalytics.addEventListener('click', () => this.setViewMode('analytics'));
+    }
+    if (this.btnLaunchScientificFull) {
+      this.btnLaunchScientificFull.addEventListener('click', () => this.setViewMode('analytics'));
+    }
 
-      this.btnModeTopology.addEventListener('click', () => setViewMode('topology'));
-      this.btnModeAnalytics.addEventListener('click', () => setViewMode('analytics'));
-      if (this.btnExpandAnalytics) {
-        this.btnExpandAnalytics.addEventListener('click', () => setViewMode('analytics'));
-      }
+    // Domain quick-switch buttons (from tab-charts and tab-scientific)
+    document.querySelectorAll('.btn-domain-quick').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const domain = btn.dataset.domain;
+        this.setViewMode('analytics');
+        if (domain && this.analyticsWorkspace) {
+          this.analyticsWorkspace.setDomain(domain);
+        }
+      });
+    });
+
+    document.querySelectorAll('.btn-sidebar-domain').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const domain = btn.dataset.domain;
+        this.setViewMode('analytics');
+        if (domain && this.analyticsWorkspace) {
+          this.analyticsWorkspace.setDomain(domain);
+        }
+      });
+    });
+
+    if (this.sidebarDomainSelector) {
+      this.sidebarDomainSelector.addEventListener('change', () => {
+        this.renderSidebarQuickChart();
+      });
     }
 
     // Selectable Overlays (Phase 5)
@@ -743,6 +767,10 @@ class SetuDashboardApp {
         const events = SetuApi.parseJsonl(text);
         this.sim.loadTrace(events);
         this.timeline.setEvents();
+        if (this.analyticsWorkspace) {
+          this.analyticsWorkspace.refresh();
+        }
+        this.renderSidebarQuickChart();
       }
     });
   }
@@ -756,6 +784,128 @@ class SetuDashboardApp {
     });
     if (tabId === 'tab-charts' && this.charts) {
       this.charts.render();
+    }
+    if (tabId === 'tab-scientific') {
+      this.renderSidebarQuickChart();
+    }
+  }
+
+  setViewMode(mode) {
+    const isTopo = (mode === 'topology');
+    if (this.btnModeTopology) {
+      this.btnModeTopology.classList.toggle('active', isTopo);
+      this.btnModeTopology.style.background = isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
+      this.btnModeTopology.style.color = isTopo ? '#38bdf8' : 'var(--text-muted)';
+    }
+    if (this.btnModeAnalytics) {
+      this.btnModeAnalytics.classList.toggle('active', !isTopo);
+      this.btnModeAnalytics.style.background = !isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
+      this.btnModeAnalytics.style.color = !isTopo ? '#38bdf8' : 'var(--text-muted)';
+    }
+    if (this.containerTopologyView) this.containerTopologyView.style.display = isTopo ? 'block' : 'none';
+    if (this.containerAnalyticsView) {
+      this.containerAnalyticsView.style.display = !isTopo ? 'block' : 'none';
+      if (!isTopo && this.analyticsWorkspace) {
+        this.analyticsWorkspace.refresh();
+      }
+    }
+    if (isTopo && this.topo) {
+      this.topo.resize();
+      this.topo.render();
+    }
+  }
+
+  renderSidebarQuickChart() {
+    if (!this.canvasSidebarQuick) return;
+    const domain = this.sidebarDomainSelector ? this.sidebarDomainSelector.value : 'radio_propagation';
+    const ctx = this.canvasSidebarQuick.getContext('2d');
+    if (!ctx) return;
+
+    if (domain === 'packet_delivery') {
+      if (this.lblSidebarQuickChart) this.lblSidebarQuickChart.textContent = 'End-to-End Latency CDF';
+      const latencies = [];
+      const origTimes = new Map();
+      for (const ev of this.sim.events) {
+        if (ev.ev === 'originate') origTimes.set(ev.node, ev.t);
+        else if (ev.ev === 'arrive' || (ev.ev === 'rx' && ev.node === 0)) {
+          const t0 = origTimes.get(ev.src || ev.origin || ev.node);
+          if (t0 !== undefined && ev.t >= t0) latencies.push(ev.t - t0);
+        }
+      }
+      if (this.badgeSidebarMetric) {
+        this.badgeSidebarMetric.textContent = latencies.length > 0 ? `Delivered: ${latencies.length} pkts` : 'No Arrivals';
+      }
+      const plot = new ScientificCdfPlot(this.canvasSidebarQuick, {
+        title: 'End-to-End Latency CDF',
+        xLabel: 'Latency (ms)',
+        xUnit: 'ms',
+        showPercentiles: true
+      });
+      plot.setCdfs([
+        { name: 'Current Run', ecdfObj: calculateEcdf(latencies), color: '#38bdf8' }
+      ]);
+    } else {
+      // Default: radio_propagation (RSSI vs Distance with theory curve)
+      if (this.lblSidebarQuickChart) this.lblSidebarQuickChart.textContent = 'RSSI vs Distance (Empirical vs Theory)';
+      const pathExp = this.sim.params?.path_exp || 3.5;
+      const sf = this.sim.params?.sf || 7;
+      const sens = -120.0;
+
+      const rssiPoints = [];
+      for (const ev of this.sim.events) {
+        if (typeof ev.rssi === 'number') {
+          let dist = (typeof ev.dist === 'number' && ev.dist > 0) ? ev.dist :
+                     (typeof ev.distance === 'number' && ev.distance > 0 ? ev.distance : null);
+          if (dist === null && typeof ev.node === 'number' && typeof ev.to === 'number') {
+            const pairKey = `${Math.min(ev.node, ev.to)}_${Math.max(ev.node, ev.to)}`;
+            dist = this.sim.initialLinkDistances ? this.sim.initialLinkDistances.get(pairKey) : null;
+          }
+          if (dist === null && typeof ev.node === 'number' && typeof ev.to === 'number') {
+            const l = this.sim.links.find(lnk =>
+              (lnk.source === ev.node && lnk.target === ev.to) ||
+              (lnk.source === ev.to && lnk.target === ev.node)
+            );
+            if (l && typeof l.distance === 'number') dist = l.distance;
+          }
+          if (dist === null && typeof ev.node === 'number' && typeof ev.to === 'number') {
+            const a = this.sim.nodes.get(ev.node);
+            const b = this.sim.nodes.get(ev.to);
+            if (a && b) dist = Math.hypot(a.x - b.x, a.y - b.y);
+          }
+          if (dist !== null && dist > 0) {
+            rssiPoints.push({ x: dist, y: ev.rssi });
+          }
+        }
+      }
+
+      if (rssiPoints.length === 0 && this.sim.links.length > 0) {
+        for (const link of this.sim.links) {
+          const na = this.sim.nodes.get(link.source);
+          const nb = this.sim.nodes.get(link.target);
+          if (na && nb) {
+            const d = (typeof link.distance === 'number' && link.distance > 0) ? link.distance : Math.hypot(na.x - nb.x, na.y - nb.y);
+            const r = typeof link.rssi === 'number' ? link.rssi : calculateTheoreticalRssi(d, pathExp);
+            rssiPoints.push({ x: d, y: r });
+          }
+        }
+      }
+
+      if (this.badgeSidebarMetric) {
+        this.badgeSidebarMetric.textContent = `Sensitivity: ${sens} dBm (SF${sf})`;
+      }
+
+      const plot = new ScientificScatterPlot(this.canvasSidebarQuick, {
+        title: 'RSSI vs Distance',
+        xLabel: 'Dist (m)',
+        yLabel: 'RSSI (dBm)',
+        yUnit: 'dBm',
+        theoryCurve: (d) => calculateTheoreticalRssi(d, pathExp),
+        theoryLabel: `Theory (n=${pathExp})`,
+        thresholds: [
+          { y: sens, label: `Sens (SF${sf})`, color: '#ef4444' }
+        ]
+      });
+      plot.setData(rssiPoints);
     }
   }
 
@@ -1526,6 +1676,10 @@ class SetuDashboardApp {
       };
       this.sim.loadTrace(events, null, sessionInfo);
       this.timeline.setEvents();
+      if (this.analyticsWorkspace) {
+        this.analyticsWorkspace.refresh();
+      }
+      this.renderSidebarQuickChart();
 
       this.elStatusDot.classList.remove('simulating');
       this.elStatusText.textContent = `TRACE LOADED: ${events.length} EVENTS (${scenarioId})`;
@@ -1571,6 +1725,10 @@ class SetuDashboardApp {
       };
       this.sim.loadTrace(events, result.summary, sessionInfo);
       this.timeline.setEvents();
+      if (this.analyticsWorkspace) {
+        this.analyticsWorkspace.refresh();
+      }
+      this.renderSidebarQuickChart();
 
       this.elStatusDot.classList.remove('simulating');
       this.elStatusText.textContent = `SIMULATION COMPLETE: ${events.length} EVENTS RECORDED (${sc.name})`;
@@ -1646,6 +1804,10 @@ class SetuDashboardApp {
       };
       this.sim.loadTrace(events, result.summary, sessionInfo);
       this.timeline.setEvents();
+      if (this.analyticsWorkspace) {
+        this.analyticsWorkspace.refresh();
+      }
+      this.renderSidebarQuickChart();
 
       this.elStatusDot.classList.remove('simulating');
       this.elStatusText.textContent = `CUSTOM SIMULATION READY (${events.length} EVENTS, SEED ${seed})`;
