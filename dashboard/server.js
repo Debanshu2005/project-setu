@@ -292,7 +292,7 @@ class SimulationJobManager {
       '--sf', String(sf),
       '--loss', String(loss),
       '--path-exp', String(pathExp),
-      '--trace', job.traceFilePath
+      '--trace', '-'
     ];
 
     if (Array.isArray(job.triggers)) {
@@ -339,6 +339,7 @@ class SimulationJobManager {
     }, this.defaultTimeoutMs);
 
     let stdoutBuffer = '';
+    let summaryStdout = '';
     let stderrData = '';
     let summaryJson = null;
 
@@ -350,19 +351,33 @@ class SimulationJobManager {
         stdoutBuffer = stdoutBuffer.slice(newlineIdx + 1);
         if (!line) continue;
 
-        if (job.writeStream && !job.writeStream.destroyed) {
-          job.writeStream.write(line + '\n');
+        let parsed = null;
+        try {
+          parsed = JSON.parse(line);
+        } catch {
+          // Non-JSON or multi-line summary fragment
         }
 
-        try {
-          const parsed = JSON.parse(line);
-          if (parsed.ev) {
-            job.addEvent(parsed);
-          } else if (parsed.cmd === 'summary' || parsed.totals || parsed.summary) {
+        if (parsed && parsed.ev) {
+          if (parsed.ev === 'node_init') {
+            const nid = parseInt(parsed.id !== undefined ? parsed.id : parsed.node, 10);
+            if (!parsed.role) {
+              parsed.role = (nid === 0 ? 'hub' : 'unknown');
+            } else {
+              parsed.role = String(parsed.role).trim().toLowerCase();
+            }
+          }
+          // Valid JSONL trace event: write to disk trace and broadcast live
+          if (job.writeStream && !job.writeStream.destroyed) {
+            job.writeStream.write(JSON.stringify(parsed) + '\n');
+          }
+          job.addEvent(parsed);
+        } else {
+          // Summary JSON line or non-event log
+          summaryStdout += line + '\n';
+          if (parsed && (parsed.cmd === 'summary' || parsed.totals || parsed.summary || parsed.duration_ms !== undefined)) {
             summaryJson = parsed;
           }
-        } catch {
-          // non-JSON log line
         }
       }
     });
@@ -381,11 +396,15 @@ class SimulationJobManager {
       job.completedAt = Date.now();
       job.durationMs = job.completedAt - job.startedAt;
 
-      // Check if remainder in buffer was summary
-      if (!summaryJson && stdoutBuffer.trim()) {
-        try {
-          summaryJson = JSON.parse(stdoutBuffer.trim());
-        } catch {}
+      // Extract summary JSON from accumulated summaryStdout or buffer
+      if (!summaryJson) {
+        const toSearch = summaryStdout + '\n' + stdoutBuffer;
+        const match = toSearch.match(/\{[\s\S]*"totals"[\s\S]*\}/);
+        if (match) {
+          try {
+            summaryJson = JSON.parse(match[0]);
+          } catch {}
+        }
       }
 
       if (job.status === 'cancelled') {
@@ -411,6 +430,7 @@ class SimulationJobManager {
         if (job.completionResolve) {
           job.completionResolve({
             success: true,
+            status: 'completed',
             jobId: job.id,
             traceFilename: job.traceFilename,
             summary: job.summary

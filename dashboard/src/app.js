@@ -1,7 +1,7 @@
 // Project Setu - Operations Dashboard Main Application Orchestrator
 
 import { SetuApi } from './api.js';
-import { SimulationEngine } from './simulation.js';
+import { SimulationEngine, normalizeRole } from './simulation.js';
 import { Exporter } from './exporter.js';
 import { TopologyVisualizer } from '../components/topology.js';
 import { TimelineComponent } from '../components/timeline.js';
@@ -471,9 +471,9 @@ class SetuDashboardApp {
     const openBackendModal = () => {
       if (txtBackendUrl) txtBackendUrl.value = SetuApi.getBaseUrl();
       if (lblBackendSource) {
-        const src = SetuApi.getSource();
+        const src = SetuApi.getSource() || 'default';
         const isOverride = SetuApi.isManualOverride();
-        lblBackendSource.textContent = `Source: ${src.toUpperCase()}${isOverride ? ' (Manual override active)' : ''}`;
+        lblBackendSource.textContent = `Source: ${String(src).toUpperCase()}${isOverride ? ' (Manual override active)' : ''}`;
       }
       if (lblEngineStatus) {
         const base = SetuApi.getBaseUrl();
@@ -577,7 +577,7 @@ class SetuDashboardApp {
         const defaultUrl = await SetuApi.clearManualOverride();
         if (txtBackendUrl) txtBackendUrl.value = defaultUrl;
         if (lblBackendSource) {
-          lblBackendSource.textContent = `Source: ${SetuApi.getSource().toUpperCase()} (Default restored)`;
+          lblBackendSource.textContent = `Source: ${String(SetuApi.getSource() || 'default').toUpperCase()} (Default restored)`;
         }
         if (lblEngineStatus) {
           lblEngineStatus.textContent = defaultUrl ? `Default restored: ${defaultUrl}` : 'No environment default configured';
@@ -862,7 +862,8 @@ class SetuDashboardApp {
     }
 
     this.elStatusDot.classList.add('simulating');
-    this.elStatusText.textContent = `DISPATCHING TRIGGER TO NODE ${nodeId} (${kind.toUpperCase()})...`;
+    const safeKind = String(kind || 'short').toUpperCase();
+    this.elStatusText.textContent = `DISPATCHING TRIGGER TO NODE ${nodeId} (${safeKind})...`;
 
     try {
       await SetuApi.triggerNode(nodeId, kind);
@@ -881,8 +882,8 @@ class SetuDashboardApp {
       this.elStatusDot.classList.remove('simulating');
       const isSosConfirmed = fresh && (fresh.active_sos || fresh.active);
       this.elStatusText.textContent = isSosConfirmed
-        ? `NODE ${nodeId} SOS TRANSMITTING (${kind.toUpperCase()}) — CONFIRMED BY NATIVE ENGINE`
-        : `NODE ${nodeId} TRIGGER PROCESSED (${kind.toUpperCase()}) — NATIVE QUEUES DRAINED`;
+        ? `NODE ${nodeId} SOS TRANSMITTING (${safeKind}) — CONFIRMED BY NATIVE ENGINE`
+        : `NODE ${nodeId} TRIGGER PROCESSED (${safeKind}) — NATIVE QUEUES DRAINED`;
       return { ok: true, node: nodeId, kind };
     } catch (err) {
       this.elStatusDot.classList.remove('simulating');
@@ -1015,9 +1016,10 @@ class SetuDashboardApp {
 
         // Populate / update nodes from native engine
         for (const n of cState.nodes) {
+          const normRole = normalizeRole(n.role, n.id);
           const existing = this.sim.nodes.get(n.id);
           if (existing && !isReset) {
-            existing.role = n.role;
+            existing.role = normRole;
             existing.x = n.x;
             existing.y = n.y;
             existing.battery = n.battery;
@@ -1060,7 +1062,7 @@ class SetuDashboardApp {
           } else {
             this.sim.nodes.set(n.id, {
               id: n.id,
-              role: n.role,
+              role: normRole,
               x: n.x,
               y: n.y,
               battery: n.battery,
@@ -1161,7 +1163,8 @@ class SetuDashboardApp {
 
     try {
       this.elStatusDot.classList.add('simulating');
-      this.elStatusText.textContent = `DISPATCHING BROADCAST SOS WAVE (${kind.toUpperCase()}, JITTER ±${jitter}ms)...`;
+      const safeKind = String(kind || 'short').toUpperCase();
+      this.elStatusText.textContent = `DISPATCHING BROADCAST SOS WAVE (${safeKind}, JITTER ±${jitter}ms)...`;
 
       // 2. Mark survivor nodes as pending dispatch
       for (const [, n] of this.sim.nodes) {
@@ -1403,6 +1406,9 @@ class SetuDashboardApp {
       } else if (result.traceFilename) {
         events = await SetuApi.fetchTrace(result.traceFilename);
       }
+      if (!events || !Array.isArray(events) || events.length === 0) {
+        throw new Error('Simulation completed but yielded empty or malformed trace events');
+      }
       const sessionInfo = {
         id: `live_${sc.id}_${Date.now()}`,
         name: `Live Scenario: ${sc.name}`,
@@ -1416,9 +1422,12 @@ class SetuDashboardApp {
       this.elStatusDot.classList.remove('simulating');
       this.elStatusText.textContent = `SIMULATION COMPLETE: ${events.length} EVENTS RECORDED (${sc.name})`;
     } catch (err) {
-      alert(`Simulation failed: ${err.message}`);
+      console.error('[Setu Scenario Live] Simulation execution error:', err);
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `SIMULATION ERROR: ${err.message}`;
+      this.elStatusText.textContent = `SIMULATION ERROR: ${err.message || 'Execution failed'}`;
+      alert(`Simulation failed: ${err.message || 'Execution failed'}\n\nSee browser console for diagnostic stack trace.`);
+    } finally {
+      this.elStatusDot.classList.remove('simulating');
     }
   }
 
@@ -1449,9 +1458,20 @@ class SetuDashboardApp {
       faults: []
     };
 
-    this.modalRunSim.classList.remove('active');
+    if (this.modalRunSim) {
+      this.modalRunSim.classList.remove('active');
+    }
     this.elStatusDot.classList.add('simulating');
     this.elStatusText.textContent = `RUNNING CUSTOM SIMULATION (SEED ${seed})...`;
+
+    const origExecuteText = this.btnExecuteSim ? this.btnExecuteSim.textContent : '';
+    if (this.btnExecuteSim) {
+      this.btnExecuteSim.disabled = true;
+      this.btnExecuteSim.textContent = 'Running...';
+    }
+    if (this.btnRunModal) {
+      this.btnRunModal.disabled = true;
+    }
 
     try {
       const result = await SetuApi.runSimulation(payload);
@@ -1460,6 +1480,9 @@ class SetuDashboardApp {
         events = result.traceEvents;
       } else if (result.traceFilename) {
         events = await SetuApi.fetchTrace(result.traceFilename);
+      }
+      if (!events || !Array.isArray(events) || events.length === 0) {
+        throw new Error('Simulation completed but yielded empty or malformed trace events');
       }
       const sessionInfo = {
         id: `custom_${seed}_${Date.now()}`,
@@ -1475,9 +1498,19 @@ class SetuDashboardApp {
       this.elStatusText.textContent = `CUSTOM SIMULATION READY (${events.length} EVENTS, SEED ${seed})`;
       this.sim.play();
     } catch (err) {
-      alert(`Custom simulation failed: ${err.message}`);
+      console.error('[Setu Custom Sim] Execution failed:', err);
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `SIMULATION ERROR: ${err.message}`;
+      this.elStatusText.textContent = `CUSTOM SIMULATION FAILED: ${err.message || 'Execution failed'}`;
+      alert(`Custom simulation failed: ${err.message || 'Execution failed'}\n\nSee browser console for diagnostic stack trace.`);
+    } finally {
+      this.elStatusDot.classList.remove('simulating');
+      if (this.btnExecuteSim) {
+        this.btnExecuteSim.disabled = false;
+        this.btnExecuteSim.textContent = origExecuteText || 'Run Simulation';
+      }
+      if (this.btnRunModal) {
+        this.btnRunModal.disabled = false;
+      }
     }
   }
 

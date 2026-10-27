@@ -66,7 +66,7 @@ export class ChartsComponent {
           <div style="display:flex; align-items:center; gap:8px;">
             <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; color:var(--text-dim);">Analytics Session:</span>
             <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-weight:700;">
-              ${metrics.session.mode.toUpperCase()}: ${metrics.session.name || metrics.session.id}
+              ${String((metrics && metrics.session && metrics.session.mode) || 'replay').toUpperCase()}: ${(metrics && metrics.session && (metrics.session.name || metrics.session.id)) || 'default'}
             </span>
           </div>
           <button id="btnOpenMetricContract" class="btn" style="font-size:10px; padding:3px 8px; background:rgba(255,255,255,0.05); border:1px solid var(--border-subtle); color:var(--text-muted);">
@@ -188,7 +188,7 @@ export class ChartsComponent {
       <div style="background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:6px; padding:10px;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
           <strong style="color:var(--cyan-main); font-size:12px;">${def.name}</strong>
-          <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc;">${def.category.toUpperCase()} [${def.units}]</span>
+          <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc;">${String((def && def.category) || 'metric').toUpperCase()} [${(def && def.units) || ''}]</span>
         </div>
         <div style="color:#e2e8f0; margin-bottom:4px;">${def.description}</div>
         <div style="font-family:var(--font-mono); font-size:10px; color:#38bdf8; margin-bottom:4px;">Formula: ${def.formula}</div>

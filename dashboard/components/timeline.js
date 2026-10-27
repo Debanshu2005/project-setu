@@ -299,7 +299,7 @@ export class TimelineComponent {
           <strong>RF Link Blocked:</strong> Communication link between Node <strong>${ev.node}</strong> and Node <strong>${ev.to}</strong> severed by operator.
         `;
       default:
-        return `<strong>${ev.ev.toUpperCase()}:</strong> Node ${ev.node || ''} ${JSON.stringify(ev)}`;
+        return `<strong>${String(ev && ev.ev ? ev.ev : 'EVENT').toUpperCase()}:</strong> Node ${(ev && ev.node) || ''} ${JSON.stringify(ev)}`;
     }
   }
 
@@ -363,7 +363,7 @@ export class TimelineComponent {
       case 'voice_command': return 'VOICE';
       case 'battery': return 'BATT';
       case 'battery_depleted': return 'EMPTY';
-      default: return ev.toUpperCase();
+      default: return String(ev || 'EVENT').toUpperCase();
     }
   }
 

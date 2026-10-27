@@ -59,8 +59,9 @@ export class InspectorComponent {
 
     const n = this.currentNode;
     const stats = (n && n.stats) || { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 };
-    const role = (n && n.role) || 'survivor';
-    const roleBadge = role === 'hub' ? 'badge-hub' : role === 'relay' ? 'badge-relay' : 'badge-survivor';
+    const rawRole = (n && n.role !== undefined && n.role !== null) ? String(n.role).trim().toLowerCase() : (n && n.id === 0 ? 'hub' : 'unknown');
+    const role = (rawRole === 'hub' || rawRole === 'relay' || rawRole === 'survivor') ? rawRole : (rawRole || 'unknown');
+    const roleBadge = role === 'hub' ? 'badge-hub' : role === 'relay' ? 'badge-relay' : role === 'survivor' ? 'badge-survivor' : 'badge-relay';
     const statusText = !n.online
       ? 'OFFLINE (FAILED)'
       : n.pending_trigger
@@ -86,7 +87,7 @@ export class InspectorComponent {
     const consumedMah = typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah.toFixed(2) : '0.00';
 
     let controlsHtml = '';
-    if (n.role === 'survivor') {
+    if (role === 'survivor') {
       controlsHtml = `
         <div class="wire-breakdown-card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(15, 23, 42, 0.7);">
           <div class="wire-header" style="color: var(--cyan-main); font-weight: 700;">
@@ -167,12 +168,12 @@ export class InspectorComponent {
           </div>
         </div>
       `;
-    } else {
+    } else if (role === 'hub' || role === 'relay') {
       // Relay or Hub controls
       controlsHtml = `
         <div class="wire-breakdown-card" style="border: 1px solid rgba(56, 189, 248, 0.35); background: rgba(15, 23, 42, 0.7);">
           <div class="wire-header" style="color: var(--cyan-main); font-weight: 700;">
-            <span>${n.role.toUpperCase()} Node Controls (ID ${n.id})</span>
+            <span>${role.toUpperCase()} Node Controls (ID ${n.id})</span>
           </div>
           <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
@@ -183,6 +184,32 @@ export class InspectorComponent {
             </div>
             <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
               <span>Backup Battery:</span>
+              <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
+              <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
+              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>
+            </div>
+          </div>
+        </div>
+      `;
+    } else {
+      // Unknown or custom role fallback controls
+      controlsHtml = `
+        <div class="wire-breakdown-card" style="border: 1px solid rgba(148, 163, 184, 0.35); background: rgba(15, 23, 42, 0.7);">
+          <div class="wire-header" style="color: #94a3b8; font-weight: 700;">
+            <span>${role.toUpperCase()} Node Diagnostic Controls (ID ${n.id})</span>
+          </div>
+          <div style="font-size: 11px; color: #94a3b8; margin-bottom: 8px;">
+            Node role is unclassified in trace. Diagnostic controls available:
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Node Power State:</span>
+              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
+                ${n.online ? 'Kill Node (Offline)' : 'Restore Node (Online)'}
+              </button>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center; gap: 6px;">
+              <span>Battery:</span>
               <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
               <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
               <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>

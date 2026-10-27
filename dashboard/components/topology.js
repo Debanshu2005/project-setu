@@ -63,36 +63,38 @@ export class TopologyVisualizer {
       }
     });
 
-    window.addEventListener('mousemove', e => {
-      const rect = this.canvas.getBoundingClientRect();
-      const mx = e.clientX - rect.left;
-      const my = e.clientY - rect.top;
+    if (typeof window !== 'undefined') {
+      window.addEventListener('mousemove', e => {
+        const rect = this.canvas.getBoundingClientRect();
+        const mx = e.clientX - rect.left;
+        const my = e.clientY - rect.top;
 
-      if (this.isDraggingNode && this.draggedNode) {
-        const wp = this.screenToWorld(mx, my);
-        this.draggedNode.x = Math.round(wp.x * 10) / 10;
-        this.draggedNode.y = Math.round(wp.y * 10) / 10;
-        this.render();
-      } else if (this.isDragging) {
-        this.panX = e.clientX - this.dragStartX;
-        this.panY = e.clientY - this.dragStartY;
-        this.render();
-      } else {
-        this.checkHover(mx, my);
-      }
-    });
-
-    window.addEventListener('mouseup', () => {
-      if (this.isDraggingNode && this.draggedNode) {
-        if (this.onNodeReposition) {
-          this.onNodeReposition(this.draggedNode.id, this.draggedNode.x, this.draggedNode.y);
+        if (this.isDraggingNode && this.draggedNode) {
+          const wp = this.screenToWorld(mx, my);
+          this.draggedNode.x = Math.round(wp.x * 10) / 10;
+          this.draggedNode.y = Math.round(wp.y * 10) / 10;
+          this.render();
+        } else if (this.isDragging) {
+          this.panX = e.clientX - this.dragStartX;
+          this.panY = e.clientY - this.dragStartY;
+          this.render();
+        } else {
+          this.checkHover(mx, my);
         }
-        this.isDraggingNode = false;
-        this.draggedNode = null;
-        this.render();
-      }
-      this.isDragging = false;
-    });
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (this.isDraggingNode && this.draggedNode) {
+          if (this.onNodeReposition) {
+            this.onNodeReposition(this.draggedNode.id, this.draggedNode.x, this.draggedNode.y);
+          }
+          this.isDraggingNode = false;
+          this.draggedNode = null;
+          this.render();
+        }
+        this.isDragging = false;
+      });
+    }
 
     this.canvas.addEventListener('wheel', e => {
       e.preventDefault();
@@ -192,24 +194,30 @@ export class TopologyVisualizer {
     const titleEl = tooltip.querySelector('.tooltip-title');
     const contentEl = tooltip.querySelector('.tooltip-content');
 
-    const roleName = node.role.toUpperCase();
-    const statusText = node.online ? (node.active_sos ? 'EMERGENCY ACTIVE' : 'ONLINE') : 'OFFLINE (FAILED)';
+    const roleName = (node && node.role ? String(node.role) : (node && node.id === 0 ? 'hub' : 'unknown')).toUpperCase();
+    const statusText = !node.online ? 'OFFLINE (FAILED)' : (node.active_sos ? 'EMERGENCY ACTIVE' : 'ONLINE');
     const statusColor = !node.online ? '#ef4444' : node.active_sos ? '#ef4444' : '#10b981';
+    const posX = typeof node.x === 'number' ? node.x.toFixed(0) : '0';
+    const posY = typeof node.y === 'number' ? node.y.toFixed(0) : '0';
+    const batt = node.battery !== undefined ? node.battery : 100;
+    const txPackets = node.stats && typeof node.stats.tx === 'number' ? node.stats.tx : 0;
+    const rxDelivered = node.stats && typeof node.stats.rx === 'number' ? node.stats.rx : 0;
 
     titleEl.innerHTML = `<span>Node ${node.id}</span> <span style="color:${statusColor}; font-size:10px">${statusText}</span>`;
     contentEl.innerHTML = `
       <div class="tooltip-row"><span>Role:</span> <span>${roleName}</span></div>
-      <div class="tooltip-row"><span>Battery:</span> <span>${node.battery}%</span></div>
-      <div class="tooltip-row"><span>Position:</span> <span>(${node.x.toFixed(0)}, ${node.y.toFixed(0)})</span></div>
+      <div class="tooltip-row"><span>Battery:</span> <span>${batt}%</span></div>
+      <div class="tooltip-row"><span>Position:</span> <span>(${posX}, ${posY})</span></div>
       <div class="tooltip-row"><span>GNSS Satellites:</span> <span>${node.gnss_on ? '3D Fix' : 'Denied (DR fallback)'}</span></div>
-      <div class="tooltip-row"><span>TX Packets:</span> <span>${node.stats.tx}</span></div>
-      <div class="tooltip-row"><span>RX Delivered:</span> <span>${node.stats.rx}</span></div>
+      <div class="tooltip-row"><span>TX Packets:</span> <span>${txPackets}</span></div>
+      <div class="tooltip-row"><span>RX Delivered:</span> <span>${rxDelivered}</span></div>
     `;
   }
 
   matchesFilter(node) {
     if (this.activeFilter === 'all') return true;
-    return node.role === this.activeFilter;
+    const role = (node && node.role ? String(node.role).toLowerCase() : (node && node.id === 0 ? 'hub' : 'unknown'));
+    return role === this.activeFilter;
   }
 
   render() {
@@ -452,7 +460,7 @@ export class TopologyVisualizer {
       ctx.strokeStyle = '#ffffff';
       ctx.lineWidth = 1.5;
       ctx.stroke();
-    } else {
+    } else if (n.role === 'survivor') {
       // Survivor Node: Circle (Cyan normally, Red if SOS, Emerald if ACK confirmed)
       ctx.fillStyle = n.active_sos ? '#ef4444' : n.acked ? '#10b981' : '#06b6d4';
       ctx.shadowColor = n.active_sos ? 'rgba(239, 68, 68, 0.8)' : n.acked ? 'rgba(16, 185, 129, 0.8)' : 'rgba(6, 182, 212, 0.6)';
@@ -472,6 +480,17 @@ export class TopologyVisualizer {
         ctx.lineWidth = 1.5;
         ctx.stroke();
       }
+    } else {
+      // Unknown or Custom Role: Neutral slate circle with distinct light ring
+      ctx.fillStyle = '#64748b';
+      ctx.shadowColor = 'rgba(100, 116, 139, 0.5)';
+      ctx.shadowBlur = 6;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.strokeStyle = '#cbd5e1';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
     }
 
     // Battery bar below node

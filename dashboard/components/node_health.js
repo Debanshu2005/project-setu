@@ -99,8 +99,9 @@ export class NodeHealthComponent {
         ? '<span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399;">ONLINE</span>'
         : '<span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171;">OFFLINE</span>');
 
-    const roleColor = node.role === 'hub' ? '#38bdf8' : (node.role === 'relay' ? '#f59e0b' : '#10b981');
-    const roleName = node.role ? node.role.toUpperCase() : 'SURVIVOR';
+    const roleStr = (node.role ? String(node.role) : (node.id === 0 ? 'hub' : 'unknown')).toLowerCase();
+    const roleColor = roleStr === 'hub' ? '#38bdf8' : (roleStr === 'relay' ? '#f59e0b' : roleStr === 'survivor' ? '#10b981' : '#94a3b8');
+    const roleName = roleStr.toUpperCase();
 
     const battPct = typeof node.battery === 'number' ? node.battery : 100;
     const initBattPct = typeof node.initial_battery === 'number' ? node.initial_battery : 100;

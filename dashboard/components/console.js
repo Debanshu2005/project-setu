@@ -153,27 +153,36 @@ export class SosConsoleComponent {
 
   bindEvents() {
     const select = this.container.querySelector('#sosTargetSelect');
-    select.addEventListener('change', e => {
-      this.selectedNodeId = parseInt(e.target.value, 10);
-      this.updateNodeInfoDisplay();
-      this.populatePeerNodes();
-    });
+    if (select) {
+      select.addEventListener('change', e => {
+        this.selectedNodeId = parseInt(e.target.value, 10);
+        this.updateNodeInfoDisplay();
+        this.populatePeerNodes();
+      });
+    }
+
+    const addClick = (id, fn) => {
+      const el = this.container.querySelector(id);
+      if (el) el.addEventListener('click', fn);
+    };
 
     // Triggers
-    this.container.querySelector('#btnShortPress').addEventListener('click', () => this.dispatchTrigger('short'));
-    this.container.querySelector('#btnDoublePress').addEventListener('click', () => this.dispatchTrigger('double'));
-    this.container.querySelector('#btnLongPress').addEventListener('click', () => this.dispatchTrigger('long'));
-    this.container.querySelector('#btnWakeWord').addEventListener('click', () => this.dispatchTrigger('voice'));
-    this.container.querySelector('#btnVoiceMedical').addEventListener('click', () => this.dispatchTrigger('voice-medical'));
-    this.container.querySelector('#btnVoiceTrapped').addEventListener('click', () => this.dispatchTrigger('voice-trapped'));
+    addClick('#btnShortPress', () => this.dispatchTrigger('short'));
+    addClick('#btnDoublePress', () => this.dispatchTrigger('double'));
+    addClick('#btnLongPress', () => this.dispatchTrigger('long'));
+    addClick('#btnWakeWord', () => this.dispatchTrigger('voice'));
+    addClick('#btnVoiceMedical', () => this.dispatchTrigger('voice-medical'));
+    addClick('#btnVoiceTrapped', () => this.dispatchTrigger('voice-trapped'));
 
     // Hardware Controls
-    this.container.querySelector('#btnTogglePower').addEventListener('click', () => this.togglePower());
-    this.container.querySelector('#btnToggleGnss').addEventListener('click', () => this.toggleGnss());
-    this.container.querySelector('#btnToggleDr').addEventListener('click', () => this.toggleDr());
-    this.container.querySelector('#btnTriggerAllSurv').addEventListener('click', () => {
-      const btnAll = document.getElementById('btnOpenTriggerAllModal');
-      if (btnAll) btnAll.click();
+    addClick('#btnTogglePower', () => this.togglePower());
+    addClick('#btnToggleGnss', () => this.toggleGnss());
+    addClick('#btnToggleDr', () => this.toggleDr());
+    addClick('#btnTriggerAllSurv', () => {
+      if (typeof document !== 'undefined') {
+        const btnAll = document.getElementById('btnOpenTriggerAllModal');
+        if (btnAll) btnAll.click();
+      }
     });
 
     // Battery Controls
@@ -181,18 +190,22 @@ export class SosConsoleComponent {
     const lblVal = this.container.querySelector('#lblConsoleBattVal');
     const btnApply = this.container.querySelector('#btnApplyBatt');
 
-    slider.addEventListener('input', e => {
-      lblVal.textContent = `${e.target.value}%`;
-    });
+    if (slider && lblVal) {
+      slider.addEventListener('input', e => {
+        lblVal.textContent = `${e.target.value}%`;
+      });
+    }
 
-    btnApply.addEventListener('click', () => {
-      const val = parseInt(slider.value, 10);
-      this.applyBattery(val);
-    });
+    if (btnApply && slider) {
+      btnApply.addEventListener('click', () => {
+        const val = parseInt(slider.value, 10);
+        this.applyBattery(val);
+      });
+    }
 
     // Link Impairment
-    this.container.querySelector('#btnBlockPeerLink').addEventListener('click', () => this.setLinkBlock(true));
-    this.container.querySelector('#btnRestorePeerLink').addEventListener('click', () => this.setLinkBlock(false));
+    addClick('#btnBlockPeerLink', () => this.setLinkBlock(true));
+    addClick('#btnRestorePeerLink', () => this.setLinkBlock(false));
   }
 
   setDispatching(busy) {
@@ -214,7 +227,7 @@ export class SosConsoleComponent {
     const detail = this.container.querySelector('#feedbackDetail');
     if (!badge || !detail) return;
 
-    badge.textContent = status.toUpperCase();
+    badge.textContent = String(status || '').toUpperCase();
     if (status === 'executing' || status === 'pending') {
       badge.style.background = 'rgba(56,189,248,0.2)';
       badge.style.border = '1px solid #38bdf8';
@@ -233,6 +246,7 @@ export class SosConsoleComponent {
 
   async dispatchTrigger(kind) {
     if (this.isDispatching) return;
+    const safeKind = String(kind || 'short');
     const node = this.sim.nodes.get(this.selectedNodeId);
     if (!node) {
       this.showFeedback('rejected', `Node ${this.selectedNodeId} does not exist in simulation`, false);
@@ -244,17 +258,17 @@ export class SosConsoleComponent {
     }
 
     this.setDispatching(true);
-    this.showFeedback('pending', `Dispatching ${kind.toUpperCase()} to Node ${this.selectedNodeId}...`);
+    this.showFeedback('pending', `Dispatching ${safeKind.toUpperCase()} to Node ${this.selectedNodeId}...`);
 
     try {
       if (this.onCommand) {
         await this.onCommand({
           type: 'trigger',
           nodeId: this.selectedNodeId,
-          kind
+          kind: safeKind
         });
       }
-      this.showFeedback('executed', `Trigger ${kind.toUpperCase()} accepted for Node ${this.selectedNodeId}. RF transmission sequenced.`);
+      this.showFeedback('executed', `Trigger ${safeKind.toUpperCase()} accepted for Node ${this.selectedNodeId}. RF transmission sequenced.`);
     } catch (err) {
       this.showFeedback('failed', `Execution error: ${err.message}`, false);
     } finally {
@@ -410,11 +424,14 @@ export class SosConsoleComponent {
     const survivors = [];
     const relays = [];
     const hubs = [];
+    const others = [];
 
     for (const [, n] of this.sim.nodes) {
-      if (n.role === 'hub') hubs.push(n);
-      else if (n.role === 'relay') relays.push(n);
-      else survivors.push(n);
+      const r = (n && n.role ? String(n.role) : (n && n.id === 0 ? 'hub' : 'unknown')).toLowerCase();
+      if (r === 'hub') hubs.push(n);
+      else if (r === 'relay') relays.push(n);
+      else if (r === 'survivor') survivors.push(n);
+      else others.push(n);
     }
 
     let html = '';
@@ -433,12 +450,20 @@ export class SosConsoleComponent {
         hubs.map(n => `<option value="${n.id}">Node ${n.id} (Hub Command Center)</option>`).join('') +
         `</optgroup>`;
     }
+    if (others.length > 0) {
+      html += `<optgroup label="Other Nodes">` +
+        others.map(n => `<option value="${n.id}">Node ${n.id} (${(n.role ? String(n.role) : 'unknown').toUpperCase()} - ${n.battery !== undefined ? n.battery : 100}% batt)</option>`).join('') +
+        `</optgroup>`;
+    }
 
     select.innerHTML = html;
     if (this.sim.nodes.has(this.selectedNodeId)) {
       select.value = String(this.selectedNodeId);
     } else if (survivors.length > 0) {
       this.selectedNodeId = survivors[0].id;
+      select.value = String(this.selectedNodeId);
+    } else if (others.length > 0) {
+      this.selectedNodeId = others[0].id;
       select.value = String(this.selectedNodeId);
     }
 
@@ -466,7 +491,8 @@ export class SosConsoleComponent {
     selPeer.innerHTML = peers.map(p => {
       const link = (this.sim.links || []).find(l => (l.a === this.selectedNodeId && l.b === p.id) || (l.b === this.selectedNodeId && l.a === p.id));
       const status = link ? (link.blocked ? ' [BLOCKED]' : ' [ACTIVE]') : '';
-      return `<option value="${p.id}">Node ${p.id} (${p.role.toUpperCase()})${status}</option>`;
+      const peerRole = (p && p.role ? String(p.role) : (p && p.id === 0 ? 'hub' : 'unknown')).toUpperCase();
+      return `<option value="${p.id}">Node ${p.id} (${peerRole})${status}</option>`;
     }).join('');
   }
 
@@ -488,7 +514,7 @@ export class SosConsoleComponent {
       lblBatt.textContent = `${node.battery !== undefined ? node.battery : 100}%`;
     }
     if (lblRole) {
-      lblRole.textContent = (node.role || 'survivor').toUpperCase();
+      lblRole.textContent = (node.role ? String(node.role) : (node.id === 0 ? 'hub' : 'unknown')).toUpperCase();
     }
     if (slider && !this.isDispatching) {
       slider.value = node.battery !== undefined ? node.battery : 100;

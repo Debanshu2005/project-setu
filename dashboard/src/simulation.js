@@ -1,6 +1,31 @@
 // Project Setu - Simulation State Engine & Playback Controller
 import { calculateMetrics } from './metrics.js';
 
+/**
+ * Canonical node roles in Project Setu: 'hub', 'relay', 'survivor', 'unknown'.
+ * Normalizes any input value into a canonical lowercase string.
+ * Never returns undefined or null.
+ * Does not arbitrarily reassign an unknown role to 'survivor' or 'hub' unless id === 0.
+ * @param {any} role - Raw role value
+ * @param {number|string} [nodeId] - Optional node ID
+ * @returns {string} Normalized lowercase role string
+ */
+export function normalizeRole(role, nodeId = null) {
+  if (role === null || role === undefined) {
+    if (nodeId === 0 || nodeId === '0') return 'hub';
+    return 'unknown';
+  }
+  const str = String(role).trim().toLowerCase();
+  if (!str) {
+    if (nodeId === 0 || nodeId === '0') return 'hub';
+    return 'unknown';
+  }
+  if (str === 'hub' || str === 'rescue_hub' || str === 'command_center') return 'hub';
+  if (str === 'relay' || str === 'lora_relay' || str === 'tower') return 'relay';
+  if (str === 'survivor' || str === 'victim' || str === 'wristband') return 'survivor';
+  return str;
+}
+
 export class SimulationEngine {
   constructor() {
     this.events = [];
@@ -75,15 +100,18 @@ export class SimulationEngine {
       if (ev.ev === 'meta') {
         this.meta = { ...this.meta, ...ev };
       } else if (ev.ev === 'node_init') {
-        this.nodes.set(ev.id, {
-          id: ev.id,
-          role: ev.role || 'survivor',
-          x: ev.x || 0,
-          y: ev.y || 0,
-          lat_e6: ev.lat_e6 || 0,
-          lon_e6: ev.lon_e6 || 0,
-          battery: ev.battery !== undefined ? ev.battery : 100,
-          initial_battery: ev.initial_battery !== undefined ? ev.initial_battery : (ev.battery !== undefined ? ev.battery : 100),
+        const id = parseInt(ev.id !== undefined ? ev.id : ev.node, 10);
+        if (isNaN(id)) continue;
+        const normRole = normalizeRole(ev.role, id);
+        this.nodes.set(id, {
+          id: id,
+          role: normRole,
+          x: typeof ev.x === 'number' ? ev.x : 0,
+          y: typeof ev.y === 'number' ? ev.y : 0,
+          lat_e6: typeof ev.lat_e6 === 'number' ? ev.lat_e6 : 0,
+          lon_e6: typeof ev.lon_e6 === 'number' ? ev.lon_e6 : 0,
+          battery: typeof ev.battery === 'number' ? ev.battery : 100,
+          initial_battery: typeof ev.initial_battery === 'number' ? ev.initial_battery : (typeof ev.battery === 'number' ? ev.battery : 100),
           energy_consumed_mah: typeof ev.energy_consumed_mah === 'number' ? ev.energy_consumed_mah : (typeof ev.energy_mah === 'number' ? ev.energy_mah : 0.0),
           online: ev.online !== false,
           gnss_on: true,
@@ -103,6 +131,39 @@ export class SimulationEngine {
           blocked: false
         });
       }
+    }
+
+    // Ensure any node referenced in events has a record even if node_init was absent
+    for (const ev of this.events) {
+      const candidateIds = [ev.node, ev.target, ev.to, ev.from].filter(x => typeof x === 'number' && !isNaN(x));
+      for (const cid of candidateIds) {
+        if (!this.nodes.has(cid)) {
+          this.nodes.set(cid, {
+            id: cid,
+            role: normalizeRole(null, cid),
+            x: 0,
+            y: 0,
+            lat_e6: 0,
+            lon_e6: 0,
+            battery: 100,
+            initial_battery: 100,
+            energy_consumed_mah: 0.0,
+            online: true,
+            gnss_on: true,
+            dr_on: true,
+            active_sos: false,
+            acked: false,
+            gave_up: false,
+            hazard: 0,
+            stats: { tx: 0, rx: 0, drop: 0, dedup: 0, suppressed: 0, retries: 0 }
+          });
+        }
+      }
+    }
+
+    // Validation pass: guarantee every node has a valid non-empty role string
+    for (const [id, node] of this.nodes) {
+      node.role = normalizeRole(node.role, id);
     }
 
     if (!this.meta.duration || this.meta.duration < maxTime) {
