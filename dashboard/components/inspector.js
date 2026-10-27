@@ -14,6 +14,7 @@ export class InspectorComponent {
     this.onLinkToggle = null;   // (a, b, blocked) => void
     this.onMotionChange = null; // (nodeId, profile) => void
     this.onGnssOutage = null;   // (nodeId, startMs, durationMs) => void
+    this.onResetEstimator = null; // (nodeId) => void
 
     this.sim.subscribe((engine, type) => {
       if (this.currentNode) {
@@ -76,11 +77,30 @@ export class InspectorComponent {
       ? `<span class="badge" style="background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #fcd34d; font-weight: 700;">🟡 OFFLINE DEMO</span>`
       : `<span class="badge" style="background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #7dd3fc; font-weight: 700;">📽️ TRACE REPLAY</span>`;
 
-    const lat = ((n.lat_e6 || 0) / 1e6).toFixed(6);
-    const lon = ((n.lon_e6 || 0) / 1e6).toFixed(6);
     const posX = typeof n.x === 'number' ? n.x.toFixed(1) : '0.0';
     const posY = typeof n.y === 'number' ? n.y.toFixed(1) : '0.0';
-    const posProv = n.gnss_on ? 'GNSS 3D Satellite Fix' : n.dr_on ? 'Dead-Reckoning (MPU-6050 IMU)' : 'Unknown / Signal Lost';
+    const gtLatE6 = typeof n.gt_lat_e6 === 'number' ? n.gt_lat_e6 : (typeof n.lat_e6 === 'number' ? n.lat_e6 : null);
+    const gtLonE6 = typeof n.gt_lon_e6 === 'number' ? n.gt_lon_e6 : (typeof n.lon_e6 === 'number' ? n.lon_e6 : null);
+    const estLatE6 = typeof n.est_lat_e6 === 'number' ? n.est_lat_e6 : null;
+    const estLonE6 = typeof n.est_lon_e6 === 'number' ? n.est_lon_e6 : null;
+    const hasEstimate = (estLatE6 !== null && estLonE6 !== null && estLatE6 !== 0 && estLonE6 !== 0);
+
+    let posProv = 'No Fix / Sensor Uninitialized';
+    if (n.gnss_on) {
+      if (hasEstimate && (n.gnss_status === 'valid_fix' || n.gnss_status === 'FIX_3D' || !n.gnss_status)) {
+        posProv = 'GNSS 3D Satellite Fix (Active)';
+      } else if (n.gnss_status === 'acquiring') {
+        posProv = 'Searching for Satellites (Acquiring Fix)';
+      } else if (n.gnss_status === 'temporary_outage') {
+        posProv = 'GNSS Outage / Degraded (No Satellites)';
+      } else {
+        posProv = 'GNSS Enabled (Awaiting Verified Measurement)';
+      }
+    } else if (n.dr_on) {
+      posProv = hasEstimate ? 'Dead-Reckoning (MPU-6050 IMU)' : 'Dead-Reckoning (Awaiting Movement)';
+    } else {
+      posProv = 'All Positioning Sensors Disabled';
+    }
 
     const curBatt = n.battery !== undefined ? n.battery : 100;
     const initBatt = n.initial_battery !== undefined ? n.initial_battery : curBatt;
@@ -296,18 +316,23 @@ export class InspectorComponent {
       ${linksHtml}
 
       <div class="wire-breakdown-card">
-        <div class="wire-header" style="color: #38bdf8; font-weight: 700;">
+        <div class="wire-header" style="color: #38bdf8; font-weight: 700; display: flex; justify-content: space-between; align-items: center;">
           <span>Geographic Location & Provenance</span>
-          <span class="badge" style="background: ${n.gnss_status === 'FIX_3D' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${n.gnss_status === 'FIX_3D' ? '#10b981' : '#ef4444'}; color: ${n.gnss_status === 'FIX_3D' ? '#34d399' : '#f87171'}; font-size: 9px;">${n.gnss_status || (n.gnss_on ? 'FIX_3D' : 'NO_FIX')}</span>
+          <div style="display: flex; gap: 6px; align-items: center;">
+            <button id="btnResetEstimator" class="btn" style="padding: 2px 6px; font-size: 9px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #38bdf8;" title="Reset estimator coordinates to match current ground truth">
+              🔄 Reset Estimator
+            </button>
+            <span class="badge" style="background: ${n.gnss_on && hasEstimate ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${n.gnss_on && hasEstimate ? '#10b981' : '#ef4444'}; color: ${n.gnss_on && hasEstimate ? '#34d399' : '#f87171'}; font-size: 9px;">${n.gnss_status || (n.gnss_on ? 'ACQUIRING' : 'NO_FIX')}</span>
+          </div>
         </div>
         <table class="field-table">
-          <tr><td class="field-name">Ground-Truth Coords:</td><td class="field-val"><strong style="color: #fff;">${((n.gt_lat_e6 || n.lat_e6 || 0) / 1e6).toFixed(6)}°, ${((n.gt_lon_e6 || n.lon_e6 || 0) / 1e6).toFixed(6)}°</strong></td></tr>
-          <tr><td class="field-name">Firmware-Estimated Coords:</td><td class="field-val" style="color: #38bdf8;">${((n.est_lat_e6 || n.lat_e6 || 0) / 1e6).toFixed(6)}°, ${((n.est_lon_e6 || n.lon_e6 || 0) / 1e6).toFixed(6)}°</td></tr>
-          <tr><td class="field-name">Position Estimation Error:</td><td class="field-val" style="color: ${(n.pos_error_m || 0) > 10.0 ? '#ef4444' : (n.pos_error_m || 0) > 4.0 ? '#f59e0b' : '#10b981'}; font-weight: 700;">${typeof n.pos_error_m === 'number' ? n.pos_error_m.toFixed(2) : '0.00'} m</td></tr>
-          <tr><td class="field-name">Position Error (MAE / RMSE):</td><td class="field-val">${typeof n.pos_mae_m === 'number' ? n.pos_mae_m.toFixed(2) : '0.00'} m / ${typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m.toFixed(2) : '0.00'} m</td></tr>
-          <tr><td class="field-name">Max Outage Drift:</td><td class="field-val">${typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m.toFixed(2) : '0.00'} m</td></tr>
-          <tr><td class="field-name">Cartesian Ground-Truth:</td><td class="field-val">X: ${posX}m, Y: ${posY}m</td></tr>
-          <tr><td class="field-name">Fix Provenance:</td><td class="field-val" style="color:${n.gnss_on ? '#10b981' : '#f59e0b'}">${posProv}</td></tr>
+          <tr><td class="field-name">Cartesian Ground-Truth:</td><td class="field-val"><strong style="color: #fff;">X: ${posX} m, Y: ${posY} m</strong></td></tr>
+          <tr><td class="field-name">Geographic Ground-Truth:</td><td class="field-val"><strong style="color: #fff;">${gtLatE6 !== null && gtLonE6 !== null ? `${(gtLatE6 / 1e6).toFixed(6)}°, ${(gtLonE6 / 1e6).toFixed(6)}°` : 'Not set'}</strong></td></tr>
+          <tr><td class="field-name">Firmware-Estimated Coords:</td><td class="field-val" style="color: #38bdf8;">${hasEstimate ? `${(estLatE6 / 1e6).toFixed(6)}°, ${(estLonE6 / 1e6).toFixed(6)}°` : '<span style="color: #94a3b8; font-style: italic;">Not measured (No fix acquired)</span>'}</td></tr>
+          <tr><td class="field-name">Position Estimation Error:</td><td class="field-val" style="font-weight: 700; color: ${typeof n.pos_error_m === 'number' && n.pos_error_m >= 0 ? (n.pos_error_m > 10.0 ? '#ef4444' : n.pos_error_m > 4.0 ? '#f59e0b' : '#10b981') : '#94a3b8'};">${typeof n.pos_error_m === 'number' && n.pos_error_m >= 0 ? `${n.pos_error_m.toFixed(2)} m` : '<span style="color: #94a3b8; font-style: italic;">Not measured</span>'}</td></tr>
+          <tr><td class="field-name">Position Error (MAE / RMSE):</td><td class="field-val">${typeof n.pos_mae_m === 'number' && n.pos_mae_m >= 0 && typeof n.pos_rmse_m === 'number' && n.pos_rmse_m >= 0 ? `${n.pos_mae_m.toFixed(2)} m / ${n.pos_rmse_m.toFixed(2)} m` : '<span style="color: #94a3b8; font-style: italic;">Not measured</span>'}</td></tr>
+          <tr><td class="field-name">Max Outage Drift:</td><td class="field-val">${typeof n.pos_max_err_m === 'number' && n.pos_max_err_m >= 0 ? `${n.pos_max_err_m.toFixed(2)} m` : '<span style="color: #94a3b8; font-style: italic;">None</span>'}</td></tr>
+          <tr><td class="field-name">Fix Provenance:</td><td class="field-val" style="color:${n.gnss_on && hasEstimate ? '#10b981' : n.dr_on && hasEstimate ? '#f59e0b' : '#94a3b8'}">${posProv}</td></tr>
         </table>
       </div>
 
@@ -453,6 +478,16 @@ export class InspectorComponent {
       btnOutage.addEventListener('click', () => {
         if (this.onGnssOutage) {
           this.onGnssOutage(n.id, 0, 5000);
+        }
+      });
+    }
+
+    // 9. Reset Estimator Button
+    const btnReset = this.nodeContainer.querySelector('#btnResetEstimator');
+    if (btnReset) {
+      btnReset.addEventListener('click', () => {
+        if (this.onResetEstimator) {
+          this.onResetEstimator(n.id);
         }
       });
     }

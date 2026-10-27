@@ -642,6 +642,19 @@ export class SetuApi {
     return await res.json();
   }
 
+  static async resetEstimator(nodeId, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/reset-estimator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: parseInt(nodeId, 10) })
+    }, timeoutMs);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to reset estimator`);
+    }
+    return await res.json();
+  }
+
   static async blockLink(a, b, blocked = true, timeoutMs = 8000) {
     const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/block-link`, {
       method: 'POST',

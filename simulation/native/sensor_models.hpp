@@ -429,6 +429,40 @@ class PositionMetricsTracker {
  public:
   static constexpr double kMPerDegLat = 111320.0;
 
+  PositionMetricsTracker() = default;
+
+  void update_ground_truth(double gt_x, double gt_y, int32_t gt_lat_e6, int32_t gt_lon_e6) {
+    last_gt_x_ = gt_x;
+    last_gt_y_ = gt_y;
+    last_gt_lat_e6_ = gt_lat_e6;
+    last_gt_lon_e6_ = gt_lon_e6;
+
+    if (has_estimate_) {
+      // Recompute instantaneous error against the new ground truth in meters
+      double dlat_m = (last_est_lat_e6_ - gt_lat_e6) * 1e-6 * kMPerDegLat;
+      double dlon_m = (last_est_lon_e6_ - gt_lon_e6) * 1e-6 * kMPerDegLat * std::cos((gt_lat_e6 * 1e-6) * M_PI / 180.0);
+      current_error_m_ = std::hypot(dlat_m, dlon_m);
+    }
+  }
+
+  void reset_estimator(double x, double y, int32_t lat_e6, int32_t lon_e6) {
+    last_gt_x_ = x;
+    last_gt_y_ = y;
+    last_gt_lat_e6_ = lat_e6;
+    last_gt_lon_e6_ = lon_e6;
+    last_est_lat_e6_ = lat_e6;
+    last_est_lon_e6_ = lon_e6;
+    has_estimate_ = true;
+    current_error_m_ = 0.0;
+    // Clear old sample accumulation for fresh trajectory
+    sample_count_ = 0;
+    sum_error_m_ = 0.0;
+    sum_sq_error_m_ = 0.0;
+    max_error_m_ = 0.0;
+    dr_sample_count_ = 0;
+    sum_dr_error_m_ = 0.0;
+  }
+
   void record_sample(double gt_x, double gt_y, int32_t gt_lat_e6, int32_t gt_lon_e6,
                      int32_t est_lat_e6, int32_t est_lon_e6, bool is_dr, bool is_gnss) {
     last_gt_x_ = gt_x;
@@ -437,6 +471,7 @@ class PositionMetricsTracker {
     last_gt_lon_e6_ = gt_lon_e6;
     last_est_lat_e6_ = est_lat_e6;
     last_est_lon_e6_ = est_lon_e6;
+    has_estimate_ = true;
     is_dr_ = is_dr;
     is_gnss_ = is_gnss;
 
@@ -457,11 +492,13 @@ class PositionMetricsTracker {
     }
   }
 
+  bool has_estimate() const { return has_estimate_; }
+  bool has_samples() const { return sample_count_ > 0; }
   double current_error_m() const { return current_error_m_; }
-  double mae_m() const { return sample_count_ > 0 ? (sum_error_m_ / sample_count_) : 0.0; }
-  double rmse_m() const { return sample_count_ > 0 ? std::sqrt(sum_sq_error_m_ / sample_count_) : 0.0; }
-  double max_error_m() const { return max_error_m_; }
-  double dr_mae_m() const { return dr_sample_count_ > 0 ? (sum_dr_error_m_ / dr_sample_count_) : 0.0; }
+  double mae_m() const { return sample_count_ > 0 ? (sum_error_m_ / sample_count_) : -1.0; }
+  double rmse_m() const { return sample_count_ > 0 ? std::sqrt(sum_sq_error_m_ / sample_count_) : -1.0; }
+  double max_error_m() const { return sample_count_ > 0 ? max_error_m_ : -1.0; }
+  double dr_mae_m() const { return dr_sample_count_ > 0 ? (sum_dr_error_m_ / dr_sample_count_) : -1.0; }
   size_t sample_count() const { return sample_count_; }
 
   int32_t last_gt_lat_e6() const { return last_gt_lat_e6_; }
@@ -475,10 +512,11 @@ class PositionMetricsTracker {
   double last_gt_x_ = 0.0, last_gt_y_ = 0.0;
   int32_t last_gt_lat_e6_ = 0, last_gt_lon_e6_ = 0;
   int32_t last_est_lat_e6_ = 0, last_est_lon_e6_ = 0;
+  bool has_estimate_ = false;
   bool is_dr_ = false;
   bool is_gnss_ = true;
 
-  double current_error_m_ = 0.0;
+  double current_error_m_ = -1.0;
   size_t sample_count_ = 0;
   double sum_error_m_ = 0.0;
   double sum_sq_error_m_ = 0.0;

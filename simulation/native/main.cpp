@@ -102,12 +102,21 @@ void print_node_state(const World& w) {
               << ",\"x\":" << inf.x << ",\"y\":" << inf.y
               << ",\"lat_e6\":" << inf.lat_e6 << ",\"lon_e6\":" << inf.lon_e6
               << ",\"gt_lat_e6\":" << inf.ground_truth_lat_e6 << ",\"gt_lon_e6\":" << inf.ground_truth_lon_e6
-              << ",\"est_lat_e6\":" << inf.estimated_lat_e6 << ",\"est_lon_e6\":" << inf.estimated_lon_e6
-              << ",\"pos_error_m\":" << inf.pos_error_m
-              << ",\"pos_mae_m\":" << inf.pos_mae_m
-              << ",\"pos_rmse_m\":" << inf.pos_rmse_m
-              << ",\"pos_max_err_m\":" << inf.pos_max_error_m
-              << ",\"motion_profile\":\"" << inf.motion_profile << "\""
+              << ",\"has_estimate\":" << (inf.has_estimate ? "true" : "false");
+    if (inf.has_estimate) {
+      std::cout << ",\"est_lat_e6\":" << inf.estimated_lat_e6 << ",\"est_lon_e6\":" << inf.estimated_lon_e6
+                << ",\"pos_error_m\":" << inf.pos_error_m;
+    } else {
+      std::cout << ",\"est_lat_e6\":null,\"est_lon_e6\":null,\"pos_error_m\":null";
+    }
+    if (inf.has_samples) {
+      std::cout << ",\"pos_mae_m\":" << inf.pos_mae_m
+                << ",\"pos_rmse_m\":" << inf.pos_rmse_m
+                << ",\"pos_max_err_m\":" << inf.pos_max_error_m;
+    } else {
+      std::cout << ",\"pos_mae_m\":null,\"pos_rmse_m\":null,\"pos_max_err_m\":null";
+    }
+    std::cout << ",\"motion_profile\":\"" << inf.motion_profile << "\""
               << ",\"gnss_status\":\"" << inf.gnss_status << "\""
               << ",\"battery\":" << static_cast<int>(inf.battery)
               << ",\"initial_battery\":" << static_cast<int>(inf.initial_battery)
@@ -308,6 +317,11 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
         initial_batteries[id] = batt;
       }
       std::cout << "{\"ok\":true,\"cmd\":\"set_node\",\"node\":" << id << "}\n" << std::flush;
+    } else if (cmd == "set_gnss") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
+      bool on = json_get_bool(line, "gnss", true);
+      w->set_gnss(id, on);
+      std::cout << "{\"ok\":true,\"cmd\":\"set_gnss\",\"node\":" << id << ",\"gnss\":" << (on ? "true" : "false") << "}\n" << std::flush;
     } else if (cmd == "set_motion") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
       std::string prof = json_get_str(line, "profile");
@@ -332,7 +346,37 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       double px = json_get_double(line, "x", 0.0);
       double py = json_get_double(line, "y", 0.0);
       w->reposition_node(id, px, py);
-      std::cout << "{\"ok\":true,\"cmd\":\"reposition\",\"node\":" << id << ",\"x\":" << px << ",\"y\":" << py << "}\n" << std::flush;
+      SimNodeInfo inf = w->get_node_info(id);
+      std::cout << "{\"ok\":true,\"cmd\":\"reposition\",\"node\":" << id
+                << ",\"x\":" << px << ",\"y\":" << py
+                << ",\"lat_e6\":" << inf.lat_e6 << ",\"lon_e6\":" << inf.lon_e6
+                << ",\"gt_lat_e6\":" << inf.ground_truth_lat_e6 << ",\"gt_lon_e6\":" << inf.ground_truth_lon_e6
+                << ",\"has_estimate\":" << (inf.has_estimate ? "true" : "false");
+      if (inf.has_estimate) {
+        std::cout << ",\"est_lat_e6\":" << inf.estimated_lat_e6
+                  << ",\"est_lon_e6\":" << inf.estimated_lon_e6
+                  << ",\"pos_error_m\":" << inf.pos_error_m;
+      } else {
+        std::cout << ",\"est_lat_e6\":null,\"est_lon_e6\":null,\"pos_error_m\":null";
+      }
+      if (inf.has_samples) {
+        std::cout << ",\"pos_mae_m\":" << inf.pos_mae_m
+                  << ",\"pos_rmse_m\":" << inf.pos_rmse_m
+                  << ",\"pos_max_err_m\":" << inf.pos_max_error_m;
+      } else {
+        std::cout << ",\"pos_mae_m\":null,\"pos_rmse_m\":null,\"pos_max_err_m\":null";
+      }
+      std::cout << "}\n" << std::flush;
+    } else if (cmd == "reset_estimator") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
+      w->reset_estimator(id);
+      SimNodeInfo inf = w->get_node_info(id);
+      std::cout << "{\"ok\":true,\"cmd\":\"reset_estimator\",\"node\":" << id
+                << ",\"x\":" << inf.x << ",\"y\":" << inf.y
+                << ",\"lat_e6\":" << inf.lat_e6 << ",\"lon_e6\":" << inf.lon_e6
+                << ",\"gt_lat_e6\":" << inf.ground_truth_lat_e6 << ",\"gt_lon_e6\":" << inf.ground_truth_lon_e6
+                << ",\"est_lat_e6\":" << inf.estimated_lat_e6 << ",\"est_lon_e6\":" << inf.estimated_lon_e6
+                << ",\"has_estimate\":true,\"pos_error_m\":0.0,\"pos_mae_m\":null,\"pos_rmse_m\":null,\"pos_max_err_m\":null}\n" << std::flush;
     } else if (cmd == "block_link") {
       uint16_t a = static_cast<uint16_t>(json_get_int(line, "a", 0));
       uint16_t b = static_cast<uint16_t>(json_get_int(line, "b", 0));

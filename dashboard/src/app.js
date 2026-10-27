@@ -1,7 +1,7 @@
 // Project Setu - Operations Dashboard Main Application Orchestrator
 
 import { SetuApi } from './api.js';
-import { SimulationEngine, normalizeRole } from './simulation.js';
+import { SimulationEngine, normalizeRole, xyToE6, computePositionErrorM } from './simulation.js';
 import { Exporter } from './exporter.js';
 import { TopologyVisualizer } from '../components/topology.js';
 import { TimelineComponent } from '../components/timeline.js';
@@ -92,31 +92,78 @@ class SetuDashboardApp {
       if (canvas) {
         this.topo = new TopologyVisualizer(canvas, this.sim);
 
+        // Real-time drag inspector tracking
+        this.topo.onNodeDrag = (node) => {
+          if (this.inspector && this.inspector.selectedNode && this.inspector.selectedNode.id === node.id) {
+            this.inspector.renderNode();
+          }
+        };
+
         // Dynamic node repositioning in topology
         this.topo.onNodeReposition = async (id, x, y) => {
+          const node = this.sim.nodes.get(id);
+          const geo = xyToE6(x, y);
+          if (node) {
+            node.x = x;
+            node.y = y;
+            node.lat_e6 = geo.lat_e6;
+            node.lon_e6 = geo.lon_e6;
+            node.gt_lat_e6 = geo.lat_e6;
+            node.gt_lon_e6 = geo.lon_e6;
+            if (node.est_lat_e6 && node.est_lon_e6) {
+              node.pos_error_m = computePositionErrorM(
+                node.est_lat_e6,
+                node.est_lon_e6,
+                geo.lat_e6,
+                geo.lon_e6
+              );
+            }
+          }
+
+          // Recalculate radio connectivity dynamically for new geometry
+          const links = [];
+          const nodeList = Array.from(this.sim.nodes.values());
+          for (let i = 0; i < nodeList.length; ++i) {
+            for (let j = i + 1; j < nodeList.length; ++j) {
+              const na = nodeList[i];
+              const nb = nodeList[j];
+              const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
+              const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, dist) / 10.0));
+              if (rssi >= -120.0) {
+                links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(dist * 10) / 10, blocked: false });
+              }
+            }
+          }
+          this.sim.links = links;
+          this.topo.render();
+
+          if (this.inspector && this.inspector.selectedNode && this.inspector.selectedNode.id === id) {
+            this.inspector.inspectNode(node);
+          }
+
           if (this.mode === 'live') {
             try {
-              await SetuApi.repositionNode(id, x, y);
+              const res = await SetuApi.repositionNode(id, x, y);
               this.elStatusText.textContent = `REPOSITIONED NODE ${id} TO (${x}, ${y}) - LINKS RECALCULATED`;
-              // Recalculate radio connectivity dynamically for new geometry
-              const links = [];
-              const nodeList = Array.from(this.sim.nodes.values());
-              for (let i = 0; i < nodeList.length; ++i) {
-                for (let j = i + 1; j < nodeList.length; ++j) {
-                  const na = nodeList[i];
-                  const nb = nodeList[j];
-                  const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
-                  const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, dist) / 10.0));
-                  if (rssi >= -120.0) {
-                    links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(dist * 10) / 10, blocked: false });
-                  }
+              if (res && res.result && node) {
+                if (res.result.gt_lat_e6 !== undefined) node.gt_lat_e6 = res.result.gt_lat_e6;
+                if (res.result.gt_lon_e6 !== undefined) node.gt_lon_e6 = res.result.gt_lon_e6;
+                if (res.result.lat_e6 !== undefined) node.lat_e6 = res.result.lat_e6;
+                if (res.result.lon_e6 !== undefined) node.lon_e6 = res.result.lon_e6;
+                if (res.result.pos_error_m !== undefined) node.pos_error_m = res.result.pos_error_m;
+                if (res.result.pos_mae_m !== undefined) node.pos_mae_m = res.result.pos_mae_m;
+                if (res.result.pos_rmse_m !== undefined) node.pos_rmse_m = res.result.pos_rmse_m;
+                if (res.result.est_lat_e6 !== undefined) node.est_lat_e6 = res.result.est_lat_e6;
+                if (res.result.est_lon_e6 !== undefined) node.est_lon_e6 = res.result.est_lon_e6;
+                if (this.inspector && this.inspector.selectedNode && this.inspector.selectedNode.id === id) {
+                  this.inspector.inspectNode(node);
                 }
               }
-              this.sim.links = links;
-              this.topo.render();
             } catch (e) {
               console.warn('Reposition failed:', e);
             }
+          } else {
+            this.elStatusText.textContent = `REPOSITIONED NODE ${id} TO (${x}, ${y}) - REPLAY MAP UPDATED`;
           }
         };
       }
@@ -156,6 +203,38 @@ class SetuDashboardApp {
         // Inspector motion profile change handler
         this.inspector.onMotionChange = async (nodeId, profile) => {
           await this.executeMotionChange(nodeId, profile);
+        };
+
+        // Inspector estimator reset handler
+        this.inspector.onResetEstimator = async (nodeId) => {
+          if (this.mode === 'live') {
+            try {
+              const res = await SetuApi.resetEstimator(nodeId);
+              const node = this.sim.nodes.get(nodeId);
+              if (node && res && res.result) {
+                node.est_lat_e6 = res.result.est_lat_e6;
+                node.est_lon_e6 = res.result.est_lon_e6;
+                node.pos_error_m = res.result.pos_error_m;
+                node.pos_mae_m = res.result.pos_mae_m;
+                node.pos_rmse_m = res.result.pos_rmse_m;
+                this.inspector.inspectNode(node);
+              }
+              this.elStatusText.textContent = `RESET ESTIMATOR FOR NODE ${nodeId} TO CURRENT GROUND TRUTH`;
+            } catch (err) {
+              console.warn('Reset estimator failed:', err);
+            }
+          } else {
+            const node = this.sim.nodes.get(nodeId);
+            if (node) {
+              node.est_lat_e6 = node.gt_lat_e6 || node.lat_e6;
+              node.est_lon_e6 = node.gt_lon_e6 || node.lon_e6;
+              node.pos_error_m = 0.0;
+              node.pos_mae_m = null;
+              node.pos_rmse_m = null;
+              this.inspector.inspectNode(node);
+              this.elStatusText.textContent = `RESET ESTIMATOR FOR NODE ${nodeId} TO CURRENT GROUND TRUTH`;
+            }
+          }
         };
 
         // Inspector GNSS outage schedule handler
@@ -1039,16 +1118,17 @@ class SetuDashboardApp {
             existing.radio_q_ovf = n.radio_q_ovf !== undefined ? n.radio_q_ovf : existing.radio_q_ovf;
             existing.gnss_on = n.gnss !== undefined ? n.gnss : existing.gnss_on;
             existing.dr_on = n.dr !== undefined ? n.dr : existing.dr_on;
-            existing.lat_e6 = n.lat_e6;
-            existing.lon_e6 = n.lon_e6;
-            existing.gt_lat_e6 = n.gt_lat_e6 !== undefined ? n.gt_lat_e6 : n.lat_e6;
-            existing.gt_lon_e6 = n.gt_lon_e6 !== undefined ? n.gt_lon_e6 : n.lon_e6;
-            existing.est_lat_e6 = n.est_lat_e6 !== undefined ? n.est_lat_e6 : n.lat_e6;
-            existing.est_lon_e6 = n.est_lon_e6 !== undefined ? n.est_lon_e6 : n.lon_e6;
-            existing.pos_error_m = typeof n.pos_error_m === 'number' ? n.pos_error_m : 0.0;
-            existing.pos_mae_m = typeof n.pos_mae_m === 'number' ? n.pos_mae_m : 0.0;
-            existing.pos_rmse_m = typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : 0.0;
-            existing.pos_max_err_m = typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : 0.0;
+            existing.lat_e6 = typeof n.lat_e6 === 'number' ? n.lat_e6 : existing.lat_e6;
+            existing.lon_e6 = typeof n.lon_e6 === 'number' ? n.lon_e6 : existing.lon_e6;
+            existing.gt_lat_e6 = typeof n.gt_lat_e6 === 'number' ? n.gt_lat_e6 : (typeof n.lat_e6 === 'number' ? n.lat_e6 : existing.gt_lat_e6);
+            existing.gt_lon_e6 = typeof n.gt_lon_e6 === 'number' ? n.gt_lon_e6 : (typeof n.lon_e6 === 'number' ? n.lon_e6 : existing.gt_lon_e6);
+            existing.est_lat_e6 = typeof n.est_lat_e6 === 'number' ? n.est_lat_e6 : (n.est_lat_e6 === null ? null : existing.est_lat_e6);
+            existing.est_lon_e6 = typeof n.est_lon_e6 === 'number' ? n.est_lon_e6 : (n.est_lon_e6 === null ? null : existing.est_lon_e6);
+            existing.has_estimate = n.has_estimate !== undefined ? n.has_estimate : (existing.est_lat_e6 !== null && existing.est_lat_e6 !== undefined);
+            existing.pos_error_m = typeof n.pos_error_m === 'number' ? n.pos_error_m : (n.pos_error_m === null ? null : computePositionErrorM(existing.est_lat_e6, existing.est_lon_e6, existing.gt_lat_e6, existing.gt_lon_e6));
+            existing.pos_mae_m = typeof n.pos_mae_m === 'number' ? n.pos_mae_m : (n.pos_mae_m === null ? null : existing.pos_mae_m);
+            existing.pos_rmse_m = typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : (n.pos_rmse_m === null ? null : existing.pos_rmse_m);
+            existing.pos_max_err_m = typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : (n.pos_max_err_m === null ? null : existing.pos_max_err_m);
             existing.motion_profile = n.motion_profile || 'stationary';
             existing.gnss_status = n.gnss_status || (n.gnss ? 'FIX_3D' : 'NO_FIX');
             existing.stats = {
@@ -1082,16 +1162,17 @@ class SetuDashboardApp {
               radio_q_ovf: n.radio_q_ovf !== undefined ? n.radio_q_ovf : 0,
               gnss_on: n.gnss !== undefined ? n.gnss : true,
               dr_on: n.dr !== undefined ? n.dr : true,
-              lat_e6: n.lat_e6,
-              lon_e6: n.lon_e6,
-              gt_lat_e6: n.gt_lat_e6 !== undefined ? n.gt_lat_e6 : n.lat_e6,
-              gt_lon_e6: n.gt_lon_e6 !== undefined ? n.gt_lon_e6 : n.lon_e6,
-              est_lat_e6: n.est_lat_e6 !== undefined ? n.est_lat_e6 : n.lat_e6,
-              est_lon_e6: n.est_lon_e6 !== undefined ? n.est_lon_e6 : n.lon_e6,
-              pos_error_m: typeof n.pos_error_m === 'number' ? n.pos_error_m : 0.0,
-              pos_mae_m: typeof n.pos_mae_m === 'number' ? n.pos_mae_m : 0.0,
-              pos_rmse_m: typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : 0.0,
-              pos_max_err_m: typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : 0.0,
+              lat_e6: typeof n.lat_e6 === 'number' ? n.lat_e6 : xyToE6(n.x, n.y).lat_e6,
+              lon_e6: typeof n.lon_e6 === 'number' ? n.lon_e6 : xyToE6(n.x, n.y).lon_e6,
+              gt_lat_e6: typeof n.gt_lat_e6 === 'number' ? n.gt_lat_e6 : (typeof n.lat_e6 === 'number' ? n.lat_e6 : xyToE6(n.x, n.y).lat_e6),
+              gt_lon_e6: typeof n.gt_lon_e6 === 'number' ? n.gt_lon_e6 : (typeof n.lon_e6 === 'number' ? n.lon_e6 : xyToE6(n.x, n.y).lon_e6),
+              est_lat_e6: typeof n.est_lat_e6 === 'number' ? n.est_lat_e6 : null,
+              est_lon_e6: typeof n.est_lon_e6 === 'number' ? n.est_lon_e6 : null,
+              has_estimate: n.has_estimate !== undefined ? n.has_estimate : (typeof n.est_lat_e6 === 'number'),
+              pos_error_m: typeof n.pos_error_m === 'number' ? n.pos_error_m : null,
+              pos_mae_m: typeof n.pos_mae_m === 'number' ? n.pos_mae_m : null,
+              pos_rmse_m: typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : null,
+              pos_max_err_m: typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : null,
               motion_profile: n.motion_profile || 'stationary',
               gnss_status: n.gnss_status || (n.gnss ? 'FIX_3D' : 'NO_FIX'),
               stats: {

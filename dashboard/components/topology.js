@@ -1,4 +1,4 @@
-// Project Setu - Interactive Network Topology Visualizer (HTML5 Canvas)
+import { xyToE6, computePositionErrorM } from '../src/simulation.js';
 
 export class TopologyVisualizer {
   constructor(canvasElement, simulationEngine) {
@@ -24,6 +24,7 @@ export class TopologyVisualizer {
     // Callbacks
     this.onNodeSelect = null;
     this.onNodeReposition = null;
+    this.onNodeDrag = null;
 
     // Dragging state
     this.isDraggingNode = false;
@@ -73,6 +74,22 @@ export class TopologyVisualizer {
           const wp = this.screenToWorld(mx, my);
           this.draggedNode.x = Math.round(wp.x * 10) / 10;
           this.draggedNode.y = Math.round(wp.y * 10) / 10;
+          const geo = xyToE6(this.draggedNode.x, this.draggedNode.y);
+          this.draggedNode.lat_e6 = geo.lat_e6;
+          this.draggedNode.lon_e6 = geo.lon_e6;
+          this.draggedNode.gt_lat_e6 = geo.lat_e6;
+          this.draggedNode.gt_lon_e6 = geo.lon_e6;
+          if (this.draggedNode.est_lat_e6 && this.draggedNode.est_lon_e6) {
+            this.draggedNode.pos_error_m = computePositionErrorM(
+              this.draggedNode.est_lat_e6,
+              this.draggedNode.est_lon_e6,
+              geo.lat_e6,
+              geo.lon_e6
+            );
+          }
+          if (this.onNodeDrag) {
+            this.onNodeDrag(this.draggedNode);
+          }
           this.render();
         } else if (this.isDragging) {
           this.panX = e.clientX - this.dragStartX;
@@ -85,8 +102,22 @@ export class TopologyVisualizer {
 
       window.addEventListener('mouseup', () => {
         if (this.isDraggingNode && this.draggedNode) {
+          const node = this.draggedNode;
+          const geo = xyToE6(node.x, node.y);
+          node.lat_e6 = geo.lat_e6;
+          node.lon_e6 = geo.lon_e6;
+          node.gt_lat_e6 = geo.lat_e6;
+          node.gt_lon_e6 = geo.lon_e6;
+          if (node.est_lat_e6 && node.est_lon_e6) {
+            node.pos_error_m = computePositionErrorM(
+              node.est_lat_e6,
+              node.est_lon_e6,
+              geo.lat_e6,
+              geo.lon_e6
+            );
+          }
           if (this.onNodeReposition) {
-            this.onNodeReposition(this.draggedNode.id, this.draggedNode.x, this.draggedNode.y);
+            this.onNodeReposition(node.id, node.x, node.y);
           }
           this.isDraggingNode = false;
           this.draggedNode = null;

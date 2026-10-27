@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "sensor_models.hpp"
+#include "world.hpp"
 #include "testlib.hpp"
 
 using namespace sim;
@@ -166,4 +167,94 @@ TEST(battery_energy_model_accounting_and_voltage_curve) {
   CHECK_EQ(batt.percent(), 50);
   CHECK(std::abs(batt.remaining_mah() - 150.0) <= 0.1);
   CHECK(batt.estimated_lifetime_hours(4.0, 115) > 10.0);
+}
+
+TEST(coordinate_transformation_and_roundtrip) {
+  // 1. Origin test: (0, 0) Cartesian should correspond to exact configured origin
+  int32_t origin_lat_e6 = 0, origin_lon_e6 = 0;
+  xy_to_e6(0.0, 0.0, origin_lat_e6, origin_lon_e6);
+  CHECK_EQ(origin_lat_e6, static_cast<int32_t>(std::lround(kOriginLat * 1e6)));
+  CHECK_EQ(origin_lon_e6, static_cast<int32_t>(std::lround(kOriginLon * 1e6)));
+
+  double rx0 = 0.0, ry0 = 0.0;
+  e6_to_xy(origin_lat_e6, origin_lon_e6, rx0, ry0);
+  CHECK(std::abs(rx0 - 0.0) < 0.05);
+  CHECK(std::abs(ry0 - 0.0) < 0.05);
+
+  // 2. Arbitrary point test (e.g., Node 18 location: X=1109.4, Y=1021.5)
+  double test_x = 1109.4, test_y = 1021.5;
+  int32_t lat_e6 = 0, lon_e6 = 0;
+  xy_to_e6(test_x, test_y, lat_e6, lon_e6);
+
+  CHECK(lat_e6 > origin_lat_e6);
+  CHECK(lon_e6 > origin_lon_e6);
+
+  double roundtrip_x = 0.0, roundtrip_y = 0.0;
+  e6_to_xy(lat_e6, lon_e6, roundtrip_x, roundtrip_y);
+  CHECK(std::abs(roundtrip_x - test_x) < 0.1);
+  CHECK(std::abs(roundtrip_y - test_y) < 0.1);
+
+  // 3. Negative quadrant (South-West)
+  int32_t sw_lat_e6 = 0, sw_lon_e6 = 0;
+  xy_to_e6(-500.0, -300.0, sw_lat_e6, sw_lon_e6);
+  CHECK(sw_lat_e6 < origin_lat_e6);
+  CHECK(sw_lon_e6 < origin_lon_e6);
+
+  double sw_x = 0.0, sw_y = 0.0;
+  e6_to_xy(sw_lat_e6, sw_lon_e6, sw_x, sw_y);
+  CHECK(std::abs(sw_x - (-500.0)) < 0.1);
+  CHECK(std::abs(sw_y - (-300.0)) < 0.1);
+}
+
+TEST(position_tracker_ground_truth_repositioning_and_estimate_independence) {
+  PositionMetricsTracker tracker;
+  // Initially, no estimate and no samples exist
+  CHECK(!tracker.has_estimate());
+  CHECK(!tracker.has_samples());
+  CHECK(tracker.current_error_m() < 0.0);
+  CHECK_EQ(tracker.sample_count(), 0u);
+
+  // Initialize ground truth at (0, 0)
+  int32_t lat0 = 0, lon0 = 0;
+  xy_to_e6(0.0, 0.0, lat0, lon0);
+  tracker.update_ground_truth(0.0, 0.0, lat0, lon0);
+  CHECK(!tracker.has_estimate());
+
+  // Record a simulated fix with ~4m X and ~3m Y displacement
+  int32_t fix_lat = 0, fix_lon = 0;
+  xy_to_e6(4.0, 3.0, fix_lat, fix_lon);
+  tracker.record_sample(0.0, 0.0, lat0, lon0, fix_lat, fix_lon, false, true);
+
+  CHECK(tracker.has_estimate());
+  CHECK(tracker.has_samples());
+  CHECK_EQ(tracker.sample_count(), 1u);
+  CHECK(std::abs(tracker.current_error_m() - 5.0) < 0.2); // hypot(4, 3) = 5.0m
+  CHECK(std::abs(tracker.mae_m() - 5.0) < 0.2);
+
+  // User drags node from (0, 0) to (104.0, 3.0) -> delta X = 104m, delta Y = 3m
+  // The estimated position must stay at (4.0, 3.0)
+  // Distance from (104.0, 3.0) to (4.0, 3.0) is exactly 100m
+  int32_t new_gt_lat = 0, new_gt_lon = 0;
+  xy_to_e6(104.0, 3.0, new_gt_lat, new_gt_lon);
+  tracker.update_ground_truth(104.0, 3.0, new_gt_lat, new_gt_lon);
+
+  // Estimate coordinates must remain untouched
+  CHECK_EQ(tracker.last_est_lat_e6(), fix_lat);
+  CHECK_EQ(tracker.last_est_lon_e6(), fix_lon);
+
+  // Instantaneous error must now reflect the new 100m displacement
+  CHECK(std::abs(tracker.current_error_m() - 100.0) < 0.5);
+
+  // Sample count must NOT be incremented (drag is a GT change, not a sensor observation)
+  CHECK_EQ(tracker.sample_count(), 1u);
+  CHECK(std::abs(tracker.mae_m() - 5.0) < 0.2);
+
+  // Now perform an explicit estimator reset
+  tracker.reset_estimator(104.0, 3.0, new_gt_lat, new_gt_lon);
+  CHECK(tracker.has_estimate());
+  CHECK(!tracker.has_samples()); // samples cleared for fresh trajectory
+  CHECK_EQ(tracker.sample_count(), 0u);
+  CHECK_EQ(tracker.last_est_lat_e6(), new_gt_lat);
+  CHECK_EQ(tracker.last_est_lon_e6(), new_gt_lon);
+  CHECK_EQ(tracker.current_error_m(), 0.0);
 }

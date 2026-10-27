@@ -26,6 +26,60 @@ export function normalizeRole(role, nodeId = null) {
   return str;
 }
 
+export const ORIGIN_LAT = 22.5726;
+export const ORIGIN_LON = 88.4338;
+export const M_PER_DEG_LAT = 111320.0;
+export const M_PER_DEG_LON = 111320.0 * Math.cos(ORIGIN_LAT * Math.PI / 180.0); // ~102793.479 m/deg
+
+/**
+ * Converts Cartesian simulation coordinates (in meters relative to origin) to geographic microdegrees (e6).
+ * +X is East, +Y is North.
+ * @param {number} x - Cartesian Easting in meters
+ * @param {number} y - Cartesian Northing in meters
+ * @returns {{ lat_e6: number, lon_e6: number, lat: number, lon: number }}
+ */
+export function xyToE6(x, y) {
+  const lat_deg = ORIGIN_LAT + (y / M_PER_DEG_LAT);
+  const lon_deg = ORIGIN_LON + (x / M_PER_DEG_LON);
+  const lat_e6 = Math.round(lat_deg * 1e6);
+  const lon_e6 = Math.round(lon_deg * 1e6);
+  return { lat_e6, lon_e6, lat: lat_deg, lon: lon_deg };
+}
+
+/**
+ * Converts geographic microdegrees (e6) to Cartesian simulation coordinates (in meters relative to origin).
+ * @param {number} lat_e6 - Latitude in microdegrees
+ * @param {number} lon_e6 - Longitude in microdegrees
+ * @returns {{ x: number, y: number }}
+ */
+export function e6ToXy(lat_e6, lon_e6) {
+  const y = (lat_e6 * 1e-6 - ORIGIN_LAT) * M_PER_DEG_LAT;
+  const x = (lon_e6 * 1e-6 - ORIGIN_LON) * M_PER_DEG_LON;
+  return { x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 };
+}
+
+/**
+ * Calculates horizontal Euclidean distance in meters between estimated coordinates and ground truth.
+ * Returns null if either coordinate pair is missing or invalid.
+ * @param {number} est_lat_e6 - Estimated latitude in microdegrees
+ * @param {number} est_lon_e6 - Estimated longitude in microdegrees
+ * @param {number} gt_lat_e6 - Ground truth latitude in microdegrees
+ * @param {number} gt_lon_e6 - Ground truth longitude in microdegrees
+ * @returns {number|null} Position error in meters, or null if unmeasured
+ */
+export function computePositionErrorM(est_lat_e6, est_lon_e6, gt_lat_e6, gt_lon_e6) {
+  if (
+    typeof est_lat_e6 !== 'number' || typeof est_lon_e6 !== 'number' ||
+    typeof gt_lat_e6 !== 'number' || typeof gt_lon_e6 !== 'number' ||
+    est_lat_e6 === 0 || est_lon_e6 === 0 || gt_lat_e6 === 0 || gt_lon_e6 === 0
+  ) {
+    return null;
+  }
+  const dy = (est_lat_e6 - gt_lat_e6) * 1e-6 * M_PER_DEG_LAT;
+  const dx = (est_lon_e6 - gt_lon_e6) * 1e-6 * (M_PER_DEG_LAT * Math.cos((gt_lat_e6 * 1e-6) * Math.PI / 180.0));
+  return Math.hypot(dx, dy);
+}
+
 export class SimulationEngine {
   constructor() {
     this.events = [];
@@ -317,6 +371,49 @@ export class SimulationEngine {
         case 'alert':
           this.alerts.push(ev);
           break;
+        case 'reposition':
+          if (n) {
+            n.x = typeof ev.x === 'number' ? ev.x : n.x;
+            n.y = typeof ev.y === 'number' ? ev.y : n.y;
+            if (typeof ev.lat_e6 === 'number') {
+              n.lat_e6 = ev.lat_e6;
+              n.gt_lat_e6 = ev.lat_e6;
+            } else {
+              const geo = xyToE6(n.x, n.y);
+              n.lat_e6 = geo.lat_e6;
+              n.gt_lat_e6 = geo.lat_e6;
+            }
+            if (typeof ev.lon_e6 === 'number') {
+              n.lon_e6 = ev.lon_e6;
+              n.gt_lon_e6 = ev.lon_e6;
+            } else {
+              const geo = xyToE6(n.x, n.y);
+              n.lon_e6 = geo.lon_e6;
+              n.gt_lon_e6 = geo.lon_e6;
+            }
+            if (n.est_lat_e6 && n.est_lon_e6) {
+              n.pos_error_m = computePositionErrorM(n.est_lat_e6, n.est_lon_e6, n.gt_lat_e6, n.gt_lon_e6);
+            }
+          }
+          break;
+        case 'estimator_reset':
+          if (n) {
+            n.est_lat_e6 = n.gt_lat_e6 || n.lat_e6;
+            n.est_lon_e6 = n.gt_lon_e6 || n.lon_e6;
+            n.pos_error_m = 0.0;
+            n.pos_mae_m = null;
+            n.pos_rmse_m = null;
+          }
+          break;
+        case 'link_update': {
+          const lk = this.links.find(l => (l.a === ev.a && l.b === ev.b) || (l.a === ev.b && l.b === ev.a));
+          if (lk) {
+            if (typeof ev.rssi === 'number') lk.rssi = ev.rssi;
+            if (typeof ev.dist === 'number') lk.dist = ev.dist;
+            if (ev.in_range !== undefined) lk.blocked = !ev.in_range;
+          }
+          break;
+        }
       }
     }
   }

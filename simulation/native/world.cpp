@@ -16,16 +16,19 @@
 
 namespace sim {
 namespace {
-constexpr double kOriginLat = 22.5726, kOriginLon = 88.4338;
-constexpr double kMPerDegLat = 111320.0;
 constexpr double kNegInf = -std::numeric_limits<double>::infinity();
+}  // namespace
 
 void xy_to_e6(double x, double y, int32_t& lat, int32_t& lon) {
   lat = static_cast<int32_t>(std::lround((kOriginLat + y / kMPerDegLat) * 1e6));
   lon = static_cast<int32_t>(std::lround(
       (kOriginLon + x / (kMPerDegLat * std::cos(kOriginLat * M_PI / 180.0))) * 1e6));
 }
-}  // namespace
+
+void e6_to_xy(int32_t lat, int32_t lon, double& x, double& y) {
+  y = (lat * 1e-6 - kOriginLat) * kMPerDegLat;
+  x = (lon * 1e-6 - kOriginLon) * (kMPerDegLat * std::cos(kOriginLat * M_PI / 180.0));
+}
 
 // ------------------------------------------------------------------ per-node virtual hardware
 
@@ -215,6 +218,9 @@ struct World::SimNode {
         gnss_sensor(world.seed_ * 10009u + cfg.node_id),
         energy_model(world.ch_.battery_capacity_mah, init_batt) {
     if (battery == 0) online = false;
+    int32_t init_la = 0, init_lo = 0;
+    xy_to_e6(px, py, init_la, init_lo);
+    pos_tracker.update_ground_truth(px, py, init_la, init_lo);
     setu::Hal h;
     h.clock = &clock;
     h.rng = &rand;
@@ -584,6 +590,7 @@ void World::reposition_node(uint16_t id, double px, double py) {
   it->second->y = py;
   int32_t la = 0, lo = 0;
   xy_to_e6(px, py, la, lo);
+  it->second->pos_tracker.update_ground_truth(px, py, la, lo);
   if (trace_) {
     char b[128];
     std::snprintf(b, sizeof b, ",\"x\":%.2f,\"y\":%.2f,\"lat_e6\":%ld,\"lon_e6\":%ld",
@@ -597,6 +604,20 @@ void World::reposition_node(uint16_t id, double px, double py) {
               << ",\"b\":" << kv.first << ",\"rssi\":" << r << ",\"dist\":" << d
               << ",\"in_range\":" << (r >= sens_ ? "true" : "false") << "}\n";
     }
+  }
+}
+
+void World::reset_estimator(uint16_t id) {
+  auto it = nodes_.find(id);
+  if (it == nodes_.end()) return;
+  int32_t la = 0, lo = 0;
+  xy_to_e6(it->second->x, it->second->y, la, lo);
+  it->second->pos_tracker.reset_estimator(it->second->x, it->second->y, la, lo);
+  if (trace_) {
+    char b[128];
+    std::snprintf(b, sizeof b, ",\"x\":%.2f,\"y\":%.2f,\"lat_e6\":%ld,\"lon_e6\":%ld",
+                  it->second->x, it->second->y, static_cast<long>(la), static_cast<long>(lo));
+    trace_event("estimator_reset", id, b);
   }
 }
 
@@ -677,12 +698,20 @@ SimNodeInfo World::get_node_info(uint16_t id) const {
   info.ground_truth_y = n.y;
   info.ground_truth_lat_e6 = info.lat_e6;
   info.ground_truth_lon_e6 = info.lon_e6;
-  info.estimated_lat_e6 = (n.pos_tracker.last_est_lat_e6() != 0) ? n.pos_tracker.last_est_lat_e6() : info.lat_e6;
-  info.estimated_lon_e6 = (n.pos_tracker.last_est_lon_e6() != 0) ? n.pos_tracker.last_est_lon_e6() : info.lon_e6;
-  info.pos_error_m = n.pos_tracker.current_error_m();
-  info.pos_mae_m = n.pos_tracker.mae_m();
-  info.pos_rmse_m = n.pos_tracker.rmse_m();
-  info.pos_max_error_m = n.pos_tracker.max_error_m();
+  info.has_estimate = n.pos_tracker.has_estimate();
+  info.has_samples = n.pos_tracker.has_samples();
+  if (info.has_estimate) {
+    info.estimated_lat_e6 = n.pos_tracker.last_est_lat_e6();
+    info.estimated_lon_e6 = n.pos_tracker.last_est_lon_e6();
+    info.pos_error_m = n.pos_tracker.current_error_m();
+  } else {
+    info.estimated_lat_e6 = 0;
+    info.estimated_lon_e6 = 0;
+    info.pos_error_m = -1.0;
+  }
+  info.pos_mae_m = n.pos_tracker.has_samples() ? n.pos_tracker.mae_m() : -1.0;
+  info.pos_rmse_m = n.pos_tracker.has_samples() ? n.pos_tracker.rmse_m() : -1.0;
+  info.pos_max_error_m = n.pos_tracker.has_samples() ? n.pos_tracker.max_error_m() : -1.0;
   info.motion_profile = motion_profile_str(n.imu_sensor.profile());
   info.gnss_status = gnss_status_str(n.gnss_sensor.status());
   info.battery = n.battery;

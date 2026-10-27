@@ -50,6 +50,12 @@ struct Counters {
   uint64_t tx = 0, delivered = 0, collisions = 0, weak = 0, lost = 0, halfduplex = 0;
 };
 
+constexpr double kOriginLat = 22.5726, kOriginLon = 88.4338;
+constexpr double kMPerDegLat = 111320.0;
+
+void xy_to_e6(double x, double y, int32_t& lat, int32_t& lon);
+void e6_to_xy(int32_t lat, int32_t lon, double& x, double& y);
+
 struct SimNodeInfo {
   uint16_t id = 0;
   setu::Role role = setu::Role::Survivor;
@@ -58,10 +64,12 @@ struct SimNodeInfo {
   double ground_truth_x = 0, ground_truth_y = 0;
   int32_t ground_truth_lat_e6 = 0, ground_truth_lon_e6 = 0;
   int32_t estimated_lat_e6 = 0, estimated_lon_e6 = 0;
-  double pos_error_m = 0.0;
-  double pos_mae_m = 0.0;
-  double pos_rmse_m = 0.0;
-  double pos_max_error_m = 0.0;
+  bool has_estimate = false;
+  bool has_samples = false;
+  double pos_error_m = -1.0;
+  double pos_mae_m = -1.0;
+  double pos_rmse_m = -1.0;
+  double pos_max_error_m = -1.0;
   std::string motion_profile = "stationary";
   std::string gnss_status = "valid_fix";
   uint8_t battery = 100;
@@ -97,6 +105,7 @@ class World {
   void block_link(uint16_t a, uint16_t b, bool blocked = true);
   void schedule(uint32_t at_ms, std::function<void()> fn);
   void reposition_node(uint16_t id, double x, double y);
+  void reset_estimator(uint16_t id);
   void set_motion_profile(uint16_t id, MotionProfile p);
   void schedule_gnss_outage(uint16_t id, uint32_t start_ms, uint32_t duration_ms);
   void set_node_heading(uint16_t id, double heading_rad);

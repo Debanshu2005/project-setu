@@ -1466,7 +1466,23 @@ const server = http.createServer(async (req, res) => {
         return sendError(res, 400, 'x and y coordinates are required numbers', req);
       }
       const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
-      return sendJson(res, 200, { success: true, result }, req);
+      return sendJson(res, 200, { success: true, result, node: result }, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
+  // POST /api/control/reset-estimator
+  if (req.method === 'POST' && pathname === '/api/control/reset-estimator') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const node = parseInt(body.node !== undefined ? body.node : body.id, 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
+      const result = await simManager.sendCommand({ cmd: 'reset_estimator', node });
+      return sendJson(res, 200, { success: true, result, node: result }, req);
     } catch (err) {
       return sendError(res, 500, err.message, req);
     }
