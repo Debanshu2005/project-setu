@@ -343,6 +343,27 @@ async function runTests() {
 
     const resInvalidLink = await request('POST', '/api/control/block-link', { a: 'not-a-node' });
     assert(resInvalidLink.statusCode === 400, 'Invalid link block parameters rejected with HTTP 400');
+
+    // Motion Profile Selection (Phase 3 & Phase 5)
+    console.log('\n    [Subtest] Testing MPU-6050 motion profile configuration & GNSS outage scheduling...');
+    const resMotion = await request('POST', '/api/control/motion', { node: 1, profile: 'walking' });
+    assert(resMotion.statusCode === 200, 'Setting motion profile to "walking" returns HTTP 200');
+    assert(resMotion.json?.profile === 'walking', 'Motion profile confirmed in response');
+    const resStateMotion = await request('GET', '/api/control/state');
+    assert(resStateMotion.json?.nodes.find(n => n.id === 1)?.motion_profile === 'walking', 'Authoritative state confirms motion_profile is "walking"');
+
+    // GNSS Outage Scheduling (Phase 3 & Phase 5)
+    const resOutage = await request('POST', '/api/control/gnss-outage', { node: 1, start_ms: 500, duration_ms: 3000 });
+    assert(resOutage.statusCode === 200, 'Scheduling GNSS outage returns HTTP 200');
+    assert(resOutage.json?.duration_ms === 3000, 'GNSS outage duration confirmed in response');
+
+    // Path Loss Sweep Experiment Endpoint (Phase 4 & Phase 6)
+    console.log('\n    [Subtest] Testing RF path-loss exponent sweep experiment endpoint...');
+    const resExp = await request('GET', '/api/control/experiment-path-loss?seed=42');
+    assert(resExp.statusCode === 200, 'Path loss sweep experiment endpoint returns HTTP 200');
+    assert(resExp.json?.experiment === 'path_loss_sweep', 'Experiment JSON reports path_loss_sweep');
+    assert(Array.isArray(resExp.json?.results) && resExp.json?.results.length > 5, 'Path loss sweep contains multiple exponent data points');
+    assert(typeof resExp.json?.physics_explanation === 'string', 'Physics explanation included in experiment report');
   } catch (err) {
     assert(false, `Simulator lifecycle failed: ${err.message}`);
   }

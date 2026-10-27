@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "setu/node.hpp"
+#include "sensor_models.hpp"
 
 namespace sim {
 
@@ -54,6 +55,15 @@ struct SimNodeInfo {
   setu::Role role = setu::Role::Survivor;
   double x = 0, y = 0;
   int32_t lat_e6 = 0, lon_e6 = 0;
+  double ground_truth_x = 0, ground_truth_y = 0;
+  int32_t ground_truth_lat_e6 = 0, ground_truth_lon_e6 = 0;
+  int32_t estimated_lat_e6 = 0, estimated_lon_e6 = 0;
+  double pos_error_m = 0.0;
+  double pos_mae_m = 0.0;
+  double pos_rmse_m = 0.0;
+  double pos_max_error_m = 0.0;
+  std::string motion_profile = "stationary";
+  std::string gnss_status = "valid_fix";
   uint8_t battery = 100;
   uint8_t initial_battery = 100;
   double energy_consumed_mah = 0.0;
@@ -87,6 +97,9 @@ class World {
   void block_link(uint16_t a, uint16_t b, bool blocked = true);
   void schedule(uint32_t at_ms, std::function<void()> fn);
   void reposition_node(uint16_t id, double x, double y);
+  void set_motion_profile(uint16_t id, MotionProfile p);
+  void schedule_gnss_outage(uint16_t id, uint32_t start_ms, uint32_t duration_ms);
+  void set_node_heading(uint16_t id, double heading_rad);
 
   // --- virtual firmware hardware interrupt simulation (drives real FreeRTOS queues) ---
   void firmware_button_isr(uint16_t id, bool pressed);
@@ -106,6 +119,7 @@ class World {
   setu::Node& node(uint16_t id);
   SimNodeInfo get_node_info(uint16_t id) const;
   std::vector<SimNodeInfo> get_all_nodes_info() const;
+  const PositionMetricsTracker* get_position_metrics(uint16_t id) const;
   const ChannelParams& channel_params() const { return ch_; }
   const std::vector<AlertRecord>& alerts() const { return alerts_; }
   // time the node first played AckReceived at/after t0 (or -1)

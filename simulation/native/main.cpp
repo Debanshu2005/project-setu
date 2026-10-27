@@ -101,6 +101,14 @@ void print_node_state(const World& w) {
     std::cout << "{\"id\":" << inf.id << ",\"role\":\"" << role_str << "\""
               << ",\"x\":" << inf.x << ",\"y\":" << inf.y
               << ",\"lat_e6\":" << inf.lat_e6 << ",\"lon_e6\":" << inf.lon_e6
+              << ",\"gt_lat_e6\":" << inf.ground_truth_lat_e6 << ",\"gt_lon_e6\":" << inf.ground_truth_lon_e6
+              << ",\"est_lat_e6\":" << inf.estimated_lat_e6 << ",\"est_lon_e6\":" << inf.estimated_lon_e6
+              << ",\"pos_error_m\":" << inf.pos_error_m
+              << ",\"pos_mae_m\":" << inf.pos_mae_m
+              << ",\"pos_rmse_m\":" << inf.pos_rmse_m
+              << ",\"pos_max_err_m\":" << inf.pos_max_error_m
+              << ",\"motion_profile\":\"" << inf.motion_profile << "\""
+              << ",\"gnss_status\":\"" << inf.gnss_status << "\""
               << ",\"battery\":" << static_cast<int>(inf.battery)
               << ",\"initial_battery\":" << static_cast<int>(inf.initial_battery)
               << ",\"energy_consumed_mah\":" << inf.energy_consumed_mah
@@ -151,6 +159,72 @@ void print_summary(const World& w, uint32_t seed, uint8_t sf, uint32_t duration)
             << ",\"weak\":" << c.weak << ",\"lost\":" << c.lost
             << ",\"duty_blocked\":" << duty_blocked << ",\"max_airtime_ms_per_node\":" << max_duty
             << "}}}\n" << std::flush;
+}
+
+void run_path_loss_sweep_experiment(uint32_t seed) {
+  std::cout << "{\"experiment\":\"path_loss_sweep\",\"seed\":" << seed
+            << ",\"fixed_params\":{\"tx_dbm\":14.0,\"freq_hz\":868000000,\"bw_hz\":125000,\"sf\":7,\"cr\":\"4/5\",\"payload_bytes\":25},"
+            << "\"results\":[\n";
+
+  double exponents[] = {2.0, 2.25, 2.5, 2.75, 3.0, 3.25, 3.5, 3.75, 4.0, 4.25, 4.5};
+  size_t n_exp = sizeof(exponents) / sizeof(exponents[0]);
+
+  for (size_t i = 0; i < n_exp; ++i) {
+    double exp_val = exponents[i];
+    ChannelParams ch;
+    ch.sf = 7;
+    ch.bw_hz = 125000;
+    ch.tx_dbm = 14.0;
+    ch.path_exp = exp_val;
+    ch.random_loss = 0.0;
+
+    // Fixed 3-node geometry: Hub(0,0), Relay(350,0), Survivor(700,0)
+    World w(ch, seed);
+    setu::NodeConfig c;
+    c.sf = 7;
+    c.bw_hz = 125000;
+
+    c.node_id = 0;
+    c.role = setu::Role::Hub;
+    w.add_node(c, 0, 0);
+
+    c.node_id = 101;
+    c.role = setu::Role::Relay;
+    w.add_node(c, 350, 0);
+
+    c.node_id = 1;
+    c.role = setu::Role::Survivor;
+    w.add_node(c, 700, 0);
+
+    // Survivor triggers SOS at t=100ms
+    w.button_press(1, 100, 150);
+    w.run_until(15000);
+
+    SimNodeInfo s1 = w.get_node_info(1);
+    SimNodeInfo r101 = w.get_node_info(101);
+    bool delivered = (w.alerts().size() > 0);
+    uint32_t latency_ms = delivered ? w.alerts()[0].latency_ms : 0;
+    int64_t ack_ms = w.first_ack_ms(1, 100);
+    bool ack_received = (ack_ms >= 0);
+    const auto& cnt = w.counters();
+
+    double pdr = delivered ? 100.0 : 0.0;
+    std::cout << "  {\"path_exp\":" << exp_val
+              << ",\"delivered\":" << (delivered ? "true" : "false")
+              << ",\"pdr_pct\":" << pdr
+              << ",\"acked\":" << (ack_received ? "true" : "false")
+              << ",\"latency_ms\":" << latency_ms
+              << ",\"retries\":" << s1.stats.retries
+              << ",\"relay_tx\":" << r101.stats.tx_relay
+              << ",\"tx_total\":" << cnt.tx
+              << ",\"drops\":{\"weak\":" << cnt.weak
+              << ",\"collision\":" << cnt.collisions
+              << ",\"halfduplex\":" << cnt.halfduplex
+              << ",\"lost\":" << cnt.lost << "}"
+              << "}" << (i + 1 < n_exp ? ",\n" : "\n");
+  }
+
+  std::cout << "],\n\"physics_explanation\":\"Increasing path-loss exponent n geometrically increases attenuation PL(d) = PL0 + 10*n*log10(d/d0) for d > d0 (10m). As n rises from 2.0 towards 4.5, RSSI at 350m drops below SX1262 sensitivity (-124 dBm at SF7/125kHz), transitioning from reliable multi-hop delivery to weak-signal drops and retry exhaustion.\"\n}\n" << std::flush;
 }
 
 int run_interactive(int survivors, int relays, double zone, ChannelParams ch, uint32_t seed) {
@@ -234,6 +308,25 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
         initial_batteries[id] = batt;
       }
       std::cout << "{\"ok\":true,\"cmd\":\"set_node\",\"node\":" << id << "}\n" << std::flush;
+    } else if (cmd == "set_motion") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
+      std::string prof = json_get_str(line, "profile");
+      MotionProfile p = MotionProfile::Stationary;
+      if (prof == "walking") p = MotionProfile::Walking;
+      else if (prof == "running") p = MotionProfile::Running;
+      else if (prof == "sudden_movement") p = MotionProfile::SuddenMovement;
+      else if (prof == "fall_impact") p = MotionProfile::FallImpact;
+      else if (prof == "irregular") p = MotionProfile::Irregular;
+      w->set_motion_profile(id, p);
+      std::cout << "{\"ok\":true,\"cmd\":\"set_motion\",\"node\":" << id << ",\"profile\":\"" << prof << "\"}\n" << std::flush;
+    } else if (cmd == "schedule_gnss_outage") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
+      uint32_t start_ms = static_cast<uint32_t>(json_get_int(line, "start_ms", 1000));
+      uint32_t duration_ms = static_cast<uint32_t>(json_get_int(line, "duration_ms", 5000));
+      w->schedule_gnss_outage(id, start_ms, duration_ms);
+      std::cout << "{\"ok\":true,\"cmd\":\"schedule_gnss_outage\",\"node\":" << id << ",\"start_ms\":" << start_ms << ",\"duration_ms\":" << duration_ms << "}\n" << std::flush;
+    } else if (cmd == "experiment_path_loss") {
+      run_path_loss_sweep_experiment(seed);
     } else if (cmd == "reposition") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
       double px = json_get_double(line, "x", 0.0);
@@ -292,6 +385,7 @@ int main(int argc, char** argv) {
   ChannelParams ch;
   std::string trace_path;
   bool interactive = false;
+  bool experiment_path_loss = false;
   std::vector<Trigger> triggers;
   std::vector<std::pair<std::string, std::string>> misc;  // (kind, arg)
 
@@ -302,6 +396,7 @@ int main(int argc, char** argv) {
       return argv[++i];
     };
     if (a == "--interactive" || a == "-i") interactive = true;
+    else if (a == "--experiment-path-loss") experiment_path_loss = true;
     else if (a == "--survivors") survivors = std::stoi(next());
     else if (a == "--relays") relays = std::stoi(next());
     else if (a == "--zone") zone = std::stod(next());
@@ -324,6 +419,11 @@ int main(int argc, char** argv) {
     } else {
       die("unknown option " + a);
     }
+  }
+
+  if (experiment_path_loss) {
+    run_path_loss_sweep_experiment(seed);
+    return 0;
   }
 
   if (interactive) {

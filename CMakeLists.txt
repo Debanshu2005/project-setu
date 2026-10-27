@@ -44,7 +44,7 @@ enable_testing()
 add_executable(setu_unit_tests
   tests/unit/test_main.cpp tests/unit/test_packet.cpp tests/unit/test_button.cpp
   tests/unit/test_misc.cpp tests/unit/test_node.cpp tests/unit/test_firmware_mocks.cpp
-  tests/unit/test_firmware_in_the_loop.cpp)
+  tests/unit/test_firmware_in_the_loop.cpp tests/unit/test_sensors.cpp)
 target_include_directories(setu_unit_tests PRIVATE firmware/esp32s3/include)
 target_link_libraries(setu_unit_tests PRIVATE setu_core setu_world)
 add_test(NAME unit COMMAND setu_unit_tests)

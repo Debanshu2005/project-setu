@@ -508,6 +508,42 @@ export class SetuApi {
     return await res.json();
   }
 
+  static async setMotionProfile(nodeId, profile, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/motion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: parseInt(nodeId, 10), profile: String(profile) })
+    }, timeoutMs);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to set motion profile`);
+    }
+    return await res.json();
+  }
+
+  static async scheduleGnssOutage(nodeId, startMs = 0, durationMs = 5000, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/gnss-outage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ node: parseInt(nodeId, 10), start_ms: parseInt(startMs, 10), duration_ms: parseInt(durationMs, 10) })
+    }, timeoutMs);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to schedule GNSS outage`);
+    }
+    return await res.json();
+  }
+
+  static async runPathLossExperiment(seed = 42, timeoutMs = 25000) {
+    await this.ensureResolved();
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/experiment-path-loss?seed=${seed}`, {}, timeoutMs);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to run path loss experiment`);
+    }
+    return await res.json();
+  }
+
   static async getControlState(timeoutMs = 8000) {
     await this.ensureResolved();
     const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/state`, {}, timeoutMs);

@@ -98,6 +98,11 @@ struct World::SimNode {
     node->tick();
   }
 
+  Mpu6050SensorModel imu_sensor;
+  GnssSensorModel gnss_sensor;
+  PositionMetricsTracker pos_tracker;
+  BatteryEnergyModel energy_model;
+
   struct Clock : setu::IClock {
     SimNode& n;
     explicit Clock(SimNode& s) : n(s) {}
@@ -120,8 +125,13 @@ struct World::SimNode {
     explicit Gnss(SimNode& s) : n(s) {}
     bool get_fix(int32_t& la, int32_t& lo) override {
       if (!n.gnss_on) return false;
-      xy_to_e6(n.x + 3 * n.gauss(n.rng), n.y + 3 * n.gauss(n.rng), la, lo);  // ~3 m noise
-      return true;
+      int32_t gt_la = 0, gt_lo = 0;
+      xy_to_e6(n.x, n.y, gt_la, gt_lo);
+      bool ok = n.gnss_sensor.update(n.w.now_, n.x, n.y, gt_la, gt_lo, la, lo);
+      if (ok) {
+        n.pos_tracker.record_sample(n.x, n.y, gt_la, gt_lo, la, lo, false, true);
+      }
+      return ok;
     }
   } gnss{*this};
   struct Dr : setu::IDeadReckoning {
@@ -129,10 +139,15 @@ struct World::SimNode {
     explicit Dr(SimNode& s) : n(s) {}
     bool estimate(int32_t& la, int32_t& lo) override {
       if (!n.dr_on) return false;
+      int32_t gt_la = 0, gt_lo = 0;
+      xy_to_e6(n.x, n.y, gt_la, gt_lo);
+      // Produce physical 3-axis IMU sample and integrate dead-reckoning
+      n.imu_sensor.update(n.w.now_);
       // Error grows like a random walk since the last fix: 0.8 m * sqrt(seconds).
       const double secs = std::max(1.0, (n.w.now_ - n.gnss_lost_at) / 1000.0 + 60.0);
       const double s = 0.8 * std::sqrt(secs);
       xy_to_e6(n.x + s * n.gauss(n.rng), n.y + s * n.gauss(n.rng), la, lo);
+      n.pos_tracker.record_sample(n.x, n.y, gt_la, gt_lo, la, lo, true, false);
       return true;
     }
   } dr{*this};
@@ -195,7 +210,10 @@ struct World::SimNode {
         battery(std::min<uint8_t>(100, init_batt)),
         initial_battery(std::min<uint8_t>(100, init_batt)),
         battery_fraction(std::min<uint8_t>(100, init_batt)),
-        rng(world.seed_ * 2654435761u + cfg.node_id) {
+        rng(world.seed_ * 2654435761u + cfg.node_id),
+        imu_sensor(world.seed_ * 10007u + cfg.node_id),
+        gnss_sensor(world.seed_ * 10009u + cfg.node_id),
+        energy_model(world.ch_.battery_capacity_mah, init_batt) {
     if (battery == 0) online = false;
     setu::Hal h;
     h.clock = &clock;
@@ -613,6 +631,38 @@ void World::trigger_all_survivors(setu::Hazard hz, uint32_t delay_spread_ms, con
   }
 }
 
+void World::set_motion_profile(uint16_t id, MotionProfile p) {
+  auto it = nodes_.find(id);
+  if (it != nodes_.end()) {
+    it->second->imu_sensor.set_profile(p);
+    char b[64];
+    std::snprintf(b, sizeof b, ",\"profile\":\"%s\"", motion_profile_str(p));
+    trace_event("motion_profile", id, b);
+  }
+}
+
+void World::schedule_gnss_outage(uint16_t id, uint32_t start_ms, uint32_t duration_ms) {
+  auto it = nodes_.find(id);
+  if (it != nodes_.end()) {
+    it->second->gnss_sensor.schedule_outage(start_ms, duration_ms);
+    schedule(start_ms, [this, id] { set_gnss(id, false); });
+    schedule(start_ms + duration_ms, [this, id] { set_gnss(id, true); });
+  }
+}
+
+void World::set_node_heading(uint16_t id, double heading_rad) {
+  auto it = nodes_.find(id);
+  if (it != nodes_.end()) {
+    it->second->imu_sensor.set_heading_rad(heading_rad);
+  }
+}
+
+const PositionMetricsTracker* World::get_position_metrics(uint16_t id) const {
+  auto it = nodes_.find(id);
+  if (it == nodes_.end()) return nullptr;
+  return &it->second->pos_tracker;
+}
+
 SimNodeInfo World::get_node_info(uint16_t id) const {
   SimNodeInfo info;
   auto it = nodes_.find(id);
@@ -623,6 +673,18 @@ SimNodeInfo World::get_node_info(uint16_t id) const {
   info.x = n.x;
   info.y = n.y;
   xy_to_e6(n.x, n.y, info.lat_e6, info.lon_e6);
+  info.ground_truth_x = n.x;
+  info.ground_truth_y = n.y;
+  info.ground_truth_lat_e6 = info.lat_e6;
+  info.ground_truth_lon_e6 = info.lon_e6;
+  info.estimated_lat_e6 = (n.pos_tracker.last_est_lat_e6() != 0) ? n.pos_tracker.last_est_lat_e6() : info.lat_e6;
+  info.estimated_lon_e6 = (n.pos_tracker.last_est_lon_e6() != 0) ? n.pos_tracker.last_est_lon_e6() : info.lon_e6;
+  info.pos_error_m = n.pos_tracker.current_error_m();
+  info.pos_mae_m = n.pos_tracker.mae_m();
+  info.pos_rmse_m = n.pos_tracker.rmse_m();
+  info.pos_max_error_m = n.pos_tracker.max_error_m();
+  info.motion_profile = motion_profile_str(n.imu_sensor.profile());
+  info.gnss_status = gnss_status_str(n.gnss_sensor.status());
   info.battery = n.battery;
   info.initial_battery = n.initial_battery;
   info.energy_consumed_mah = n.energy_consumed_mah;

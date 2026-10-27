@@ -619,6 +619,75 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // POST /api/control/motion
+  if (req.method === 'POST' && pathname === '/api/control/motion') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const node = parseInt(body.node !== undefined ? body.node : (body.id !== undefined ? body.id : body.nodeId), 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
+      const rawProfile = String(body.profile || 'stationary').toLowerCase().replace('-', '_');
+      const validProfiles = ['stationary', 'walking', 'running', 'sudden_movement', 'fall_impact', 'irregular'];
+      const profile = validProfiles.includes(rawProfile) ? rawProfile : 'stationary';
+      const result = await simManager.sendCommand({ cmd: 'set_motion', node, profile });
+      return sendJson(res, 200, { success: true, result, node, profile }, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
+  // POST /api/control/gnss-outage
+  if (req.method === 'POST' && pathname === '/api/control/gnss-outage') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const node = parseInt(body.node !== undefined ? body.node : (body.id !== undefined ? body.id : body.nodeId), 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
+      const startMs = Math.max(0, parseInt(body.start_ms || 0, 10));
+      const durationMs = Math.max(100, parseInt(body.duration_ms || 5000, 10));
+      const result = await simManager.sendCommand({ cmd: 'schedule_gnss_outage', node, start_ms: startMs, duration_ms: durationMs });
+      return sendJson(res, 200, { success: true, result, node, start_ms: startMs, duration_ms: durationMs }, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
+  // GET / POST /api/control/experiment-path-loss
+  if ((req.method === 'GET' || req.method === 'POST') && pathname === '/api/control/experiment-path-loss') {
+    try {
+      const simPath = findSimulator();
+      if (!simPath) {
+        return sendError(res, 500, 'Simulator binary (setu_sim) not found.', req);
+      }
+      const searchParams = reqUrl.searchParams;
+      const seed = Math.max(0, parseInt(searchParams.get('seed') || 42, 10));
+      const args = ['--experiment-path-loss', '--seed', String(seed)];
+      const child = spawn(simPath, args, { cwd: ROOT_DIR });
+      let stdoutData = '';
+      let stderrData = '';
+      child.stdout.on('data', chunk => { stdoutData += chunk; });
+      child.stderr.on('data', chunk => { stderrData += chunk; });
+      child.on('close', code => {
+        if (code !== 0) {
+          return sendError(res, 500, `Experiment execution failed with code ${code}: ${stderrData || stdoutData}`, req);
+        }
+        try {
+          const parsed = JSON.parse(stdoutData);
+          return sendJson(res, 200, parsed, req);
+        } catch {
+          return sendJson(res, 200, { raw: stdoutData }, req);
+        }
+      });
+      return;
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
   // GET /api/control/state
   if (req.method === 'GET' && pathname === '/api/control/state') {
     try {

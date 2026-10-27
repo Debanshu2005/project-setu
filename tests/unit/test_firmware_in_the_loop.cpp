@@ -216,3 +216,59 @@ TEST(fitl_world_end_to_end_firmware_in_the_loop) {
   CHECK_EQ(w.alerts()[0].origin, 1);
   CHECK(w.alerts()[0].hops >= 1); // Hopped through Relay
 }
+
+TEST(fitl_world_rf_channel_failure_scenario_reports_honest_failure) {
+  // Negative Verification: Proves that an isolated node whose RF channel prevents delivery
+  // does NOT falsely report success, exhausts retries truthfully, and plays SendFailed haptic.
+  sim::ChannelParams ch;
+  ch.sf = 7;
+  ch.bw_hz = 125000;
+  ch.tx_dbm = 14;
+  ch.path_exp = 3.5; // High path loss prevents packet reception at 1500m
+  ch.random_loss = 0.0;
+
+  sim::World w(ch, 99);
+
+  NodeConfig c;
+  c.sf = 7;
+  c.bw_hz = 125000;
+  c.retry_timeout_ms = 1000; // Fast 1s base retry timeout for test speed
+  c.max_retries = 3;
+
+  // Hub at (0, 0)
+  c.node_id = 0;
+  c.role = Role::Hub;
+  w.add_node(c, 0, 0);
+
+  // Survivor at (2500, 0) - Far outside radio sensitivity, completely isolated
+  c.node_id = 1;
+  c.role = Role::Survivor;
+  w.add_node(c, 2500, 0);
+
+  // 1. Inject button press ISR on isolated Survivor #1 at t=100
+  w.firmware_button_isr(1, true);
+  w.step(150);
+  w.firmware_button_isr(1, false);
+
+  // 2. Advance time past all retry backoffs:
+  // Attempt 0: t=100ms
+  // Retry 1: t=100 + 1000*1 = 1100ms
+  // Retry 2: t=1100 + 1000*2 = 3100ms
+  // Retry 3: t=3100 + 1000*3 = 6100ms
+  // Total duration: 15000ms ensures all retries terminate
+  w.run_until(15000);
+
+  // 3. Verify honest negative failure state
+  sim::SimNodeInfo s1 = w.get_node_info(1);
+  CHECK(!s1.acked);              // ACK was NOT falsely manufactured
+  CHECK(!s1.active);             // Active state terminated
+  CHECK(s1.gave_up);             // Honestly reported gave_up = true
+  CHECK_EQ(s1.stats.retries, 3u);// Exactly 3 retries performed
+  CHECK(s1.stats.tx_sos >= 4u);  // 1 initial + 3 retries = 4 transmissions
+
+  // 4. Verify Hub never received the alert
+  CHECK_EQ(w.alerts().size(), 0u);
+  CHECK_EQ(w.get_node_info(0).stats.rx_total, 0u);
+  CHECK_EQ(w.first_ack_ms(1, 100), -1);
+}
+

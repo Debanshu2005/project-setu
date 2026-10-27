@@ -1,0 +1,15 @@
+﻿{"experiment":"path_loss_sweep","seed":42,"fixed_params":{"tx_dbm":14.0,"freq_hz":868000000,"bw_hz":125000,"sf":7,"cr":"4/5","payload_bytes":25},"results":[
+  {"path_exp":2,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":2.25,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":2.5,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":2.75,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":3,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":3.25,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":3.5,"delivered":false,"pdr_pct":0,"acked":false,"latency_ms":0,"retries":2,"relay_tx":1,"tx_total":4,"drops":{"weak":4,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":3.75,"delivered":false,"pdr_pct":0,"acked":false,"latency_ms":0,"retries":2,"relay_tx":0,"tx_total":3,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":4,"delivered":false,"pdr_pct":0,"acked":false,"latency_ms":0,"retries":2,"relay_tx":0,"tx_total":3,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":4.25,"delivered":false,"pdr_pct":0,"acked":false,"latency_ms":0,"retries":2,"relay_tx":0,"tx_total":3,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
+  {"path_exp":4.5,"delivered":false,"pdr_pct":0,"acked":false,"latency_ms":0,"retries":2,"relay_tx":0,"tx_total":3,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}}
+],
+"physics_explanation":"Increasing path-loss exponent n geometrically increases attenuation PL(d) = PL0 + 10*n*log10(d/d0) for d > d0 (10m). As n rises from 2.0 towards 4.5, RSSI at 350m drops below SX1262 sensitivity (-124 dBm at SF7/125kHz), transitioning from reliable multi-hop delivery to weak-signal drops and retry exhaustion."
+}

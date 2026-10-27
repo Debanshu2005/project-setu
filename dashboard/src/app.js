@@ -152,6 +152,16 @@ class SetuDashboardApp {
         this.inspector.onLinkToggle = async (a, b, blocked) => {
           await this.executeLinkToggle(a, b, blocked);
         };
+
+        // Inspector motion profile change handler
+        this.inspector.onMotionChange = async (nodeId, profile) => {
+          await this.executeMotionChange(nodeId, profile);
+        };
+
+        // Inspector GNSS outage schedule handler
+        this.inspector.onGnssOutage = async (nodeId, startMs, durationMs) => {
+          await this.executeGnssOutage(nodeId, startMs, durationMs);
+        };
       }
     } catch (inspErr) {
       console.error('Inspector initialization error:', inspErr);
@@ -914,6 +924,38 @@ class SetuDashboardApp {
     }
   }
 
+  async executeMotionChange(nodeId, profile) {
+    if (this.mode !== 'live') {
+      this.toggleOperatingMode();
+    }
+    try {
+      await SetuApi.setMotionProfile(nodeId, profile);
+      await this.syncLiveEngineState();
+      this.elStatusText.textContent = `SET NODE ${nodeId} MOTION: ${String(profile).toUpperCase()}`;
+      return { ok: true, node: nodeId, profile };
+    } catch (err) {
+      console.warn('Set motion profile failed:', err);
+      this.elStatusText.textContent = `SET MOTION FAILED: ${err.message}`;
+      throw err;
+    }
+  }
+
+  async executeGnssOutage(nodeId, startMs, durationMs) {
+    if (this.mode !== 'live') {
+      this.toggleOperatingMode();
+    }
+    try {
+      await SetuApi.scheduleGnssOutage(nodeId, startMs, durationMs);
+      await this.syncLiveEngineState();
+      this.elStatusText.textContent = `SCHEDULED GNSS OUTAGE ON NODE ${nodeId} FOR ${durationMs}ms`;
+      return { ok: true, node: nodeId, startMs, durationMs };
+    } catch (err) {
+      console.warn('Schedule GNSS outage failed:', err);
+      this.elStatusText.textContent = `GNSS OUTAGE SCHEDULE FAILED: ${err.message}`;
+      throw err;
+    }
+  }
+
   async executeOperatorCommand(cmdObj) {
     if (!cmdObj) return;
     if (cmdObj.type === 'trigger') {
@@ -980,6 +1022,16 @@ class SetuDashboardApp {
             existing.dr_on = n.dr !== undefined ? n.dr : existing.dr_on;
             existing.lat_e6 = n.lat_e6;
             existing.lon_e6 = n.lon_e6;
+            existing.gt_lat_e6 = n.gt_lat_e6 !== undefined ? n.gt_lat_e6 : n.lat_e6;
+            existing.gt_lon_e6 = n.gt_lon_e6 !== undefined ? n.gt_lon_e6 : n.lon_e6;
+            existing.est_lat_e6 = n.est_lat_e6 !== undefined ? n.est_lat_e6 : n.lat_e6;
+            existing.est_lon_e6 = n.est_lon_e6 !== undefined ? n.est_lon_e6 : n.lon_e6;
+            existing.pos_error_m = typeof n.pos_error_m === 'number' ? n.pos_error_m : 0.0;
+            existing.pos_mae_m = typeof n.pos_mae_m === 'number' ? n.pos_mae_m : 0.0;
+            existing.pos_rmse_m = typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : 0.0;
+            existing.pos_max_err_m = typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : 0.0;
+            existing.motion_profile = n.motion_profile || 'stationary';
+            existing.gnss_status = n.gnss_status || (n.gnss ? 'FIX_3D' : 'NO_FIX');
             existing.stats = {
               tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
               rx: n.rx_total || 0,
@@ -1013,6 +1065,16 @@ class SetuDashboardApp {
               dr_on: n.dr !== undefined ? n.dr : true,
               lat_e6: n.lat_e6,
               lon_e6: n.lon_e6,
+              gt_lat_e6: n.gt_lat_e6 !== undefined ? n.gt_lat_e6 : n.lat_e6,
+              gt_lon_e6: n.gt_lon_e6 !== undefined ? n.gt_lon_e6 : n.lon_e6,
+              est_lat_e6: n.est_lat_e6 !== undefined ? n.est_lat_e6 : n.lat_e6,
+              est_lon_e6: n.est_lon_e6 !== undefined ? n.est_lon_e6 : n.lon_e6,
+              pos_error_m: typeof n.pos_error_m === 'number' ? n.pos_error_m : 0.0,
+              pos_mae_m: typeof n.pos_mae_m === 'number' ? n.pos_mae_m : 0.0,
+              pos_rmse_m: typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : 0.0,
+              pos_max_err_m: typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : 0.0,
+              motion_profile: n.motion_profile || 'stationary',
+              gnss_status: n.gnss_status || (n.gnss ? 'FIX_3D' : 'NO_FIX'),
               stats: {
                 tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
                 rx: n.rx_total || 0,

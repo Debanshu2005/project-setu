@@ -12,6 +12,8 @@ export class InspectorComponent {
     this.onTrigger = null;      // (nodeId, kind) => void
     this.onStateChange = null;  // (nodeId, stateUpdate) => void
     this.onLinkToggle = null;   // (a, b, blocked) => void
+    this.onMotionChange = null; // (nodeId, profile) => void
+    this.onGnssOutage = null;   // (nodeId, startMs, durationMs) => void
 
     this.sim.subscribe((engine, type) => {
       if (this.currentNode) {
@@ -143,6 +145,25 @@ export class InspectorComponent {
                 ${n.dr_on ? 'IMU DR Active' : 'IMU DR Disabled'}
               </button>
             </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Motion Profile (Inertial):</span>
+              <select id="selMotionProfile" style="font-size: 10px; padding: 3px 6px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #38bdf8; border-radius: var(--radius-sm); cursor: pointer;">
+                <option value="stationary" ${n.motion_profile === 'stationary' ? 'selected' : ''}>🚶‍♂️ Stationary</option>
+                <option value="walking" ${n.motion_profile === 'walking' ? 'selected' : ''}>🚶 Walking (1.8 Hz)</option>
+                <option value="running" ${n.motion_profile === 'running' ? 'selected' : ''}>🏃 Running (2.8 Hz)</option>
+                <option value="sudden_movement" ${n.motion_profile === 'sudden_movement' ? 'selected' : ''}>⚡ Sudden Movement</option>
+                <option value="fall_impact" ${n.motion_profile === 'fall_impact' ? 'selected' : ''}>💥 Fall & Impact</option>
+                <option value="irregular" ${n.motion_profile === 'irregular' ? 'selected' : ''}>〰️ Irregular / Entrapped</option>
+              </select>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span>Simulate GNSS Outage:</span>
+              <button id="btnScheduleGnssOutage" class="btn" style="padding: 3px 8px; font-size: 10px; background: rgba(245, 158, 11, 0.25); border: 1px solid #f59e0b; color: #fcd34d;">
+                📡 Trigger 5s Outage
+              </button>
+            </div>
           </div>
         </div>
       `;
@@ -248,12 +269,17 @@ export class InspectorComponent {
       ${linksHtml}
 
       <div class="wire-breakdown-card">
-        <div class="wire-header">
+        <div class="wire-header" style="color: #38bdf8; font-weight: 700;">
           <span>Geographic Location & Provenance</span>
+          <span class="badge" style="background: ${n.gnss_status === 'FIX_3D' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${n.gnss_status === 'FIX_3D' ? '#10b981' : '#ef4444'}; color: ${n.gnss_status === 'FIX_3D' ? '#34d399' : '#f87171'}; font-size: 9px;">${n.gnss_status || (n.gnss_on ? 'FIX_3D' : 'NO_FIX')}</span>
         </div>
         <table class="field-table">
-          <tr><td class="field-name">Coordinates:</td><td class="field-val">${lat}°, ${lon}°</td></tr>
-          <tr><td class="field-name">Cartesian:</td><td class="field-val">X: ${posX}m, Y: ${posY}m</td></tr>
+          <tr><td class="field-name">Ground-Truth Coords:</td><td class="field-val"><strong style="color: #fff;">${((n.gt_lat_e6 || n.lat_e6 || 0) / 1e6).toFixed(6)}°, ${((n.gt_lon_e6 || n.lon_e6 || 0) / 1e6).toFixed(6)}°</strong></td></tr>
+          <tr><td class="field-name">Firmware-Estimated Coords:</td><td class="field-val" style="color: #38bdf8;">${((n.est_lat_e6 || n.lat_e6 || 0) / 1e6).toFixed(6)}°, ${((n.est_lon_e6 || n.lon_e6 || 0) / 1e6).toFixed(6)}°</td></tr>
+          <tr><td class="field-name">Position Estimation Error:</td><td class="field-val" style="color: ${(n.pos_error_m || 0) > 10.0 ? '#ef4444' : (n.pos_error_m || 0) > 4.0 ? '#f59e0b' : '#10b981'}; font-weight: 700;">${typeof n.pos_error_m === 'number' ? n.pos_error_m.toFixed(2) : '0.00'} m</td></tr>
+          <tr><td class="field-name">Position Error (MAE / RMSE):</td><td class="field-val">${typeof n.pos_mae_m === 'number' ? n.pos_mae_m.toFixed(2) : '0.00'} m / ${typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m.toFixed(2) : '0.00'} m</td></tr>
+          <tr><td class="field-name">Max Outage Drift:</td><td class="field-val">${typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m.toFixed(2) : '0.00'} m</td></tr>
+          <tr><td class="field-name">Cartesian Ground-Truth:</td><td class="field-val">X: ${posX}m, Y: ${posY}m</td></tr>
           <tr><td class="field-name">Fix Provenance:</td><td class="field-val" style="color:${n.gnss_on ? '#10b981' : '#f59e0b'}">${posProv}</td></tr>
         </table>
       </div>
@@ -381,6 +407,28 @@ export class InspectorComponent {
         }
       });
     });
+
+    // 7. Motion Profile Selector
+    const selMotion = this.nodeContainer.querySelector('#selMotionProfile');
+    if (selMotion) {
+      selMotion.addEventListener('change', e => {
+        const profile = e.target.value;
+        n.motion_profile = profile;
+        if (this.onMotionChange) {
+          this.onMotionChange(n.id, profile);
+        }
+      });
+    }
+
+    // 8. Schedule GNSS Outage Button
+    const btnOutage = this.nodeContainer.querySelector('#btnScheduleGnssOutage');
+    if (btnOutage) {
+      btnOutage.addEventListener('click', () => {
+        if (this.onGnssOutage) {
+          this.onGnssOutage(n.id, 0, 5000);
+        }
+      });
+    }
   }
 
   renderPacket() {
