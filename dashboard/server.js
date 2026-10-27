@@ -135,6 +135,8 @@ class SimulationJobManager {
     this.maxConcurrent = Math.max(1, parseInt(process.env.MAX_CONCURRENT_SIMS || options.maxConcurrent || 2, 10));
     this.defaultTimeoutMs = Math.max(5000, parseInt(process.env.SIM_TIMEOUT_MS || options.defaultTimeoutMs || 60000, 10));
     this.maxEventBufferSize = Math.max(100, parseInt(process.env.MAX_JOB_EVENTS || options.maxEventBufferSize || 2000, 10));
+    this.maxQueueSize = Math.max(1, parseInt(process.env.MAX_QUEUE_SIZE || options.maxQueueSize || 5, 10));
+    this.jobsIndexFile = path.join(TRACES_DIR, 'jobs_index.json');
 
     this.jobs = new Map(); // jobId -> SimulationJob
     this.queue = []; // Array of jobIds
@@ -145,9 +147,68 @@ class SimulationJobManager {
       failedTotal: 0,
       cancelledTotal: 0
     };
+
+    // Recover previous completed and interrupted jobs across cloud restarts/sleeps
+    this.loadIndex();
+  }
+
+  saveIndex() {
+    try {
+      const records = [];
+      for (const [id, job] of this.jobs) {
+        records.push({
+          id: job.id,
+          sessionId: job.sessionId,
+          status: (job.status === 'running' || job.status === 'starting' || job.status === 'queued') ? 'interrupted' : job.status,
+          createdAt: job.createdAt,
+          startedAt: job.startedAt,
+          completedAt: job.completedAt || Date.now(),
+          durationMs: job.durationMs,
+          traceFilename: job.traceFilename,
+          summary: job.summary,
+          error: job.error || ((job.status === 'running' || job.status === 'starting' || job.status === 'queued') ? 'Job interrupted by container restart / cold sleep' : null)
+        });
+      }
+      fs.writeFileSync(this.jobsIndexFile, JSON.stringify(records.slice(-100), null, 2), 'utf8');
+    } catch (err) {
+      console.warn('[JobManager] Failed to persist job index:', err.message);
+    }
+  }
+
+  loadIndex() {
+    if (!fs.existsSync(this.jobsIndexFile)) return;
+    try {
+      const content = fs.readFileSync(this.jobsIndexFile, 'utf8');
+      const records = JSON.parse(content);
+      if (Array.isArray(records)) {
+        let restoredCount = 0;
+        for (const r of records) {
+          if (r && r.id) {
+            const job = new SimulationJob(r.id, {}, [], [], r.sessionId, this);
+            job.status = (r.status === 'running' || r.status === 'starting' || r.status === 'queued') ? 'interrupted' : r.status;
+            job.createdAt = r.createdAt || Date.now();
+            job.startedAt = r.startedAt;
+            job.completedAt = r.completedAt;
+            job.durationMs = r.durationMs || 0;
+            job.summary = r.summary;
+            job.error = r.error;
+            job.traceFilename = r.traceFilename;
+            this.jobs.set(r.id, job);
+            restoredCount++;
+          }
+        }
+        console.log(`[JobManager] Restored ${restoredCount} historical job(s) from persistent index across restart.`);
+      }
+    } catch (err) {
+      console.warn('[JobManager] Failed to load persistent job index:', err.message);
+    }
   }
 
   createJob(params = {}, triggers = [], faults = [], sessionId = null) {
+    if (this.queue.length >= this.maxQueueSize) {
+      throw new Error(`Simulation queue is full (max ${this.maxQueueSize} queued jobs). Please wait for active runs to complete.`);
+    }
+
     const randSuffix = Math.random().toString(36).substring(2, 8);
     const jobId = `sim_${Date.now()}_${randSuffix}`;
     const job = new SimulationJob(jobId, params, triggers, faults, sessionId, this);
@@ -155,13 +216,14 @@ class SimulationJobManager {
     this.jobs.set(jobId, job);
     this.queue.push(jobId);
     this.metrics.submittedTotal++;
+    this.saveIndex();
 
     // Prune historical jobs if map grows too large
     if (this.jobs.size > 200) {
       const oldestKeys = Array.from(this.jobs.keys()).slice(0, 50);
       for (const k of oldestKeys) {
         const old = this.jobs.get(k);
-        if (old && (old.status === 'completed' || old.status === 'failed' || old.status === 'cancelled')) {
+        if (old && (old.status === 'completed' || old.status === 'failed' || old.status === 'cancelled' || old.status === 'interrupted')) {
           this.jobs.delete(k);
         }
       }
@@ -173,6 +235,14 @@ class SimulationJobManager {
 
   processQueue() {
     if (this.activeJobs.size >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    // Free-tier memory protection: check RSS before spawning child process
+    const memRssMb = process.memoryUsage().rss / (1024 * 1024);
+    if (memRssMb > 380) { // 380 MB is ~75% of 512 MB free container limit
+      console.warn(`[JobManager] Memory RSS high (${memRssMb.toFixed(1)} MB). Delaying job execution.`);
+      setTimeout(() => this.processQueue(), 2000).unref();
       return;
     }
 
@@ -258,6 +328,8 @@ class SimulationJobManager {
     const child = spawn(simPath, args, { cwd: ROOT_DIR });
     job.process = child;
     job.status = 'running';
+    job.startedAt = Date.now();
+    this.saveIndex();
     job.broadcastSSE('start', { jobId: job.id, traceFilename: job.traceFilename });
 
     // Set execution timeout watchdog
@@ -346,6 +418,8 @@ class SimulationJobManager {
         }
       }
 
+      this.saveIndex();
+
       // Close all SSE listeners for this job
       for (const client of job.sseClients) {
         try { client.end(); } catch {}
@@ -364,6 +438,7 @@ class SimulationJobManager {
       job.status = 'failed';
       job.error = `Process spawn error: ${err.message}`;
       this.metrics.failedTotal++;
+      this.saveIndex();
       job.broadcastSSE('done', { status: 'failed', error: job.error, jobId: job.id });
       if (job.completionReject) job.completionReject(err);
       this.processQueue();
@@ -381,6 +456,7 @@ class SimulationJobManager {
       job.error = reason;
       job.completedAt = Date.now();
       this.metrics.cancelledTotal++;
+      this.saveIndex();
       job.broadcastSSE('done', { status: 'cancelled', error: reason, jobId: job.id });
       if (job.completionReject) job.completionReject(new Error(reason));
       return true;
@@ -389,6 +465,7 @@ class SimulationJobManager {
     if (job.status === 'running' && job.process) {
       job.status = 'cancelled';
       job.error = reason;
+      this.saveIndex();
       try {
         job.process.kill('SIGTERM');
         // Force kill if process does not exit in 3s
@@ -922,6 +999,9 @@ const server = http.createServer(async (req, res) => {
         eventsUrl: `/api/jobs/${job.id}/events`
       }, req);
     } catch (err) {
+      if (err.message && err.message.includes('queue is full')) {
+        return sendError(res, 429, err.message, req);
+      }
       return sendError(res, 500, err.message, req);
     }
   }

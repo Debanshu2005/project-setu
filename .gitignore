@@ -27,6 +27,7 @@ out.jsonl
 out_test.jsonl
 scenarios/traces/sim_*.jsonl
 scenarios/traces/job_*.jsonl
+scenarios/traces/jobs_index.json
 scenarios/traces/uploaded_*.jsonl
 compile_commands.json
 *.log

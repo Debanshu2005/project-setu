@@ -519,7 +519,24 @@ class SetuDashboardApp {
           lblEngineStatus.textContent = `Testing /health at ${candidate || 'configured backend'}...`;
           lblEngineStatus.style.color = '#38bdf8';
         }
-        const result = await SetuApi.pingBackend(candidate);
+        let result = await SetuApi.pingBackend(candidate, 6000);
+        if (!result.ok && (candidate.includes('onrender.com') || result.error?.includes('Timeout'))) {
+          if (lblEngineStatus) {
+            lblEngineStatus.textContent = `Free container may be sleeping. Waiting for cold start...`;
+            lblEngineStatus.style.color = '#f59e0b';
+          }
+          result = await SetuApi.pingBackendWithColdStartRetry(
+            candidate,
+            (attempt, maxAttempts, elapsedSec) => {
+              if (lblEngineStatus) {
+                lblEngineStatus.textContent = `Waking free container (Attempt ${attempt}/${maxAttempts}, ${elapsedSec}s elapsed)...`;
+              }
+            },
+            12,
+            5000,
+            2000
+          );
+        }
         if (lblEngineStatus) {
           if (result.ok) {
             const data = result.data || {};
@@ -1217,11 +1234,21 @@ class SetuDashboardApp {
           status = { status: 'offline', error: statErr.message };
         }
 
-        if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render'))) {
+        if (status.status === 'offline' && base && (base.includes('onrender.com') || base.includes('render') || base.includes('hf.space') || base.includes('koyeb'))) {
           if (this.elStatusDot) this.elStatusDot.style.background = '#f59e0b';
-          if (this.elStatusText) this.elStatusText.textContent = 'WAKING UP RENDER ENGINE... (Cold start may take ~30s)';
-          const ping = await SetuApi.pingBackend(base, 25000);
-          if (ping.ok) {
+          if (this.elStatusText) this.elStatusText.textContent = 'WAKING UP FREE BACKEND... (Cold start may take 45-75s)';
+          const pingResult = await SetuApi.pingBackendWithColdStartRetry(
+            base,
+            (attempt, maxAttempts, elapsedSec) => {
+              if (this.elStatusText) {
+                this.elStatusText.textContent = `WAKING UP FREE BACKEND... (Attempt ${attempt}/${maxAttempts}, ${elapsedSec}s elapsed — cold starts take ~45-70s)`;
+              }
+            },
+            16,
+            5000,
+            2000
+          );
+          if (pingResult.ok) {
             try {
               status = await SetuApi.getStatus(6000);
             } catch (retryErr) {

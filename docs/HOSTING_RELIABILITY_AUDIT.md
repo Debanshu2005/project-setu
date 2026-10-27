@@ -135,13 +135,16 @@ This document records the exact diagnostic evidence discovered in the codebase, 
 
 ---
 
-## 5. Architectural Requirements for Resolution
+## 5. Architectural Requirements for Resolution & Zero-Budget Strategy
 
-To eliminate unresponsiveness and ensure high reliability, the system requires:
-1. **Asynchronous Job-Based Lifecycle**: Replace synchronous request-blocking execution with a managed job model (`queued`, `starting`, `running`, `completed`, `failed`, `cancelled`).
-2. **Process Concurrency Limiting & Isolation**: Isolate simulation runs with dedicated job IDs, bounded concurrency (e.g., max 2–3 concurrent workers), and FIFO queueing.
-3. **Bounded Ring Buffers & Disk Streaming**: Pipe simulation traces directly to disk streams or bounded ring buffers (max 2,000–5,000 events per job) instead of accumulating raw strings in the V8 heap.
-4. **Separate Liveness & Readiness Probes**:
-   - `/health/liveness`: Verifies the HTTP process is responsive (<10 ms).
+To eliminate unresponsiveness and ensure high reliability without incurring mandatory hosting fees ($0.00/month):
+1. **Asynchronous Job-Based Lifecycle**: Replace synchronous request-blocking execution with a managed job model (`queued`, `starting`, `running`, `completed`, `failed`, `cancelled`, `interrupted`). The API immediately returns HTTP 202 with polling and event stream URLs.
+2. **Process Concurrency Limiting & Isolation**: Isolate simulation runs with dedicated job IDs, bounded concurrency (`MAX_CONCURRENT_SIMS = 2`), bounded queue (`maxQueueSize = 5`, HTTP 429 on overflow), and pre-spawn RSS memory guards (380 MB threshold).
+3. **Bounded Ring Buffers & Disk Streaming**: Pipe simulation traces directly to disk streams (`fs.createWriteStream`) on disk instead of accumulating raw JSON strings in the V8 heap. Live SSE events use a bounded ring buffer (2,000 events max).
+4. **Multi-Tier Health Probes**:
+   - `/health/liveness`: Verifies the HTTP process is responsive (<2 ms).
    - `/health/readiness`: Verifies worker pool health, memory RSS headroom, and simulator binary availability.
-5. **Modern Hosting Provider**: Migrate the backend to an always-on environment (Fly.io or Railway) with dedicated memory (1GB+) and persistent volume support, while retaining Vercel for fast edge delivery of the frontend.
+   - `/api/metrics`: Exposes job counters, active workers, queue depth, and memory RSS.
+5. **Legitimate Cold-Start Handling (No Ping Bots)**: Tolerate Render's 15-minute sleep policy using progressive client retries (`SetuApi.pingBackendWithColdStartRetry`) with live status feedback in the UI rather than evading inactivity rules.
+6. **Persistence & Restart Recovery**: Record job states in `scenarios/traces/jobs_index.json`. On container spin-up after sleep/restart, mark previously active jobs as `status: 'interrupted'` and restore completed job history.
+7. **Zero-Budget Hosting Strategy**: Maintain the existing free Render deployment while offering a Zero-Cost Hybrid option (Local Node with Cloudflare Tunnel) for heavy multi-core simulation runs, documented in [ZERO_BUDGET_HOSTING_STRATEGY.md](file:///d:/CityGrid/my-project/project-setu/project-setu/docs/ZERO_BUDGET_HOSTING_STRATEGY.md).

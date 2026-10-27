@@ -1,79 +1,71 @@
-# Project Setu: Cloud Deployment Architecture & Hosting Migration Analysis
+# Project Setu: Cloud Deployment Architecture & Zero-Budget Strategy
 
-**Document Version:** 1.0.0  
+**Document Version:** 2.0.0  
 **Date:** October 27, 2026  
-**Status:** Architecture Recommendation & Technical Evaluation
+**Status:** Zero-Budget Architecture Evaluation & Multi-Tier Deployment Plan
 
 ---
 
-## 1. Hosting Platform Evaluation Matrix
+## 1. Zero-Budget Hosting Platform Evaluation Matrix
 
-We evaluated four candidate cloud hosting architectures against the specific computational, networking, and memory demands of Project Setu:
+Under the explicit mandate to **avoid mandatory hosting expenses ($0.00/month)**, we evaluated cloud hosting architectures against Project Setu's computational, networking, and memory demands:
 
-| Evaluation Criterion | **Vercel** (Frontend / Edge) | **Render (Paid Starter)** | **Railway (Hobby/Pro)** | **Fly.io (Shared-CPU Micro-VM)** *(Recommended)* |
-| :--- | :--- | :--- | :--- | :--- |
-| **Role in Setu** | **Dashboard & Assets** | Backend API & Simulation | Backend API & Simulation | **Backend API & Simulation** |
-| **Execution Model** | Serverless Edge Lambdas | Long-running Container | Long-running Container | **Long-running Micro-VM (Firecracker)** |
-| **Cold Starts** | Zero (Global CDN Edge) | None (Always-on) | None (Always-on) | **None (`auto_stop_machines = false`)** |
-| **CPU Allocation** | Shared serverless burst | 0.5 shared vCPU | Shared vCPU (unthrottled) | **1.0 vCPU (shared or dedicated)** |
-| **Memory Allocation** | 1024 MB per execution | 512 MB – 1 GB | Up to 8 GB (usage-based) | **1024 MB – 2048 MB (configurable)** |
-| **Long-Running Simulations** | ❌ Hard 10s–60s execution limit | ✅ Supported | ✅ Supported | ✅ **Supported (no timeout limit)** |
-| **Streaming (SSE / WebSockets)** | ⚠️ Limited / buffered on edge | ✅ Supported | ✅ Supported | ✅ **Native TCP / HTTP streaming** |
-| **Persistent Storage** | ❌ Ephemeral only | ⚠️ Persistent disk ($0.25/GB/mo) | ⚠️ Ephemeral by default (volumes opt-in) | ✅ **Native NVMe Persistent Volumes (`fly volumes`)** |
-| **Deployment Mechanism** | Git push / CLI | Docker / Git | Docker / Git | **Docker via `fly.toml` & `flyctl`** |
-| **Live Log Streaming** | Edge runtime logs | Web dashboard log stream | Interactive CLI & UI log stream | **Real-time CLI (`fly logs`) & Grafana metrics** |
-| **Expected Monthly Cost** | **$0.00** (Hobby plan) | **$7.00 / mo** (Starter 512MB) | **$5.00 / mo** (Usage-based) | **$3.19 – $5.70 / mo** (1GB RAM + 3GB Volume) |
-
----
-
-## 2. Comparative Platform Analysis
-
-### 2.1. Option 1: Vercel (Recommended for Frontend Only)
-- **Strengths**: Vercel currently hosts the Setu frontend dashboard at `https://project-setu.vercel.app`. It provides instant global CDN caching, zero cold-start latency for static web assets, and effortless preview deployments on pull requests.
-- **Limitations**: Vercel serverless functions have a 10-second default timeout (max 60 seconds on Pro) and cannot host a persistent, interactive C++ process communicating over standard input/output pipes.
-- **Verdict**: **Retain Vercel for the frontend user interface**. Do not attempt to run the native simulation engine inside Vercel serverless functions.
-
-### 2.2. Option 2: Render Paid Plan (Starter Tier — $7/mo)
-- **Strengths**: Upgrading the existing Render service from `free` to `starter` eliminates the 15-minute idle spin-down and cold-start wake-up lag. It preserves the existing deployment URL (`https://project-setu-backend.onrender.com`).
-- **Limitations**: The $7/mo Starter tier only allocates 512 MB of RAM and shared 0.5 vCPU. To safely run multiple concurrent simulations and avoid OOM crashes, an upgrade to the Standard tier ($25/mo for 2 GB RAM) is required. Disk persistence requires an additional paid volume add-on.
-- **Verdict**: Viable as a zero-configuration fallback, but higher cost-to-performance ratio than modern alternatives.
-
-### 2.3. Option 3: Railway (Turnkey Alternative — $5/mo base)
-- **Strengths**: Railway offers an excellent developer experience, automatic Dockerfile detection, no idle sleep, generous memory ceilings (up to 8 GB on Pro), and seamless WebSocket/SSE streaming. Pricing is usage-based ($5/mo platform fee + per-minute resource consumption).
-- **Limitations**: Metrics and observability are less granular than dedicated VM platforms; CPU allocation is variable under heavy noisy-neighbor conditions.
-- **Verdict**: High-quality secondary choice if the team prefers an entirely managed UI-based workflow.
-
-### 2.4. Option 4: Fly.io (Primary Recommendation — ~$3.50 to $5.50/mo)
-- **Strengths**:
-  1. **Direct Compute**: Runs your existing Docker image directly inside lightweight, isolated **Firecracker micro-VMs**.
-  2. **Dedicated Headroom**: Easily configured with **1024 MB or 2048 MB RAM** and 1 full vCPU, completely preventing OOM crashes during large scenario executions.
-  3. **No Spin-Down**: Configuring `auto_stop_machines = false` guarantees the backend is always awake and listening.
-  4. **Native Persistent Storage**: Single-command NVMe volume creation (`fly volumes create setu_traces --size 3`) permanently stores experiment trace logs across restarts.
-  5. **Cost Effectiveness**: 1 shared CPU with 1024 MB RAM costs ~$3.19/month; 3 GB persistent storage is ~$0.45/month. Total cost is **under $4.00/month**.
-  6. **Separate Health Checking**: Supports explicit `http_checks` with separate liveness and readiness paths.
-- **Verdict**: **Selected as the primary target for the backend simulation engine**.
+| Evaluation Criterion | **Vercel** (Frontend) | **Render Free** (Active Backend) | **Hugging Face / Koyeb** (Alt Free) | **Local + Cloudflare** (Zero-Cost Hybrid) | **Fly.io / Railway** (Paid Upgrade Only) |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Role in Setu** | **Dashboard & Assets** | **Backend API & Simulator** | **Alternative Free Backend** | **High-Performance Worker** | *Optional Future Paid Tier* |
+| **Execution Model** | Serverless Edge CDN | Container Web Service | Docker Space / Container | Native Host Process | Micro-VM / Container |
+| **Mandatory Monthly Cost** | **$0.00** (Free Hobby) | **$0.00** (750 free hrs/mo) | **$0.00** (Community Free) | **$0.00** (Zero Cost) | **$3.50 – $7.00+ / month** |
+| **Credit Card Required?** | **No** | **No** | **No** | **No** | **Yes (Mandatory signup)** |
+| **Permanent Free Tier?** | **Yes** | **Yes** | **Yes** | **Yes (Self-hosted)** | **No (Trial/Credit only)** |
+| **Cold Starts** | Zero (Global CDN Edge) | 45 – 75s (after 15m idle) | 60 – 90s (after 48h idle) | **Zero (Instant response)** | None (Always-on) |
+| **CPU Allocation** | Shared edge burst | 0.1 shared vCPU | 2.0 vCPU (HF Spaces) | **Full Host CPU (4–16 cores)** | 1.0 shared vCPU |
+| **Memory Allocation** | 1024 MB per invocation | 512 MB hard ceiling | 16 GB (HF Spaces) | **Full Host RAM (8–64 GB)** | 1024 MB – 2048 MB |
+| **Long-Running Simulations** | ❌ 10s timeout limit | ✅ Supported (Asynch job) | ✅ Supported | ✅ **Unthrottled multi-core** | ✅ Supported |
+| **Streaming (SSE / WebSockets)** | ⚠️ Limited / buffered | ✅ Supported (when awake) | ✅ Supported | ✅ **Low-latency native TCP** | ✅ Supported |
+| **Persistent Storage** | ❌ Ephemeral | Ephemeral (disk index) | Ephemeral | **Local SSD / NVMe** | Paid NVMe Volumes |
+| **Primary Verdict** | **Retain for Frontend** | **Active Zero-Cost Cloud** | **Viable Alternative** | **Recommended for Heavy Runs** | **Paywalled (Non-zero cost)** |
 
 ---
 
-## 3. Selected Target Architecture
+## 2. Platform Realities & Zero-Budget Strategy
 
-We implement a clean **decoupled architecture**:
+### 2.1. Frontend: Vercel Free Tier ($0.00/mo)
+- **Role**: Serves the user dashboard at `https://project-setu.vercel.app`.
+- **Verdict**: **Retained**. Instant global asset delivery, zero cold starts for static files, and seamless preview deployments at zero cost.
+
+### 2.2. Cloud Backend: Render Free Tier ($0.00/mo)
+- **Role**: Primary cloud API and simulation engine at `https://project-setu-backend.onrender.com`.
+- **Inactivity Handling**: Wakes from 15-minute idle sleep via client-side progressive retries (`SetuApi.pingBackendWithColdStartRetry`).
+- **Verdict**: **Retained as default free cloud backend**. Engineered with asynchronous job queues, 512 MB memory guards, and disk streaming.
+
+### 2.3. Zero-Cost Hybrid: Local Node + Cloudflare Tunnel ($0.00/mo)
+- **Role**: Provides workstation-class simulation compute with **zero cold starts, unlimited RAM, and multi-core C++ execution**.
+- **Operation**: Operator runs `node dashboard/server.js` locally. For remote access, an encrypted HTTPS tunnel is launched via `cloudflared tunnel --url http://localhost:3000`.
+- **Verdict**: **Recommended for heavy scenario sweeps and multi-node stress tests**.
+
+### 2.4. Paid Platforms: Fly.io & Railway Status
+- **Reality Check**: Live audit confirms that neither Fly.io nor Railway provides an indefinite free tier without a credit card. Both enforce payment methods and transition to billable tiers after trial exhaustion.
+- **Verdict**: Available as optional, reversible future upgrades if the project ever provisions a cloud budget, but **strictly excluded from mandatory architecture**.
+
+---
+
+## 3. Decoupled Multi-Tier Architecture
 
 ```
 +------------------------------------------------------------------------------------+
 |                                OPERATOR BROWSER                                    |
-|   https://project-setu.vercel.app  (or custom domain)                              |
+|   https://project-setu.vercel.app  (or local dashboard)                            |
 +------------------------------------------------------------------------------------+
               |                                                   |
               | 1. Static Assets & App JS (CDN)                   | 2. API & SSE Streams
               v                                                   v
 +-----------------------------+               +--------------------------------------+
-|       VERCEL EDGE CDN       |               |        FLY.IO BACKEND MICRO-VM       |
-|                             |               |                                      |
-| - index.html                |               | [PORT 3000 / HTTPS Gateway]          |
+|       VERCEL EDGE CDN       |               |       BACKEND GATEWAY / WORKER       |
+|                             |               |   (Render Free / Local Hybrid)       |
+| - index.html                |               | [PORT 3000 / 10000 / HTTPS]          |
 | - dashboard/src/*.js        |               |   - REST API & CORS Router           |
 | - styles/*.css              |               |   - Liveness Probe (/health/liveness)|
-| - api/config.js (config svc)|               |   - Readiness Probe (/health/readiness|
+| - api/config.js (config svc)|               |   - Readiness Probe (/health/readiness)|
 +-----------------------------+               +--------------------------------------+
                                                                  |
                                               +------------------+------------------+
@@ -84,8 +76,9 @@ We implement a clean **decoupled architecture**:
                                |                             |       |                             |
                                | - Asynchronous Job Queue    |       | - Dedicated Active Session  |
                                | - Concurrency Limiter (<=2) |       | - Bounded Ring Buffer       |
-                               | - Process Supervisor        |       | - Throttled 100ms Step Rate |
+                               | - Memory Guard (380 MB RSS) |       | - Throttled 100ms Step Rate |
                                | - Wall-Clock Timeout (60s)  |       | - Non-blocking I/O Pipes    |
+                               | - Persistent jobs_index.json|       | - Recovery on container wake|
                                +-----------------------------+       +-----------------------------+
                                               |                                     |
                                               +------------------+------------------+
@@ -101,27 +94,34 @@ We implement a clean **decoupled architecture**:
                                                                  |
                                                                  v
                                               +--------------------------------------+
-                                              |    PERSISTENT VOLUME (/app/traces)   |
-                                              |  3 GB NVMe Mount for JSONL Traces    |
+                                              |    STREAMED TRACE DISK LOGGING       |
+                                              |  scenarios/traces/job_<id>.jsonl     |
                                               +--------------------------------------+
 ```
 
 ---
 
-## 4. Architectural Boundaries
+## 4. Architectural Boundaries & Resilience
 
 ### 4.1. Frontend Tier (Vercel)
-- Fully independent of the simulation engine. If the backend restarts or is temporarily offline, the frontend loads instantly, displays a descriptive connection status badge, and allows the operator to configure local parameters, view cached scenarios, or change the backend URL via the built-in modal.
+- Fully decoupled from the backend lifecycle.
+- Tolerates backend cold starts without throwing false timeout errors:
+  - Uses `SetuApi.pingBackendWithColdStartRetry()` with up to 16 progressive polling attempts (~75-90s).
+  - Displays dynamic status messages: `"WAKING UP FREE BACKEND... (Attempt X/16, ~45-70s elapsed)"`.
+  - Operator can switch backend target at any time via the built-in modal (⚡ Backend).
 
-### 4.2. API Gateway & Session Management (Node.js)
+### 4.2. API Gateway & Job Manager (Node.js)
 - Pure asynchronous I/O. Incoming HTTP requests are never blocked by C++ computations.
-- Simulation requests return immediately with an allocated `jobId`.
+- `POST /api/jobs` validates parameters and immediately returns **HTTP 202 Accepted** with `jobId`, `pollUrl`, and `eventsUrl` in <10ms.
 - Server-Sent Events (SSE) provide live updates with sequence numbers, allowing automatic client reconnection without losing state.
+- Bounded queue (max 5 queued jobs, returns HTTP 429 Too Many Requests on overflow).
 
 ### 4.3. Simulation Worker & Concurrency Pool
 - Native C++ processes (`setu_sim`) are spawned as isolated child processes under a supervised worker pool.
-- Concurrency is capped (default: 2 concurrent active simulations) to prevent CPU thrashing. Additional jobs are placed in a FIFO queue.
+- Concurrency is capped (`MAX_CONCURRENT_SIMS = 2`) to prevent CPU thrashing on shared 0.1 vCPU slices.
 - Hard wall-clock timeouts (default: 60 seconds) terminate runaway processes automatically.
 
-### 4.4. Persistent Volume Layer
-- JSONL traces are streamed directly to `/app/scenarios/traces` using filesystem write streams, bypassing process memory.
+### 4.4. Persistence & State Recovery Layer
+- Completed experiments and job statuses are tracked in `scenarios/traces/jobs_index.json`.
+- Output traces are streamed directly to disk via `fs.createWriteStream`, bypassing process memory.
+- If a free container spins down or restarts during an active run, `loadIndex()` marks the previous job as `status: 'interrupted'`, preserving completed history while gracefully resetting the queue.

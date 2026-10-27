@@ -242,6 +242,71 @@ export class SetuApi {
     }
   }
 
+  /**
+   * Pings backend with progressive retries to gracefully handle cloud free-tier cold starts
+   * (e.g. Render Free web services spin down after 15 min idle and take 40-75s to wake).
+   * @param {string|null} url - Backend URL
+   * @param {function} [onProgress] - Callback (attempt, maxAttempts, elapsedSec) => void
+   * @param {number} [maxAttempts=16] - Maximum retry attempts
+   * @param {number} [attemptTimeoutMs=5000] - Timeout for each attempt
+   * @param {number} [retryDelayMs=2000] - Delay between retries
+   * @returns {Promise<{ok: boolean, attempts: number, elapsedMs: number, data?: any, error?: string}>}
+   */
+  static async pingBackendWithColdStartRetry(
+    url = null,
+    onProgress = null,
+    maxAttempts = 16,
+    attemptTimeoutMs = 5000,
+    retryDelayMs = 2000
+  ) {
+    const target = (url || this.getBaseUrl()).replace(/\/+$/, '');
+    if (!target) return { ok: false, error: 'No backend URL configured' };
+
+    const startTime = Date.now();
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      const elapsedSec = Math.round((Date.now() - startTime) / 1000);
+      if (onProgress) {
+        onProgress(attempt, maxAttempts, elapsedSec);
+      }
+
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), attemptTimeoutMs);
+
+      try {
+        const res = await fetch(`${target}/health/liveness`, {
+          signal: controller.signal,
+          headers: { 'Accept': 'application/json' }
+        }).catch(async () => {
+          return await fetch(`${target}/health`, { signal: controller.signal });
+        });
+        clearTimeout(timer);
+
+        if (res && res.ok) {
+          const data = await res.json().catch(() => ({}));
+          return {
+            ok: true,
+            attempts: attempt,
+            elapsedMs: Date.now() - startTime,
+            data
+          };
+        }
+      } catch (err) {
+        clearTimeout(timer);
+      }
+
+      if (attempt < maxAttempts) {
+        await new Promise(r => setTimeout(r, retryDelayMs));
+      }
+    }
+
+    return {
+      ok: false,
+      attempts: maxAttempts,
+      elapsedMs: Date.now() - startTime,
+      error: `Backend did not respond after ${maxAttempts} attempts (${Math.round((Date.now() - startTime) / 1000)}s). It may still be booting or offline.`
+    };
+  }
+
   static async getStatus(timeoutMs = 6000) {
     await this.ensureResolved();
     try {
