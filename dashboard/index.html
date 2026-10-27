@@ -34,6 +34,16 @@
     </div>
 
     <div class="header-actions">
+      <!-- Primary Workspace View Switcher -->
+      <div class="view-mode-selector" style="display:flex; background:rgba(0,0,0,0.4); border:1px solid var(--border-subtle); border-radius:4px; padding:2px;">
+        <button class="btn view-toggle-btn active" id="btnModeTopology" style="padding:4px 9px; font-size:11px; border:none; background:var(--bg-surface-elevated); color:#38bdf8; font-weight:700;">
+          🗺️ Topology
+        </button>
+        <button class="btn view-toggle-btn" id="btnModeAnalytics" style="padding:4px 9px; font-size:11px; border:none; background:transparent; color:var(--text-muted);" title="Open research-grade scientific visualization workspace">
+          🔬 Scientific Analytics
+        </button>
+      </div>
+
       <!-- Scenario Selector -->
       <div style="display:flex; align-items:center; gap:6px;">
         <label for="scenarioSelect" style="font-size:11px; color:var(--text-dim);">Scenario:</label>
@@ -62,6 +72,7 @@
 
       <button class="btn" id="btnExportJson" title="Export simulation metrics to JSON">Export JSON</button>
       <button class="btn" id="btnExportCsv" title="Export node telemetry to CSV">Export CSV</button>
+      <button class="btn" id="btnExportRawCsv" title="Export raw packet observations (TX, RX, Drops) to CSV" style="border: 1px solid rgba(56, 189, 248, 0.4); color: #7dd3fc;">Raw CSV</button>
 
       <label class="btn" for="fileTraceUpload" style="cursor:pointer;" title="Upload custom JSONL trace">
         Upload Trace
@@ -128,18 +139,34 @@
       <section class="panel" id="sosConsoleContainer"></section>
     </aside>
 
-    <!-- Center Viewport: Interactive Topology -->
-    <section class="center-viewport" aria-label="Network topology map">
-      <div class="topology-container">
+    <!-- Center Viewport: Interactive Topology or Scientific Analytics Workspace -->
+    <section class="center-viewport" aria-label="Network topology map or scientific analytics">
+      <!-- View A: Interactive Topology Map -->
+      <div class="topology-container" id="containerTopologyView">
         <canvas id="topologyCanvas"></canvas>
 
         <!-- Overlay Filter Controls -->
         <div class="topology-controls-overlay">
-          <div class="filter-pill-group">
-            <button class="filter-pill active" data-filter="all">All Nodes</button>
-            <button class="filter-pill" data-filter="survivor">Survivors</button>
-            <button class="filter-pill" data-filter="relay">Relays</button>
-            <button class="filter-pill" data-filter="hub">Rescue Hub</button>
+          <div style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+            <div class="filter-pill-group">
+              <button class="filter-pill active" data-filter="all">All Nodes</button>
+              <button class="filter-pill" data-filter="survivor">Survivors</button>
+              <button class="filter-pill" data-filter="relay">Relays</button>
+              <button class="filter-pill" data-filter="hub">Rescue Hub</button>
+            </div>
+
+            <!-- Selectable Overlays (Phase 5) -->
+            <div style="display:flex; align-items:center; gap:4px; background:rgba(11,17,32,0.85); backdrop-filter:blur(8px); padding:3px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-subtle);">
+              <label for="selTopologyOverlay" style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Overlay:</label>
+              <select class="select-input" id="selTopologyOverlay" style="font-size:10px; padding:2px 6px; height:22px;">
+                <option value="none" selected>Default Mesh</option>
+                <option value="link_quality">Link Quality (dBm)</option>
+                <option value="packet_loss">Packet Loss Rate</option>
+                <option value="traffic_volume">Traffic Volume</option>
+                <option value="relay_load">Relay Forward Load</option>
+                <option value="battery_state">Battery SoC Arc</option>
+              </select>
+            </div>
           </div>
 
           <div class="zoom-tool-group">
@@ -163,6 +190,9 @@
           <div class="tooltip-content"></div>
         </div>
       </div>
+
+      <!-- View B: Research-Grade Scientific Analytics Workspace -->
+      <div id="containerAnalyticsView" style="display:none; width:100%; height:100%; position:relative; overflow:hidden;"></div>
     </section>
 
     <!-- Right Sidebar: Inspector, Timeline & Charts -->
@@ -186,7 +216,13 @@
       </section>
 
       <!-- Tab 3: Analytics Charts -->
-      <section class="tab-content" id="tab-charts">
+      <section class="tab-content" id="tab-charts" style="padding:10px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <strong style="font-size:12px; color:#fff;">Scientific Analytics</strong>
+          <button class="btn" id="btnExpandAnalytics" style="font-size:10px; padding:2px 8px; border-color:#06b6d4; color:#67e8f9;">
+            ⛶ Open Full Workspace
+          </button>
+        </div>
         <div id="chartsContainer"></div>
       </section>
 

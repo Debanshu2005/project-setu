@@ -16,6 +16,8 @@ export class TopologyVisualizer {
 
     // Filter & display flags
     this.activeFilter = 'all'; // 'all', 'survivor', 'relay', 'hub'
+    this.activeOverlay = 'none'; // 'none', 'link_quality', 'rssi_snr', 'packet_loss', 'traffic_volume', 'relay_load', 'battery_state', 'hop_count'
+    this.playbackRoute = null; // Array of node IDs e.g. [1, 101, 0] for route playback
     this.showLinks = true;
     this.animatePackets = true;
     this.selectedNodeId = null;
@@ -42,6 +44,16 @@ export class TopologyVisualizer {
       }
       this.render();
     });
+  }
+
+  setOverlay(overlayName) {
+    this.activeOverlay = overlayName || 'none';
+    this.render();
+  }
+
+  setRoutePlayback(routeNodes = null) {
+    this.playbackRoute = Array.isArray(routeNodes) && routeNodes.length > 1 ? routeNodes : null;
+    this.render();
   }
 
   initEvents() {
@@ -319,9 +331,10 @@ export class TopologyVisualizer {
 
   drawLinks() {
     const ctx = this.ctx;
+    const overlay = this.activeOverlay;
     ctx.save();
 
-    // 1. Draw base links
+    // 1. Draw base / overlay links
     for (const link of this.sim.links) {
       const na = this.sim.nodes.get(link.a);
       const nb = this.sim.nodes.get(link.b);
@@ -341,6 +354,52 @@ export class TopologyVisualizer {
         ctx.lineWidth = 1.5;
         ctx.stroke();
         ctx.setLineDash([]);
+      } else if (overlay === 'link_quality' || overlay === 'rssi_snr') {
+        // Color-coded link quality overlay
+        const rssi = typeof link.rssi === 'number' ? link.rssi : -120;
+        let strokeColor = '#ef4444';
+        if (rssi >= -80) strokeColor = '#10b981';
+        else if (rssi >= -95) strokeColor = '#06b6d4';
+        else if (rssi >= -110) strokeColor = '#3b82f6';
+        else if (rssi >= -124) strokeColor = '#f59e0b';
+
+        ctx.strokeStyle = strokeColor;
+        ctx.lineWidth = 2.0;
+        ctx.stroke();
+
+        // RSSI/SNR badge on link midpoint
+        const midX = (pa.x + pb.x) / 2;
+        const midY = (pa.y + pb.y) / 2;
+        ctx.save();
+        ctx.font = '9px monospace';
+        ctx.fillStyle = '#0f172a';
+        ctx.fillRect(midX - 22, midY - 7, 44, 14);
+        ctx.strokeStyle = strokeColor;
+        ctx.strokeRect(midX - 22, midY - 7, 44, 14);
+        ctx.fillStyle = strokeColor;
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(`${rssi.toFixed(0)}dBm`, midX, midY);
+        ctx.restore();
+      } else if (overlay === 'packet_loss') {
+        const dropCount = (na.stats.drop || 0) + (nb.stats.drop || 0);
+        if (dropCount > 0) {
+          ctx.strokeStyle = 'rgba(239, 68, 68, 0.8)';
+          ctx.lineWidth = 2.0;
+          ctx.setLineDash([4, 3]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else {
+          ctx.strokeStyle = 'rgba(16, 185, 129, 0.25)';
+          ctx.lineWidth = 1.0;
+          ctx.stroke();
+        }
+      } else if (overlay === 'traffic_volume') {
+        const traffic = (na.stats.tx || 0) + (nb.stats.tx || 0);
+        const lw = Math.min(6, Math.max(1, traffic * 0.4));
+        ctx.strokeStyle = `rgba(192, 132, 252, ${Math.min(0.8, 0.2 + traffic * 0.05)})`;
+        ctx.lineWidth = lw;
+        ctx.stroke();
       } else {
         const alpha = Math.max(0.06, Math.min(0.35, (link.rssi + 135) / 75));
         ctx.strokeStyle = `rgba(56, 189, 248, ${alpha})`;
@@ -349,8 +408,31 @@ export class TopologyVisualizer {
       }
     }
 
-    // 2. Draw highlighted links and RSSI badges for selected node
-    if (this.selectedNodeId !== null && this.showRssiLabels) {
+    // 2. Multi-Hop Packet Route Playback Overlay
+    if (this.playbackRoute && this.playbackRoute.length > 1) {
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 4;
+      ctx.setLineDash([6, 4]);
+      // Animate line dash based on current sim clock
+      const dashOffset = (this.sim.currentTime / 80) % 20;
+      ctx.lineDashOffset = -dashOffset;
+
+      ctx.beginPath();
+      for (let i = 0; i < this.playbackRoute.length; i++) {
+        const rNode = this.sim.nodes.get(this.playbackRoute[i]);
+        if (rNode) {
+          const sp = this.worldToScreen(rNode.x, rNode.y);
+          if (i === 0) ctx.moveTo(sp.x, sp.y);
+          else ctx.lineTo(sp.x, sp.y);
+        }
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 3. Draw highlighted links and RSSI badges for selected node
+    if (this.selectedNodeId !== null && this.showRssiLabels && overlay === 'none') {
       for (const link of this.sim.links) {
         if (link.a === this.selectedNodeId || link.b === this.selectedNodeId) {
           const na = this.sim.nodes.get(link.a);
@@ -543,6 +625,27 @@ export class TopologyVisualizer {
     ctx.font = '600 10px JetBrains Mono, monospace';
     ctx.textAlign = 'center';
     ctx.fillText(String(n.id), p.x, p.y - 15);
+
+    // Overlay Badges on Node
+    if (this.activeOverlay === 'battery_state') {
+      const bColor = n.battery < 20 ? '#ef4444' : n.battery < 50 ? '#f59e0b' : '#10b981';
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 14, -Math.PI / 2, -Math.PI / 2 + ((n.battery || 100) / 100) * 2 * Math.PI);
+      ctx.strokeStyle = bColor;
+      ctx.lineWidth = 2.5;
+      ctx.stroke();
+    } else if (this.activeOverlay === 'relay_load' && (n.role === 'relay' || n.id >= 100)) {
+      const fwd = (n.stats && n.stats.tx) || 0;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+      ctx.strokeStyle = fwd >= 5 ? '#ef4444' : (fwd > 0 ? '#f59e0b' : '#38bdf8');
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = '#fff';
+      ctx.font = '8px monospace';
+      ctx.fillText(`${fwd} fwd`, p.x, p.y + 22);
+    }
 
     ctx.restore();
   }

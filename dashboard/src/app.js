@@ -9,6 +9,7 @@ import { InspectorComponent } from '../components/inspector.js';
 import { SosConsoleComponent } from '../components/console.js';
 import { ChartsComponent } from '../components/charts.js';
 import { NodeHealthComponent } from '../components/node_health.js';
+import { AnalyticsWorkspaceComponent } from '../components/analytics_workspace.js';
 
 class SetuDashboardApp {
   constructor() {
@@ -40,7 +41,16 @@ class SetuDashboardApp {
     this.btnRunModal = document.getElementById('btnOpenRunModal');
     this.btnExportJson = document.getElementById('btnExportJson');
     this.btnExportCsv = document.getElementById('btnExportCsv');
+    this.btnExportRawCsv = document.getElementById('btnExportRawCsv');
     this.fileTraceUpload = document.getElementById('fileTraceUpload');
+
+    // Primary View Mode & Overlay Selectors
+    this.btnModeTopology = document.getElementById('btnModeTopology');
+    this.btnModeAnalytics = document.getElementById('btnModeAnalytics');
+    this.btnExpandAnalytics = document.getElementById('btnExpandAnalytics');
+    this.containerTopologyView = document.getElementById('containerTopologyView');
+    this.containerAnalyticsView = document.getElementById('containerAnalyticsView');
+    this.selTopologyOverlay = document.getElementById('selTopologyOverlay');
 
     // Live Mode & Trigger All Header Actions
     this.btnToggleMode = document.getElementById('btnToggleMode');
@@ -300,6 +310,18 @@ class SetuDashboardApp {
     } catch (consoleErr) {
       console.error('SosConsole initialization error:', consoleErr);
     }
+
+    // 7. Full-Screen Scientific Analytics Workspace
+    try {
+      const analyticsContainer = document.getElementById('containerAnalyticsView');
+      if (analyticsContainer) {
+        this.analyticsWorkspace = new AnalyticsWorkspaceComponent(analyticsContainer, this.sim, () => {
+          this.switchTab('tab-timeline');
+        });
+      }
+    } catch (wsErr) {
+      console.error('AnalyticsWorkspace initialization error:', wsErr);
+    }
   }
 
   initEvents() {
@@ -501,6 +523,47 @@ class SetuDashboardApp {
     // Ensure Backend Modal registration
     this.initBackendModal();
 
+    // View mode switching: Topology vs Scientific Analytics
+    if (this.btnModeTopology && this.btnModeAnalytics) {
+      const setViewMode = (mode) => {
+        const isTopo = (mode === 'topology');
+        if (this.btnModeTopology) {
+          this.btnModeTopology.classList.toggle('active', isTopo);
+          this.btnModeTopology.style.background = isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
+          this.btnModeTopology.style.color = isTopo ? '#38bdf8' : 'var(--text-muted)';
+        }
+        if (this.btnModeAnalytics) {
+          this.btnModeAnalytics.classList.toggle('active', !isTopo);
+          this.btnModeAnalytics.style.background = !isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
+          this.btnModeAnalytics.style.color = !isTopo ? '#38bdf8' : 'var(--text-muted)';
+        }
+        if (this.containerTopologyView) this.containerTopologyView.style.display = isTopo ? 'block' : 'none';
+        if (this.containerAnalyticsView) {
+          this.containerAnalyticsView.style.display = !isTopo ? 'block' : 'none';
+          if (!isTopo && this.analyticsWorkspace) {
+            this.analyticsWorkspace.refresh();
+          }
+        }
+        if (isTopo && this.topo) {
+          this.topo.resize();
+          this.topo.render();
+        }
+      };
+
+      this.btnModeTopology.addEventListener('click', () => setViewMode('topology'));
+      this.btnModeAnalytics.addEventListener('click', () => setViewMode('analytics'));
+      if (this.btnExpandAnalytics) {
+        this.btnExpandAnalytics.addEventListener('click', () => setViewMode('analytics'));
+      }
+    }
+
+    // Selectable Overlays (Phase 5)
+    if (this.selTopologyOverlay && this.topo) {
+      this.selTopologyOverlay.addEventListener('change', (e) => {
+        this.topo.setOverlay(e.target.value);
+      });
+    }
+
     // Export buttons
     if (this.btnExportJson) {
       this.btnExportJson.addEventListener('click', () => {
@@ -511,6 +574,12 @@ class SetuDashboardApp {
     if (this.btnExportCsv) {
       this.btnExportCsv.addEventListener('click', () => {
         Exporter.exportCsv(this.sim);
+      });
+    }
+
+    if (this.btnExportRawCsv) {
+      this.btnExportRawCsv.addEventListener('click', () => {
+        Exporter.exportRawObservationsCsv(this.sim);
       });
     }
 
@@ -685,6 +754,9 @@ class SetuDashboardApp {
     document.querySelectorAll('.tab-content').forEach(content => {
       content.classList.toggle('active', content.id === tabId);
     });
+    if (tabId === 'tab-charts' && this.charts) {
+      this.charts.render();
+    }
   }
 
   updatePlayButton() {

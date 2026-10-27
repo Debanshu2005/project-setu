@@ -12,8 +12,9 @@
     "test:analytics": "node tests/test_analytics.mjs",
     "test:backend": "node tests/test_backend.mjs",
     "test:positioning": "node tests/test_positioning_pipeline.mjs",
-    "test:all": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs",
-    "test": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs"
+    "test:scientific": "node tests/test_scientific_analytics.mjs",
+    "test:all": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs && node tests/test_scientific_analytics.mjs",
+    "test": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs && node tests/test_scientific_analytics.mjs"
   },
   "keywords": [
     "disaster-response",
