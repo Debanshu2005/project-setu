@@ -1,168 +1,146 @@
-# Project Setu — Production Cloud Deployment & Operations Guide
+# Project Setu: Production Cloud Deployment & Migration Guide
 
-This guide provides end-to-end instructions for deploying the Project Setu hybrid cloud architecture:
-- **Render Free**: Hosts the authoritative native C++ simulation engine (`setu_sim`) and operations REST/SSE bridge via Docker.
-- **Vercel**: Hosts the responsive web dashboard and static operations console.
-- **GitHub Actions**: Provides automated CI build verification on Linux and Windows, Docker validation, and backend test gates on every push.
-
----
-
-## 1. Architectural Overview
-
-```
-                      +---------------------------------------+
-                      |               BROWSER                 |
-                      |   Disaster Operations Dashboard UI    |
-                      +---------------------------------------+
-                                  |                |
-             Static Assets        |                | REST API & SSE Events
-             & Fallback Demo      |                | (Live Digital Twin)
-                                  v                v
-                  +--------------------+     +---------------------------+
-                  |    VERCEL HOST     |     |    RENDER WEB SERVICE     |
-                  |  Frontend / HTML   |     | (Docker - Node.js + C++)  |
-                  |  /api/config       |     |   0.0.0.0:${PORT}         |
-                  +--------------------+     +---------------------------+
-                                                           |
-                                                           | Stdio JSON IPC
-                                                           v
-                                             +---------------------------+
-                                             |  setu_sim (Native C++17)  |
-                                             |  - setu::Node Core        |
-                                             |  - Virtual FreeRTOS Tasks |
-                                             |  - RF Channel & LoRa PHY  |
-                                             +---------------------------+
-```
-
-### Execution Mode Clarity
-1. **Actual C++ Protocol Core Simulation**: The authoritative simulation mode executed on Render or locally by `setu_sim`. Virtual nodes run the real C++ `setu::Node` state machine with SX1262 LoRa physical layer modelling, randomized backoffs, ACK matching, and FreeRTOS queue tasks.
-2. **JavaScript Demo Fallback**: Hosted on Vercel Serverless (`/api/simulate`). This is an ephemeral in-memory demonstration engine. It is explicitly labeled as a demo fallback and never claims to execute native C++ code.
-3. **Physical Hardware**: Actual ESP32-S3 firmware deployed to physical hardware wristbands via `firmware/` and ESP-IDF.
+**Document Version:** 1.0.0  
+**Date:** October 27, 2026  
+**Target Systems:** Frontend (Vercel), Backend (Fly.io / Railway / Render), Docker Multi-Stage Build
 
 ---
 
-## 2. GitHub Actions Setup
+## 1. Overview & Migration Strategy
 
-The CI workflow is configured in `.github/workflows/ci.yml`.
+This guide provides step-by-step instructions to migrate and deploy the Project Setu simulation platform.
 
-### Triggers
-- Automatic execution on every `push` to `main` and `feature/**` branches.
-- Automatic execution on pull requests targeting `main`.
-- Manual execution via `workflow_dispatch`.
+The target architecture maintains a clean separation of concerns:
+- **Frontend Dashboard**: Hosted on **Vercel** (`https://project-setu.vercel.app`).
+- **Backend API & Simulation Engine**: Hosted on **Fly.io** (or **Railway**), executing in an isolated container with dedicated compute and persistent storage.
 
-### Automated Pipeline Jobs
-1. **Native C++ Core (Linux GCC 13)**: Compiles `setu_core`, `setu_world`, `setu_sim`, and runs all 44 unit tests and 13 integration tests via `ctest`. Tests interactive CLI directly over stdin/stdout.
-2. **Native C++ Core (Windows MSVC)**: Executes `.\scripts\build_windows.ps1` and `.\scripts\test_windows.ps1` ensuring full Windows parity.
-3. **Docker Multi-Stage Build & Container Health**: Builds the Docker container, runs tests inside the container build stage, boots the container, and verifies HTTP responses from `/health` and `/api/status`.
-4. **Backend API & Scenario Validation**: Validates all JSON scenario files and runs `tests/test_backend.mjs` verifying REST/SSE endpoints and real C++ protocol state transitions.
+> [!IMPORTANT]
+> The migration maintains 100% backward compatibility. The existing Render deployment remains fully functional until the operator verifies the new endpoint and updates the Vercel environment variable.
 
 ---
 
-## 3. Render Deployment (Backend Service)
+## 2. Environment Variables Reference
 
-Render hosts the persistent Docker container running Node.js and the native C++ binary.
+Configure these environment variables in your cloud provider's dashboard or CLI:
 
-### Option A: Automatic Blueprint Deployment (Recommended)
-1. Log in to [Render Dashboard](https://dashboard.render.com/).
-2. Click **New +** > **Blueprint**.
-3. Connect your GitHub repository (`project-setu`).
-4. Select the `main` or `feature/cloud-deployment-fitl` branch.
-5. Render will detect `render.yaml` and configure the service:
-   - **Service Name**: `project-setu-backend`
-   - **Runtime**: `Docker`
-   - **Instance Type**: `Free`
-   - **Healthcheck Path**: `/health`
-6. Click **Apply**.
-7. Once deployed, Render will provide a live service URL, e.g.:
-   `https://project-setu-backend.onrender.com`
-
-### Option B: Manual Web Service Setup
-If not using Blueprints:
-1. Click **New +** > **Web Service**.
-2. Select repository `project-setu`.
-3. Choose **Docker** runtime.
-4. Set Dockerfile Path: `./Dockerfile`.
-5. Set Health Check Path: `/health`.
-6. Add Environment Variables:
-   - `PORT`: `10000`
-   - `NODE_ENV`: `production`
-   - `ALLOWED_ORIGINS`: `https://your-app.vercel.app,http://localhost:3000`
-7. Select **Free** instance type and click **Create Web Service**.
-
-### Render Free Tier Notes & Limitations
-- **Cold Starts**: Render Free web services spin down after 15 minutes of inactivity. The first incoming HTTP request wakes the container, taking 30–50 seconds.
-- **Waking Indicator**: The Setu dashboard automatically detects Render cold starts and displays `WAKING UP RENDER ENGINE... (Cold start may take ~30s)` with retry pings to `/health`.
-- **In-Memory State**: If the free container restarts, any in-memory simulation clock resets to 0. The API truthfully reports this via `/api/status` and `/api/control/status`.
+| Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `PORT` | `3000` (Fly/Local) / `10000` (Render) | Port the HTTP and SSE server binds to. |
+| `NODE_ENV` | `production` | Enables production optimizations and disables debug traces. |
+| `MAX_CONCURRENT_SIMS` | `2` | Maximum concurrent native C++ simulation processes executing simultaneously. |
+| `SIM_TIMEOUT_MS` | `60000` | Hard wall-clock watchdog limit per job before automatic process cancellation (prevents zombie processes). |
+| `MAX_JOB_EVENTS` | `2000` | Bounded in-memory event ring buffer per job (prevents Node.js heap exhaustion). |
+| `SETU_SIM_PATH` | `/app/build/setu_sim` | Path to compiled native simulator binary in the Docker container. |
+| `ALLOWED_ORIGINS` | `https://project-setu.vercel.app,...` | Comma-separated list of approved web origins for CORS policy. |
+| `ALLOW_VERCEL_PREVIEWS`| `true` | Allows preview pull-request URLs matching `*.vercel.app`. |
 
 ---
 
-## 4. Vercel Deployment (Frontend Operations Dashboard)
+## 3. Option A: Deployment to Fly.io (Recommended)
 
-Vercel hosts the responsive browser client and static dashboard.
+Fly.io runs the Setu container inside lightweight Firecracker micro-VMs with dedicated RAM and persistent NVMe volumes.
 
-### Deployment Steps
-1. Log in to [Vercel Dashboard](https://vercel.com/dashboard).
-2. Click **Add New...** > **Project**.
-3. Import the `project-setu` repository.
-4. Leave framework preset as **Other** (Root directory: `./`).
-5. Under **Environment Variables**, add:
-   - `SETU_BACKEND_URL`: Your Render backend URL (e.g. `https://project-setu-backend.onrender.com`).
-   - `NEXT_PUBLIC_SETU_BACKEND_URL`: Same URL (for dual compatibility).
-6. Click **Deploy**.
-7. Vercel will deploy the dashboard to `https://<your-project>.vercel.app`.
+### Step 1: Install Fly CLI (`flyctl`)
+```bash
+# macOS / Linux
+curl -L https://fly.io/install.sh | sh
 
-### Multi-Tier Backend URL Resolution
-The dashboard resolves its target backend URL in this order:
-1. **URL Query Parameter**: `https://<your-project>.vercel.app/?backend=https://project-setu-backend.onrender.com` (automatically saved).
-2. **Window Global**: `window.__SETU_BACKEND_URL__` (if configured in HTML).
-3. **User LocalStorage**: Configured via the in-app **⚡ Backend** button modal (no developer tools required).
-4. **Vercel `/api/config`**: Fetches the server-configured `SETU_BACKEND_URL` environment variable.
-5. **Localhost Auto-Detection**: When opened on `http://localhost:3000` or `http://127.0.0.1:3000`, automatically targets the local native bridge.
-
----
-
-## 5. Local Windows Development Workflow
-
-You do NOT need Linux, WSL, or Docker to develop and test Project Setu on Windows.
-
-### Build and Test
-From PowerShell in the project root:
-```powershell
-# 1. Build native C++ simulator and test binaries
-.\scripts\build_windows.ps1
-
-# 2. Run all CTest unit tests, integration tests, CLI check, and backend API suite
-.\scripts\test_windows.ps1
+# Windows (PowerShell)
+iwr https://fly.io/install.ps1 -useb | iex
 ```
 
-### Run Local Operations Center
-```powershell
-# Start local Node.js bridge and operations dashboard
-.\scripts\run_dashboard.ps1
+### Step 2: Authenticate & Initialize App
+```bash
+fly auth login
 ```
-Open `http://localhost:3000` in any web browser.
+From the root of `project-setu`:
+```bash
+fly launch --no-deploy
+```
+Select your preferred primary region (e.g. `iad` for US East, `ams` for Europe, `sin` for Asia).
+
+### Step 3: Create Persistent Volume for Traces
+Create a 3 GB persistent volume mounted at `/app/scenarios/traces`:
+```bash
+fly volumes create setu_traces --size 3 --region iad
+```
+
+### Step 4: Deploy the Application
+Deploy the pre-configured [fly.toml](file:///d:/CityGrid/my-project/project-setu/project-setu/fly.toml):
+```bash
+fly deploy
+```
+
+### Step 5: Verify Deployment & Probes
+```bash
+# Inspect machine status
+fly status
+
+# Test Liveness probe
+curl -I https://project-setu-backend.fly.dev/health/liveness
+
+# Test Readiness probe
+curl https://project-setu-backend.fly.dev/health/readiness
+
+# Tail live application logs
+fly logs
+```
 
 ---
 
-## 6. Verification Checklist
+## 4. Option B: Deployment to Railway (Turnkey Alternative)
 
-To verify that the live system is operating correctly end to end:
-1. **Health Verification**:
-   Navigate to `https://<your-render-app>.onrender.com/health`.
-   Verify HTTP 200 response:
-   ```json
-   { "status": "ok", "service": "setu-simulation-backend", "simulatorFound": true }
-   ```
-2. **Dashboard Connection**:
-   Open `https://<your-project>.vercel.app`.
-   Verify the status indicator displays:
-   `● CORE C++ ENGINE ONLINE`
-3. **Real SOS Trigger & Protocol Verification**:
-   - In the dashboard, select **Node 1** in the topology map.
-   - Click **🚨 Short Press (General)**.
-   - Click **Play** or **Step Forward**.
-   - Inspect the right panel under **FreeRTOS Tasks & Queues (FITL)**:
-     - Verify `Button ISR Queue` registered the edge.
-     - Verify `Sequence Counter (seq)` incremented.
-     - Verify `Originated / Relayed TX` incremented to `1`.
-     - In the live console, observe real 25-byte LoRa packet dissemination across relays to the Hub.
+Railway provides one-click Docker deployments with automatic HTTPS and usage-based billing.
+
+### Step 1: Link Repository in Railway
+1. Open [railway.app](https://railway.app) and create a **New Project**.
+2. Select **Deploy from GitHub repo** and select `Debanshu2005/project-setu`.
+3. Railway automatically detects the root [Dockerfile](file:///d:/CityGrid/my-project/project-setu/project-setu/Dockerfile) and [railway.json](file:///d:/CityGrid/my-project/project-setu/project-setu/railway.json).
+
+### Step 2: Configure Environment Variables
+Under service **Settings > Variables**, add:
+- `PORT = 3000`
+- `NODE_ENV = production`
+- `MAX_CONCURRENT_SIMS = 2`
+- `ALLOWED_ORIGINS = https://project-setu.vercel.app,http://localhost:3000`
+
+### Step 3: Add Volume Mount (Optional)
+Under service **Settings > Volumes**, add volume mounted to `/app/scenarios/traces`.
+
+---
+
+## 5. Option C: Render Paid Upgrade (In-Place)
+
+If continuing with Render:
+1. Open the **project-setu-backend** service on the Render Dashboard.
+2. Under **Settings > Plan**, upgrade from **Free** to **Starter ($7/mo)**.
+3. Under **Health Check Path**, update to `/health/liveness`.
+4. This immediately eliminates the 15-minute idle spin-down.
+
+---
+
+## 6. Zero-Downtime Traffic Cutover (Vercel Frontend)
+
+Once the new backend is running and verified:
+
+1. Open your **Vercel Project Settings** for `project-setu`.
+2. Navigate to **Settings > Environment Variables**.
+3. Update `SETU_BACKEND_URL`:
+   - From: `https://project-setu-backend.onrender.com`
+   - To: `https://project-setu-backend.fly.dev` (or your Railway domain).
+4. Trigger a redeployment in Vercel (or push a commit).
+5. All traffic will seamlessly route to the new backend.
+
+---
+
+## 7. Emergency Rollback Procedure
+
+If any issue arises with the new backend:
+
+1. **Vercel Environment Variable Revert**:
+   In Vercel Project Settings, change `SETU_BACKEND_URL` back to `https://project-setu-backend.onrender.com`.
+2. **Instant Frontend Override**:
+   Any operator can instantly point their browser to the fallback backend without waiting for deployment:
+   - Click the **⚡ Backend** button in the dashboard navigation bar.
+   - Enter `https://project-setu-backend.onrender.com` in the custom URL input.
+   - Click **Save & Connect**. The preference is stored in `localStorage` and takes immediate effect.

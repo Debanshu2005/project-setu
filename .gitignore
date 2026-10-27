@@ -26,6 +26,9 @@ node_modules/
 out.jsonl
 out_test.jsonl
 scenarios/traces/sim_*.jsonl
+scenarios/traces/job_*.jsonl
+scenarios/traces/uploaded_*.jsonl
+compile_commands.json
 *.log
 *.tmp
 sim_*.jsonl

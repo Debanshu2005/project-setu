@@ -1,22 +1,29 @@
 # ==============================================================================
 # Render Blueprint Specification — Project Setu
 # Docs: https://render.com/docs/blueprint-spec
+# Note: For production reliability without idle spin-down, use 'plan: starter' or higher.
 # ==============================================================================
 
 services:
   - type: web
     name: project-setu-backend
     runtime: docker
-    plan: free
+    plan: free # Change to 'starter' ($7/mo) to eliminate 15-minute idle sleep
     region: oregon
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /health
+    healthCheckPath: /health/liveness
     autoDeploy: true
     envVars:
       - key: PORT
         value: 10000
       - key: NODE_ENV
         value: production
+      - key: MAX_CONCURRENT_SIMS
+        value: "2"
+      - key: SIM_TIMEOUT_MS
+        value: "60000"
+      - key: MAX_JOB_EVENTS
+        value: "2000"
       - key: ALLOW_VERCEL_PREVIEWS
         value: "true"
       - key: ALLOWED_ORIGINS

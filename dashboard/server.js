@@ -1,4 +1,5 @@
-// Project Setu - Local Simulation Bridge & Operations API Server
+// Project Setu - Production Cloud Simulation Server & Operations API Bridge
+// Decoupled Job Architecture, Bounded Buffers, Concurrency Pool, & Multi-Tier Health Probes
 // Pure Node.js (no npm dependencies needed)
 
 import http from 'node:http';
@@ -26,7 +27,7 @@ function findSimulator() {
     path.join(ROOT_DIR, 'build', 'Release', 'setu_sim.exe'),
     path.join(ROOT_DIR, 'build', 'setu_sim.exe'),
     path.join(ROOT_DIR, 'setu_sim.exe'),
-    // Standard Linux / Docker / Render build paths
+    // Standard Linux / Docker / Cloud VM build paths
     path.join(ROOT_DIR, 'build', 'setu_sim'),
     path.join(ROOT_DIR, 'build', 'Release', 'setu_sim'),
     path.join(ROOT_DIR, 'setu_sim')
@@ -37,12 +38,404 @@ function findSimulator() {
   return null;
 }
 
-let activeChildProcess = null;
+// Ensure traces directory exists
+if (!fs.existsSync(TRACES_DIR)) {
+  fs.mkdirSync(TRACES_DIR, { recursive: true });
+}
+
+// -----------------------------------------------------------------------------
+// Simulation Job & Concurrency Manager (Phases C, D, E, F)
+// -----------------------------------------------------------------------------
+
+class SimulationJob {
+  constructor(id, params, triggers, faults, sessionId, manager) {
+    this.id = id;
+    this.sessionId = sessionId || `sess_${Date.now()}`;
+    this.params = params || {};
+    this.triggers = triggers || [];
+    this.faults = faults || [];
+    this.manager = manager;
+
+    // States: 'queued' | 'starting' | 'running' | 'completed' | 'failed' | 'cancelled'
+    this.status = 'queued';
+    this.createdAt = Date.now();
+    this.startedAt = null;
+    this.completedAt = null;
+    this.durationMs = 0;
+    this.error = null;
+    this.process = null;
+
+    this.traceFilename = `job_${this.id}.jsonl`;
+    this.traceFilePath = path.join(TRACES_DIR, this.traceFilename);
+    this.writeStream = null;
+
+    this.summary = null;
+    this.eventBuffer = []; // Bounded ring buffer for live streaming & reconnection
+    this.eventSeq = 0;
+    this.sseClients = new Set();
+    this.timeoutTimer = null;
+    this.completionPromise = null;
+    this.completionResolve = null;
+    this.completionReject = null;
+
+    this.completionPromise = new Promise((resolve, reject) => {
+      this.completionResolve = resolve;
+      this.completionReject = reject;
+    });
+    // Prevent unhandled promise rejection if job is async or cancelled without an active awaiter
+    this.completionPromise.catch(() => {});
+  }
+
+  addEvent(ev) {
+    this.eventSeq++;
+    const enriched = { ...ev, _seq: this.eventSeq, _jobId: this.id };
+    this.eventBuffer.push(enriched);
+    if (this.eventBuffer.length > this.manager.maxEventBufferSize) {
+      this.eventBuffer.shift();
+    }
+    this.broadcastSSE('event', enriched);
+  }
+
+  broadcastSSE(type, data) {
+    const payload = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+    for (const client of this.sseClients) {
+      try {
+        client.write(payload);
+      } catch {
+        this.sseClients.delete(client);
+      }
+    }
+  }
+
+  getSnapshot(sinceSeq = 0) {
+    const seq = parseInt(sinceSeq, 10) || 0;
+    const events = seq > 0
+      ? this.eventBuffer.filter(e => e._seq > seq)
+      : this.eventBuffer;
+
+    return {
+      jobId: this.id,
+      status: this.status,
+      sessionId: this.sessionId,
+      createdAt: this.createdAt,
+      startedAt: this.startedAt,
+      completedAt: this.completedAt,
+      durationMs: this.durationMs,
+      summary: this.summary,
+      error: this.error,
+      traceFilename: this.traceFilename,
+      lastSeq: this.eventSeq,
+      events
+    };
+  }
+}
+
+class SimulationJobManager {
+  constructor(options = {}) {
+    this.maxConcurrent = Math.max(1, parseInt(process.env.MAX_CONCURRENT_SIMS || options.maxConcurrent || 2, 10));
+    this.defaultTimeoutMs = Math.max(5000, parseInt(process.env.SIM_TIMEOUT_MS || options.defaultTimeoutMs || 60000, 10));
+    this.maxEventBufferSize = Math.max(100, parseInt(process.env.MAX_JOB_EVENTS || options.maxEventBufferSize || 2000, 10));
+
+    this.jobs = new Map(); // jobId -> SimulationJob
+    this.queue = []; // Array of jobIds
+    this.activeJobs = new Map(); // jobId -> SimulationJob
+    this.metrics = {
+      submittedTotal: 0,
+      completedTotal: 0,
+      failedTotal: 0,
+      cancelledTotal: 0
+    };
+  }
+
+  createJob(params = {}, triggers = [], faults = [], sessionId = null) {
+    const randSuffix = Math.random().toString(36).substring(2, 8);
+    const jobId = `sim_${Date.now()}_${randSuffix}`;
+    const job = new SimulationJob(jobId, params, triggers, faults, sessionId, this);
+
+    this.jobs.set(jobId, job);
+    this.queue.push(jobId);
+    this.metrics.submittedTotal++;
+
+    // Prune historical jobs if map grows too large
+    if (this.jobs.size > 200) {
+      const oldestKeys = Array.from(this.jobs.keys()).slice(0, 50);
+      for (const k of oldestKeys) {
+        const old = this.jobs.get(k);
+        if (old && (old.status === 'completed' || old.status === 'failed' || old.status === 'cancelled')) {
+          this.jobs.delete(k);
+        }
+      }
+    }
+
+    process.nextTick(() => this.processQueue());
+    return job;
+  }
+
+  processQueue() {
+    if (this.activeJobs.size >= this.maxConcurrent || this.queue.length === 0) {
+      return;
+    }
+
+    const nextJobId = this.queue.shift();
+    const job = this.jobs.get(nextJobId);
+    if (!job || job.status !== 'queued') {
+      return this.processQueue();
+    }
+
+    this.startJob(job);
+  }
+
+  startJob(job) {
+    const simPath = findSimulator();
+    if (!simPath) {
+      job.status = 'failed';
+      job.error = 'Simulator binary (setu_sim) not found on host system.';
+      job.completedAt = Date.now();
+      job.durationMs = job.completedAt - job.createdAt;
+      this.metrics.failedTotal++;
+      job.broadcastSSE('done', { status: 'failed', error: job.error });
+      if (job.completionReject) job.completionReject(new Error(job.error));
+      this.processQueue();
+      return;
+    }
+
+    job.status = 'starting';
+    job.startedAt = Date.now();
+    this.activeJobs.set(job.id, job);
+
+    const p = job.params;
+    const survivors = Math.min(100, Math.max(1, parseInt(p.survivors, 10) || 20));
+    const relays = Math.min(30, Math.max(1, parseInt(p.relays, 10) || 5));
+    const zone = Math.min(5000, Math.max(200, parseFloat(p.zone) || 1200));
+    const seed = Math.max(0, parseInt(p.seed, 10) || 7);
+    const duration = Math.min(120000, Math.max(1000, parseInt(p.duration, 10) || 30000));
+    const sf = Math.min(12, Math.max(7, parseInt(p.sf, 10) || 7));
+    const loss = Math.min(0.9, Math.max(0.0, parseFloat(p.loss) || 0.0));
+    const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(p.path_exp) || 3.5));
+
+    const args = [
+      '--survivors', String(survivors),
+      '--relays', String(relays),
+      '--zone', String(zone),
+      '--seed', String(seed),
+      '--duration', String(duration),
+      '--sf', String(sf),
+      '--loss', String(loss),
+      '--path-exp', String(pathExp),
+      '--trace', job.traceFilePath
+    ];
+
+    if (Array.isArray(job.triggers)) {
+      for (const tr of job.triggers) {
+        const id = parseInt(tr.node || tr.id, 10);
+        const t = parseInt(tr.t, 10);
+        const kind = String(tr.kind || 'short').replace('_', '-');
+        if (!isNaN(id) && !isNaN(t) && ['short', 'double', 'long', 'voice', 'voice-medical', 'voice-trapped'].includes(kind)) {
+          args.push('--trigger', `${id}:${kind}@${t}`);
+        }
+      }
+    }
+
+    if (Array.isArray(job.faults)) {
+      for (const ft of job.faults) {
+        const t = parseInt(ft.t, 10);
+        const target = String(ft.target || '');
+        const kind = String(ft.kind || '');
+        if (!isNaN(t) && target) {
+          if (kind === 'kill') args.push('--kill', `${target}@${t}`);
+          else if (kind === 'revive') args.push('--revive', `${target}@${t}`);
+          else if (kind === 'gps-off') args.push('--gps-off', `${target}@${t}`);
+          else if (kind === 'no-dr') args.push('--no-dr', `${target}@${t}`);
+          else if (kind === 'block') args.push('--block', `${target}@${t}`);
+        }
+      }
+    }
+
+    // Open file stream for writing output trace safely without buffering everything in V8 memory
+    job.writeStream = fs.createWriteStream(job.traceFilePath, { flags: 'w', encoding: 'utf8' });
+
+    console.log(`[JobManager] Starting job ${job.id}: ${simPath} ${args.join(' ')}`);
+    const child = spawn(simPath, args, { cwd: ROOT_DIR });
+    job.process = child;
+    job.status = 'running';
+    job.broadcastSSE('start', { jobId: job.id, traceFilename: job.traceFilename });
+
+    // Set execution timeout watchdog
+    job.timeoutTimer = setTimeout(() => {
+      console.warn(`[JobManager] Job ${job.id} exceeded wall-clock limit of ${this.defaultTimeoutMs}ms. Cancelling.`);
+      this.cancelJob(job.id, `Execution timed out after ${this.defaultTimeoutMs}ms`);
+    }, this.defaultTimeoutMs);
+
+    let stdoutBuffer = '';
+    let stderrData = '';
+    let summaryJson = null;
+
+    child.stdout.on('data', chunk => {
+      stdoutBuffer += chunk.toString();
+      let newlineIdx;
+      while ((newlineIdx = stdoutBuffer.indexOf('\n')) !== -1) {
+        const line = stdoutBuffer.slice(0, newlineIdx).trim();
+        stdoutBuffer = stdoutBuffer.slice(newlineIdx + 1);
+        if (!line) continue;
+
+        if (job.writeStream && !job.writeStream.destroyed) {
+          job.writeStream.write(line + '\n');
+        }
+
+        try {
+          const parsed = JSON.parse(line);
+          if (parsed.ev) {
+            job.addEvent(parsed);
+          } else if (parsed.cmd === 'summary' || parsed.totals || parsed.summary) {
+            summaryJson = parsed;
+          }
+        } catch {
+          // non-JSON log line
+        }
+      }
+    });
+
+    child.stderr.on('data', chunk => {
+      stderrData += chunk.toString();
+    });
+
+    child.on('close', code => {
+      if (job.timeoutTimer) clearTimeout(job.timeoutTimer);
+      if (job.writeStream && !job.writeStream.destroyed) {
+        job.writeStream.end();
+      }
+
+      this.activeJobs.delete(job.id);
+      job.completedAt = Date.now();
+      job.durationMs = job.completedAt - job.startedAt;
+
+      // Check if remainder in buffer was summary
+      if (!summaryJson && stdoutBuffer.trim()) {
+        try {
+          summaryJson = JSON.parse(stdoutBuffer.trim());
+        } catch {}
+      }
+
+      if (job.status === 'cancelled') {
+        this.metrics.cancelledTotal++;
+        job.broadcastSSE('done', { status: 'cancelled', error: job.error, jobId: job.id });
+        if (job.completionReject) job.completionReject(new Error(job.error || 'Job cancelled'));
+      } else if (code !== 0) {
+        job.status = 'failed';
+        job.error = `Simulator exited with code ${code}: ${stderrData || stdoutBuffer || 'Unknown error'}`;
+        this.metrics.failedTotal++;
+        job.broadcastSSE('done', { status: 'failed', error: job.error, code, jobId: job.id });
+        if (job.completionReject) job.completionReject(new Error(job.error));
+      } else {
+        job.status = 'completed';
+        job.summary = summaryJson || { totals: {} };
+        this.metrics.completedTotal++;
+        job.broadcastSSE('done', {
+          status: 'completed',
+          jobId: job.id,
+          traceFilename: job.traceFilename,
+          summary: job.summary
+        });
+        if (job.completionResolve) {
+          job.completionResolve({
+            success: true,
+            jobId: job.id,
+            traceFilename: job.traceFilename,
+            summary: job.summary
+          });
+        }
+      }
+
+      // Close all SSE listeners for this job
+      for (const client of job.sseClients) {
+        try { client.end(); } catch {}
+      }
+      job.sseClients.clear();
+
+      // Process next in queue
+      this.processQueue();
+    });
+
+    child.on('error', err => {
+      if (job.timeoutTimer) clearTimeout(job.timeoutTimer);
+      if (job.writeStream && !job.writeStream.destroyed) job.writeStream.end();
+      this.activeJobs.delete(job.id);
+      job.completedAt = Date.now();
+      job.status = 'failed';
+      job.error = `Process spawn error: ${err.message}`;
+      this.metrics.failedTotal++;
+      job.broadcastSSE('done', { status: 'failed', error: job.error, jobId: job.id });
+      if (job.completionReject) job.completionReject(err);
+      this.processQueue();
+    });
+  }
+
+  cancelJob(jobId, reason = 'Cancelled by user') {
+    const job = this.jobs.get(jobId);
+    if (!job) return false;
+
+    if (job.status === 'queued') {
+      const idx = this.queue.indexOf(jobId);
+      if (idx !== -1) this.queue.splice(idx, 1);
+      job.status = 'cancelled';
+      job.error = reason;
+      job.completedAt = Date.now();
+      this.metrics.cancelledTotal++;
+      job.broadcastSSE('done', { status: 'cancelled', error: reason, jobId: job.id });
+      if (job.completionReject) job.completionReject(new Error(reason));
+      return true;
+    }
+
+    if (job.status === 'running' && job.process) {
+      job.status = 'cancelled';
+      job.error = reason;
+      try {
+        job.process.kill('SIGTERM');
+        // Force kill if process does not exit in 3s
+        setTimeout(() => {
+          if (job.process) {
+            try { job.process.kill('SIGKILL'); } catch {}
+          }
+        }, 3000).unref();
+      } catch {}
+      return true;
+    }
+
+    return false;
+  }
+
+  getJob(jobId) {
+    return this.jobs.get(jobId) || null;
+  }
+
+  listJobs(limit = 20) {
+    const list = Array.from(this.jobs.values()).map(j => ({
+      id: j.id,
+      sessionId: j.sessionId,
+      status: j.status,
+      createdAt: j.createdAt,
+      startedAt: j.startedAt,
+      completedAt: j.completedAt,
+      durationMs: j.durationMs,
+      traceFilename: j.traceFilename,
+      hasSummary: Boolean(j.summary),
+      error: j.error
+    }));
+    return list.reverse().slice(0, Math.min(100, limit));
+  }
+}
+
+const jobManager = new SimulationJobManager();
+
+// -----------------------------------------------------------------------------
+// Interactive Simulator Manager (Refined with Bounded Ring Buffer & Backpressure)
+// -----------------------------------------------------------------------------
 
 class InteractiveSimulatorManager {
   constructor() {
     this.process = null;
     this.buffer = '';
+    this.maxEventHistory = 2000; // Bounded ring buffer: prevents memory bloat
     this.eventHistory = [];
     this.sseClients = new Set();
     this.commandQueue = [];
@@ -92,7 +485,6 @@ class InteractiveSimulatorManager {
     return new Promise((resolve, reject) => {
       let resolved = false;
 
-      // 10-second startup watchdog timer
       const startupTimer = setTimeout(() => {
         if (!resolved) {
           resolved = true;
@@ -169,7 +561,8 @@ class InteractiveSimulatorManager {
       if (obj.ev) {
         if (typeof obj.t === 'number') this.simTime = obj.t;
         this.eventHistory.push(obj);
-        if (this.eventHistory.length > 50000) {
+        // Strict bounded ring buffer
+        if (this.eventHistory.length > this.maxEventHistory) {
           this.eventHistory.shift();
         }
         this.broadcastSSE('event', obj);
@@ -251,15 +644,15 @@ class InteractiveSimulatorManager {
     }
   }
 
-  startContinuous(stepMs = 50, wallIntervalMs = 50) {
+  startContinuous(stepMs = 50, wallIntervalMs = 100) {
     if (this.continuousTimer) return;
     this.isRunning = true;
+    // 100ms interval ensures the single-threaded Node.js event loop has ample time to serve HTTP
     this.continuousTimer = setInterval(async () => {
       if (!this.process || !this.isRunning) {
         this.pauseContinuous();
         return;
       }
-      // Yield continuous step if user/API commands are executing or waiting
       if (this.activeCommand || this.commandQueue.length > 0) {
         return;
       }
@@ -297,10 +690,9 @@ class InteractiveSimulatorManager {
 
 const simManager = new InteractiveSimulatorManager();
 
-// Ensure traces directory exists
-if (!fs.existsSync(TRACES_DIR)) {
-  fs.mkdirSync(TRACES_DIR, { recursive: true });
-}
+// -----------------------------------------------------------------------------
+// HTTP Server & Route Handler
+// -----------------------------------------------------------------------------
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -341,7 +733,7 @@ function getCorsOrigin(req) {
   if (allowVercel && /^https:\/\/([a-z0-9_-]+\.)*vercel\.app$/i.test(origin)) {
     return origin;
   }
-  if (/^https:\/\/[a-z0-9_-]+\.onrender\.com$/i.test(origin)) {
+  if (/^https:\/\/[a-z0-9_-]+\.onrender\.com$/i.test(origin) || /^https:\/\/[a-z0-9_-]+\.fly\.dev$/i.test(origin) || /^https:\/\/[a-z0-9_-]+\.up\.railway\.app$/i.test(origin)) {
     return origin;
   }
   return null;
@@ -352,7 +744,7 @@ function applyCorsHeaders(headers, req) {
   if (corsOrigin) {
     headers['Access-Control-Allow-Origin'] = corsOrigin;
     headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, DELETE, OPTIONS';
-    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept';
+    headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Last-Event-ID';
     headers['Access-Control-Allow-Credentials'] = 'true';
     headers['Access-Control-Max-Age'] = '86400';
     headers['Vary'] = 'Origin';
@@ -412,7 +804,318 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // --- Live Interactive Simulator Endpoints ---
+  // ---------------------------------------------------------------------------
+  // Health & Monitoring Probes (Phase G)
+  // ---------------------------------------------------------------------------
+
+  // Fast Liveness Probe (Does not touch disk or child processes)
+  if (req.method === 'GET' && (pathname === '/health' || pathname === '/health/liveness' || pathname === '/api/health')) {
+    const simPath = findSimulator();
+    return sendJson(res, 200, {
+      status: 'ok',
+      liveness: true,
+      service: 'setu-simulation-backend',
+      timestamp: Date.now(),
+      uptimeSeconds: Math.floor(process.uptime()),
+      simulatorFound: Boolean(simPath),
+      simulatorActive: Boolean(simManager.process),
+      engine: 'c++_protocol_core_fitl',
+      memoryRssBytes: process.memoryUsage().rss
+    }, req);
+  }
+
+  // Deep Readiness Probe (Verifies worker capacity and memory health)
+  if (req.method === 'GET' && (pathname === '/health/readiness' || pathname === '/api/health/readiness')) {
+    const simPath = findSimulator();
+    const memRss = process.memoryUsage().rss;
+    const isReady = Boolean(simPath);
+
+    return sendJson(res, isReady ? 200 : 503, {
+      status: isReady ? 'ok' : 'degraded',
+      readiness: isReady,
+      service: 'setu-simulation-backend',
+      simulatorFound: Boolean(simPath),
+      simulatorPath: simPath ? path.relative(ROOT_DIR, simPath) : null,
+      workerPool: {
+        active: jobManager.activeJobs.size,
+        queued: jobManager.queue.length,
+        maxConcurrent: jobManager.maxConcurrent
+      },
+      memoryRssBytes: memRss,
+      memoryHeapUsed: process.memoryUsage().heapUsed,
+      uptimeSeconds: Math.floor(process.uptime())
+    }, req);
+  }
+
+  // Comprehensive Metrics Endpoint (Phase G)
+  if (req.method === 'GET' && (pathname === '/api/metrics' || pathname === '/metrics')) {
+    const simPath = findSimulator();
+    return sendJson(res, 200, {
+      timestamp: Date.now(),
+      service: 'setu-simulation-backend',
+      uptimeSeconds: Math.floor(process.uptime()),
+      memory: process.memoryUsage(),
+      simulatorFound: Boolean(simPath),
+      jobManager: {
+        activeJobsCount: jobManager.activeJobs.size,
+        queuedJobsCount: jobManager.queue.length,
+        maxConcurrent: jobManager.maxConcurrent,
+        submittedTotal: jobManager.metrics.submittedTotal,
+        completedTotal: jobManager.metrics.completedTotal,
+        failedTotal: jobManager.metrics.failedTotal,
+        cancelledTotal: jobManager.metrics.cancelledTotal,
+        metrics: jobManager.metrics
+      },
+      interactiveManager: {
+        active: Boolean(simManager.process),
+        running: simManager.isRunning,
+        simTime: simManager.simTime,
+        historySize: simManager.eventHistory.length,
+        sseClientsCount: simManager.sseClients.size
+      }
+    }, req);
+  }
+
+  // GET /api/status
+  if (req.method === 'GET' && pathname === '/api/status') {
+    const simPath = findSimulator();
+    return sendJson(res, 200, {
+      status: 'online',
+      serviceHealth: 'ok',
+      simulatorFound: Boolean(simPath),
+      simulatorHealthy: Boolean(simPath),
+      simulatorPath: simPath ? path.relative(ROOT_DIR, simPath) : null,
+      activeRun: Boolean(jobManager.activeJobs.size > 0 || simManager.process),
+      interactiveActive: Boolean(simManager.process),
+      engine: 'c++_protocol_core_fitl',
+      simTime: simManager.simTime,
+      activeJobs: jobManager.activeJobs.size,
+      queuedJobs: jobManager.queue.length,
+      nodeVersion: process.version,
+      uptimeSeconds: Math.floor(process.uptime())
+    }, req);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Decoupled Simulation Job Lifecycle API (Phases C, D, E, F)
+  // ---------------------------------------------------------------------------
+
+  // POST /api/jobs — Submit an asynchronous simulation job
+  if (req.method === 'POST' && pathname === '/api/jobs') {
+    try {
+      const body = await parseBody(req);
+      const params = body.params || body;
+      const triggers = Array.isArray(body.triggers) ? body.triggers : [];
+      const faults = Array.isArray(body.faults) ? body.faults : [];
+      const sessionId = body.sessionId || null;
+
+      const job = jobManager.createJob(params, triggers, faults, sessionId);
+      const queuePosition = jobManager.queue.indexOf(job.id);
+
+      return sendJson(res, 202, {
+        success: true,
+        jobId: job.id,
+        status: job.status,
+        queuePosition: queuePosition !== -1 ? queuePosition + 1 : 0,
+        traceFilename: job.traceFilename,
+        pollUrl: `/api/jobs/${job.id}`,
+        eventsUrl: `/api/jobs/${job.id}/events`
+      }, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
+  // GET /api/jobs — List recent simulation jobs
+  if (req.method === 'GET' && pathname === '/api/jobs') {
+    const limit = parseInt(reqUrl.searchParams.get('limit') || 20, 10);
+    return sendJson(res, 200, jobManager.listJobs(limit), req);
+  }
+
+  // GET /api/jobs/:id/events — Dedicated SSE Event Stream for a Job (with Reconnect Support)
+  if (req.method === 'GET' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/events')) {
+    const rawId = pathname.replace('/api/jobs/', '').replace('/events', '');
+    const jobId = decodeURIComponent(rawId);
+    const job = jobManager.getJob(jobId);
+    if (!job) {
+      return sendError(res, 404, 'Job not found', req);
+    }
+
+    const sseHeaders = {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive'
+    };
+    applyCorsHeaders(sseHeaders, req);
+    res.writeHead(200, sseHeaders);
+    res.write(': connected\n\n');
+
+    // Handle client reconnection using ?since=<seq> or Last-Event-ID header
+    const sinceSeq = parseInt(reqUrl.searchParams.get('since') || req.headers['last-event-id'] || 0, 10);
+    const snapshot = job.getSnapshot(sinceSeq);
+
+    for (const ev of snapshot.events) {
+      res.write(`id: ${ev._seq}\nevent: event\ndata: ${JSON.stringify(ev)}\n\n`);
+    }
+
+    if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+      res.write(`event: done\ndata: ${JSON.stringify({ status: job.status, summary: job.summary, error: job.error })}\n\n`);
+      res.end();
+      return;
+    }
+
+    job.sseClients.add(res);
+    req.on('close', () => {
+      job.sseClients.delete(res);
+    });
+    return;
+  }
+
+  // GET /api/jobs/:id/results — Retrieve Completed Job Results
+  if (req.method === 'GET' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/results')) {
+    const rawId = pathname.replace('/api/jobs/', '').replace('/results', '');
+    const jobId = decodeURIComponent(rawId);
+    const job = jobManager.getJob(jobId);
+    if (!job) {
+      return sendError(res, 404, 'Job not found', req);
+    }
+    return sendJson(res, 200, {
+      success: job.status === 'completed',
+      jobId: job.id,
+      status: job.status,
+      durationMs: job.durationMs,
+      summary: job.summary,
+      traceFilename: job.traceFilename,
+      error: job.error
+    }, req);
+  }
+
+  // POST /api/jobs/:id/cancel — Cancel a Running or Queued Job
+  if (req.method === 'POST' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/cancel')) {
+    const rawId = pathname.replace('/api/jobs/', '').replace('/cancel', '');
+    const jobId = decodeURIComponent(rawId);
+    const success = jobManager.cancelJob(jobId, 'Cancelled via API request');
+    if (!success) {
+      return sendError(res, 404, 'Job not found or already finished', req);
+    }
+    return sendJson(res, 200, { success: true, jobId, message: 'Job cancellation requested' }, req);
+  }
+
+  // GET /api/jobs/:id — Inspect Job Status & Snapshot
+  if (req.method === 'GET' && pathname.startsWith('/api/jobs/')) {
+    const rawId = pathname.replace('/api/jobs/', '');
+    const jobId = decodeURIComponent(rawId);
+    const job = jobManager.getJob(jobId);
+    if (!job) {
+      return sendError(res, 404, 'Job not found', req);
+    }
+    return sendJson(res, 200, job.getSnapshot(), req);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Backward-Compatible Simulation Routes (Wrapped in Job Management)
+  // ---------------------------------------------------------------------------
+
+  // POST /api/simulate — Backward-Compatible Simulation Endpoint
+  if (req.method === 'POST' && pathname === '/api/simulate') {
+    const simPath = findSimulator();
+    if (!simPath) {
+      return sendError(res, 500, 'Simulator binary (setu_sim) not found. Please build the project first.', req);
+    }
+
+    try {
+      const body = await parseBody(req);
+      const params = body.params || body;
+      const triggers = Array.isArray(body.triggers) ? body.triggers : [];
+      const faults = Array.isArray(body.faults) ? body.faults : [];
+
+      // If client requests asynchronous execution
+      if (body.async === true || reqUrl.searchParams.get('async') === 'true') {
+        const job = jobManager.createJob(params, triggers, faults);
+        return sendJson(res, 202, {
+          success: true,
+          jobId: job.id,
+          status: job.status,
+          traceFilename: job.traceFilename,
+          pollUrl: `/api/jobs/${job.id}`
+        }, req);
+      }
+
+      // Synchronous execution (awaited via JobManager to guarantee resource caps)
+      const job = jobManager.createJob(params, triggers, faults);
+      const result = await job.completionPromise;
+      return sendJson(res, 200, result, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
+  // GET /api/simulate/stream — Backward-Compatible Simulation Event Stream
+  if (req.method === 'GET' && pathname === '/api/simulate/stream') {
+    const simPath = findSimulator();
+    if (!simPath) {
+      return sendError(res, 500, 'Simulator binary not found.', req);
+    }
+
+    const searchParams = reqUrl.searchParams;
+    const params = {
+      survivors: searchParams.get('survivors'),
+      relays: searchParams.get('relays'),
+      zone: searchParams.get('zone'),
+      seed: searchParams.get('seed'),
+      duration: searchParams.get('duration'),
+      sf: searchParams.get('sf'),
+      loss: searchParams.get('loss'),
+      path_exp: searchParams.get('path_exp')
+    };
+
+    const streamHeaders = {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive'
+    };
+    applyCorsHeaders(streamHeaders, req);
+    res.writeHead(200, streamHeaders);
+
+    const job = jobManager.createJob(params);
+    res.write(`data: ${JSON.stringify({ type: 'start', traceFilename: job.traceFilename, jobId: job.id })}\n\n`);
+
+    job.sseClients.add(res);
+
+    job.completionPromise.then(result => {
+      res.write(`data: ${JSON.stringify({ type: 'done', code: 0, summary: result.summary, traceFilename: job.traceFilename })}\n\n`);
+      res.end();
+    }).catch(err => {
+      res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
+      res.end();
+    });
+
+    req.on('close', () => {
+      job.sseClients.delete(res);
+      if (job.status === 'running') {
+        jobManager.cancelJob(job.id, 'Client disconnected');
+      }
+    });
+    return;
+  }
+
+  // POST /api/simulate/stop
+  if (req.method === 'POST' && pathname === '/api/simulate/stop') {
+    let stoppedCount = 0;
+    for (const [id, job] of jobManager.activeJobs) {
+      if (jobManager.cancelJob(id, 'Stopped via /api/simulate/stop')) {
+        stoppedCount++;
+      }
+    }
+    return sendJson(res, 200, {
+      success: true,
+      message: stoppedCount > 0 ? `Stopped ${stoppedCount} running simulation(s)` : 'No simulation was active'
+    }, req);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Live Interactive Twin Endpoints
+  // ---------------------------------------------------------------------------
 
   // GET /api/events (Server-Sent Events)
   if (req.method === 'GET' && pathname === '/api/events') {
@@ -425,7 +1128,6 @@ const server = http.createServer(async (req, res) => {
     res.writeHead(200, sseHeaders);
     res.write(': connected\n\n');
 
-    // Send history if any
     for (const ev of simManager.eventHistory) {
       res.write(`event: event\ndata: ${JSON.stringify(ev)}\n\n`);
     }
@@ -477,7 +1179,7 @@ const server = http.createServer(async (req, res) => {
       const body = await parseBody(req);
       const speed = parseFloat(body.speed || 1.0);
       const stepMs = Math.round(50 * speed);
-      simManager.startContinuous(stepMs, 50);
+      simManager.startContinuous(stepMs, 100);
       return sendJson(res, 200, { success: true, isRunning: true }, req);
     } catch (err) {
       return sendError(res, 500, err.message, req);
@@ -580,45 +1282,6 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // POST /api/control/reposition
-  if (req.method === 'POST' && pathname === '/api/control/reposition') {
-    try {
-      await simManager.ensureStarted();
-      const body = await parseBody(req);
-      const node = parseInt(body.node !== undefined ? body.node : body.id, 10);
-      if (isNaN(node)) {
-        return sendError(res, 400, 'node parameter is required and must be an integer', req);
-      }
-      const x = parseFloat(body.x);
-      const y = parseFloat(body.y);
-      if (isNaN(x) || isNaN(y)) {
-        return sendError(res, 400, 'x and y coordinates are required numbers', req);
-      }
-      const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
-      return sendJson(res, 200, { success: true, result }, req);
-    } catch (err) {
-      return sendError(res, 500, err.message, req);
-    }
-  }
-
-  // POST /api/control/block-link
-  if (req.method === 'POST' && pathname === '/api/control/block-link') {
-    try {
-      await simManager.ensureStarted();
-      const body = await parseBody(req);
-      const a = parseInt(body.a, 10);
-      const b = parseInt(body.b, 10);
-      if (isNaN(a) || isNaN(b)) {
-        return sendError(res, 400, 'a and b node IDs are required integers', req);
-      }
-      const blocked = body.blocked !== undefined ? Boolean(body.blocked) : true;
-      const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
-      return sendJson(res, 200, { success: true, result, a, b, blocked }, req);
-    } catch (err) {
-      return sendError(res, 500, err.message, req);
-    }
-  }
-
   // POST /api/control/motion
   if (req.method === 'POST' && pathname === '/api/control/motion') {
     try {
@@ -688,6 +1351,45 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // POST /api/control/reposition
+  if (req.method === 'POST' && pathname === '/api/control/reposition') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const node = parseInt(body.node !== undefined ? body.node : body.id, 10);
+      if (isNaN(node)) {
+        return sendError(res, 400, 'node parameter is required and must be an integer', req);
+      }
+      const x = parseFloat(body.x);
+      const y = parseFloat(body.y);
+      if (isNaN(x) || isNaN(y)) {
+        return sendError(res, 400, 'x and y coordinates are required numbers', req);
+      }
+      const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
+      return sendJson(res, 200, { success: true, result }, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
+  // POST /api/control/block-link
+  if (req.method === 'POST' && pathname === '/api/control/block-link') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const a = parseInt(body.a, 10);
+      const b = parseInt(body.b, 10);
+      if (isNaN(a) || isNaN(b)) {
+        return sendError(res, 400, 'a and b node IDs are required integers', req);
+      }
+      const blocked = body.blocked !== undefined ? Boolean(body.blocked) : true;
+      const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
+      return sendJson(res, 200, { success: true, result, a, b, blocked }, req);
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
+  }
+
   // GET /api/control/state
   if (req.method === 'GET' && pathname === '/api/control/state') {
     try {
@@ -721,40 +1423,9 @@ const server = http.createServer(async (req, res) => {
     }, req);
   }
 
-  // --- Standard API Endpoints ---
-
-  // GET /health and /api/health (Render Blueprint Healthcheck)
-  if (req.method === 'GET' && (pathname === '/health' || pathname === '/api/health')) {
-    const simPath = findSimulator();
-    return sendJson(res, 200, {
-      status: 'ok',
-      service: 'setu-simulation-backend',
-      timestamp: Date.now(),
-      uptimeSeconds: Math.floor(process.uptime()),
-      simulatorFound: Boolean(simPath),
-      simulatorActive: Boolean(simManager.process),
-      engine: 'c++_protocol_core_fitl',
-      memoryRssBytes: process.memoryUsage().rss
-    }, req);
-  }
-
-  // GET /api/status
-  if (req.method === 'GET' && pathname === '/api/status') {
-    const simPath = findSimulator();
-    return sendJson(res, 200, {
-      status: 'online',
-      serviceHealth: 'ok',
-      simulatorFound: Boolean(simPath),
-      simulatorHealthy: Boolean(simPath),
-      simulatorPath: simPath ? path.relative(ROOT_DIR, simPath) : null,
-      activeRun: Boolean(activeChildProcess || simManager.process),
-      interactiveActive: Boolean(simManager.process),
-      engine: 'c++_protocol_core_fitl',
-      simTime: simManager.simTime,
-      nodeVersion: process.version,
-      uptimeSeconds: Math.floor(process.uptime())
-    }, req);
-  }
+  // ---------------------------------------------------------------------------
+  // Scenarios and Trace File Endpoints
+  // ---------------------------------------------------------------------------
 
   // GET /api/scenarios
   if (req.method === 'GET' && pathname === '/api/scenarios') {
@@ -831,202 +1502,6 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // POST /api/simulate
-  if (req.method === 'POST' && pathname === '/api/simulate') {
-    const simPath = findSimulator();
-    if (!simPath) {
-      return sendError(res, 500, 'Simulator binary (setu_sim) not found. Please build the project first.', req);
-    }
-    if (activeChildProcess) {
-      return sendError(res, 409, 'Another simulation is already currently running.', req);
-    }
-
-    try {
-      const body = await parseBody(req);
-      const params = body.params || body;
-
-      // Validate & bound parameters
-      const survivors = Math.min(100, Math.max(1, parseInt(params.survivors, 10) || 20));
-      const relays = Math.min(30, Math.max(1, parseInt(params.relays, 10) || 5));
-      const zone = Math.min(5000, Math.max(200, parseFloat(params.zone) || 1200));
-      const seed = Math.max(0, parseInt(params.seed, 10) || 7);
-      const duration = Math.min(120000, Math.max(1000, parseInt(params.duration, 10) || 30000));
-      const sf = Math.min(12, Math.max(7, parseInt(params.sf, 10) || 7));
-      const loss = Math.min(0.9, Math.max(0.0, parseFloat(params.loss) || 0.0));
-      const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(params.path_exp) || 3.5));
-
-      const traceFilename = `sim_${Date.now()}_seed${seed}.jsonl`;
-      const traceFilePath = path.join(TRACES_DIR, traceFilename);
-
-      const args = [
-        '--survivors', String(survivors),
-        '--relays', String(relays),
-        '--zone', String(zone),
-        '--seed', String(seed),
-        '--duration', String(duration),
-        '--sf', String(sf),
-        '--loss', String(loss),
-        '--path-exp', String(pathExp),
-        '--trace', traceFilePath
-      ];
-
-      // Add triggers
-      if (Array.isArray(body.triggers)) {
-        for (const tr of body.triggers) {
-          const id = parseInt(tr.node || tr.id, 10);
-          const t = parseInt(tr.t, 10);
-          const kind = String(tr.kind || 'short');
-          if (!isNaN(id) && !isNaN(t) && ['short', 'double', 'long', 'voice', 'voice-medical', 'voice-trapped'].includes(kind)) {
-            args.push('--trigger', `${id}:${kind}@${t}`);
-          }
-        }
-      }
-
-      // Add faults
-      if (Array.isArray(body.faults)) {
-        for (const ft of body.faults) {
-          const t = parseInt(ft.t, 10);
-          const target = String(ft.target || '');
-          const kind = String(ft.kind || '');
-          if (!isNaN(t) && target) {
-            if (kind === 'kill') args.push('--kill', `${target}@${t}`);
-            else if (kind === 'revive') args.push('--revive', `${target}@${t}`);
-            else if (kind === 'gps-off') args.push('--gps-off', `${target}@${t}`);
-            else if (kind === 'no-dr') args.push('--no-dr', `${target}@${t}`);
-            else if (kind === 'block') args.push('--block', `${target}@${t}`);
-          }
-        }
-      }
-
-      console.log(`[Setu API] Spawning simulator: ${simPath} ${args.join(' ')}`);
-      const child = spawn(simPath, args, { cwd: ROOT_DIR });
-      activeChildProcess = child;
-
-      let stdoutData = '';
-      let stderrData = '';
-
-      child.stdout.on('data', chunk => { stdoutData += chunk; });
-      child.stderr.on('data', chunk => { stderrData += chunk; });
-
-      child.on('close', code => {
-        activeChildProcess = null;
-        if (code !== 0) {
-          return sendError(res, 500, `Simulator exited with code ${code}: ${stderrData || stdoutData}`, req);
-        }
-        let summary = null;
-        try {
-          summary = JSON.parse(stdoutData);
-        } catch {
-          summary = { raw: stdoutData };
-        }
-        return sendJson(res, 200, {
-          success: true,
-          traceFilename,
-          summary
-        }, req);
-      });
-
-      child.on('error', err => {
-        activeChildProcess = null;
-        sendError(res, 500, `Simulator spawn failed: ${err.message}`, req);
-      });
-      return;
-    } catch (err) {
-      activeChildProcess = null;
-      return sendError(res, 500, err.message, req);
-    }
-  }
-
-  // GET /api/simulate/stream (Server-Sent Events)
-  if (req.method === 'GET' && pathname === '/api/simulate/stream') {
-    const simPath = findSimulator();
-    if (!simPath) {
-      return sendError(res, 500, 'Simulator binary not found.', req);
-    }
-    if (activeChildProcess) {
-      return sendError(res, 409, 'Another simulation is already currently running.', req);
-    }
-
-    const searchParams = reqUrl.searchParams;
-    const survivors = Math.min(100, Math.max(1, parseInt(searchParams.get('survivors'), 10) || 20));
-    const relays = Math.min(30, Math.max(1, parseInt(searchParams.get('relays'), 10) || 5));
-    const zone = Math.min(5000, Math.max(200, parseFloat(searchParams.get('zone')) || 1200));
-    const seed = Math.max(0, parseInt(searchParams.get('seed'), 10) || 7);
-    const duration = Math.min(120000, Math.max(1000, parseInt(searchParams.get('duration'), 10) || 30000));
-    const sf = Math.min(12, Math.max(7, parseInt(searchParams.get('sf'), 10) || 7));
-    const loss = Math.min(0.9, Math.max(0.0, parseFloat(searchParams.get('loss')) || 0.0));
-    const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(searchParams.get('path_exp')) || 3.5));
-
-    const traceFilename = `stream_${Date.now()}_seed${seed}.jsonl`;
-    const traceFilePath = path.join(TRACES_DIR, traceFilename);
-
-    const args = [
-      '--survivors', String(survivors),
-      '--relays', String(relays),
-      '--zone', String(zone),
-      '--seed', String(seed),
-      '--duration', String(duration),
-      '--sf', String(sf),
-      '--loss', String(loss),
-      '--path-exp', String(pathExp),
-      '--trace', traceFilePath
-    ];
-
-    const streamHeaders = {
-      'Content-Type': 'text/event-stream; charset=utf-8',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive'
-    };
-    applyCorsHeaders(streamHeaders, req);
-    res.writeHead(200, streamHeaders);
-    res.write(`data: ${JSON.stringify({ type: 'start', traceFilename })}\n\n`);
-
-    const child = spawn(simPath, args, { cwd: ROOT_DIR });
-    activeChildProcess = child;
-
-    let summaryData = '';
-
-    child.stdout.on('data', chunk => {
-      summaryData += chunk;
-    });
-
-    child.on('close', code => {
-      activeChildProcess = null;
-      let summary = null;
-      try { summary = JSON.parse(summaryData); } catch { summary = { raw: summaryData }; }
-      res.write(`data: ${JSON.stringify({ type: 'done', code, summary, traceFilename })}\n\n`);
-      res.end();
-    });
-
-    child.on('error', err => {
-      activeChildProcess = null;
-      res.write(`data: ${JSON.stringify({ type: 'error', message: err.message })}\n\n`);
-      res.end();
-    });
-
-    req.on('close', () => {
-      if (activeChildProcess === child) {
-        try { child.kill(); } catch {}
-        activeChildProcess = null;
-      }
-    });
-    return;
-  }
-
-  // POST /api/simulate/stop
-  if (req.method === 'POST' && pathname === '/api/simulate/stop') {
-    if (activeChildProcess) {
-      try {
-        activeChildProcess.kill();
-        activeChildProcess = null;
-        return sendJson(res, 200, { success: true, message: 'Simulation stopped' }, req);
-      } catch (err) {
-        return sendError(res, 500, err.message, req);
-      }
-    }
-    return sendJson(res, 200, { success: true, message: 'No simulation was active' }, req);
-  }
-
   // POST /api/upload-trace
   if (req.method === 'POST' && pathname === '/api/upload-trace') {
     try {
@@ -1054,7 +1529,6 @@ const server = http.createServer(async (req, res) => {
   let filePath = pathname === '/' ? '/index.html' : pathname;
   let absPath = path.join(DASHBOARD_DIR, filePath);
 
-  // Security check: ensure path is within DASHBOARD_DIR
   if (!absPath.startsWith(DASHBOARD_DIR)) {
     return sendError(res, 403, 'Forbidden');
   }
@@ -1082,6 +1556,7 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`  Project Setu - Operations Dashboard & Simulation Server        `);
   console.log(`  Host: http://0.0.0.0:${PORT}                                   `);
   console.log(`  Simulator Binary: ${findSimulator() || 'NOT BUILT YET'}        `);
+  console.log(`  Job Manager: Concurrency Cap = ${jobManager.maxConcurrent}     `);
   console.log(`================================================================`);
 });
 
@@ -1097,14 +1572,10 @@ server.on('error', err => {
 function gracefulShutdown(signal) {
   console.log(`[Setu API] Received ${signal}. Shutting down gracefully...`);
   if (simManager.process) {
-    try {
-      simManager.process.kill('SIGTERM');
-    } catch {}
+    try { simManager.process.kill('SIGTERM'); } catch {}
   }
-  if (activeChildProcess) {
-    try {
-      activeChildProcess.kill('SIGTERM');
-    } catch {}
+  for (const [id] of jobManager.activeJobs) {
+    jobManager.cancelJob(id, `Server shutdown (${signal})`);
   }
   for (const client of simManager.sseClients) {
     try { client.end(); } catch {}

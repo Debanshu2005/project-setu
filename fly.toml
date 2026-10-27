@@ -1,0 +1,57 @@
+# ==============================================================================
+# Fly.io App Specification — Project Setu Simulation Platform
+# Docs: https://fly.io/docs/reference/configuration/
+# ==============================================================================
+
+app = "project-setu-backend"
+primary_region = "iad"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "3000"
+  NODE_ENV = "production"
+  MAX_CONCURRENT_SIMS = "2"
+  SIM_TIMEOUT_MS = "60000"
+  MAX_JOB_EVENTS = "2000"
+  ALLOW_VERCEL_PREVIEWS = "true"
+  ALLOWED_ORIGINS = "https://project-setu.vercel.app,http://localhost:3000,http://localhost:5173"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 50
+    hard_limit = 100
+
+# Mount persistent volume for simulation trace files across deploys/restarts
+[[mounts]]
+  source = "setu_traces"
+  destination = "/app/scenarios/traces"
+
+# Fast Liveness Health Check (verifies HTTP event loop responsiveness)
+[[http_service.checks]]
+  interval = "15s"
+  timeout = "2s"
+  grace_period = "5s"
+  method = "GET"
+  path = "/health/liveness"
+
+# Deep Readiness Health Check (verifies simulator binary and worker capacity)
+[[http_service.checks]]
+  interval = "30s"
+  timeout = "3s"
+  grace_period = "10s"
+  method = "GET"
+  path = "/health/readiness"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 1024

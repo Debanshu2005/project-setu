@@ -357,6 +357,88 @@ export class SetuApi {
     return await res.json();
   }
 
+  // Job-based Execution Methods (Phases C, D, E, F)
+  static async createSimulationJob(payload, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/jobs`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }, timeoutMs);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `HTTP ${res.status}: Failed to submit simulation job`);
+    }
+    return await res.json();
+  }
+
+  static async getJobStatus(jobId, timeoutMs = 6000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/jobs/${encodeURIComponent(jobId)}`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get job status`);
+    return await res.json();
+  }
+
+  static async getJobResults(jobId, timeoutMs = 8000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/jobs/${encodeURIComponent(jobId)}/results`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to get job results`);
+    return await res.json();
+  }
+
+  static async cancelJob(jobId, timeoutMs = 6000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST'
+    }, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to cancel job`);
+    return await res.json();
+  }
+
+  static async listJobs(limit = 20, timeoutMs = 6000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/jobs?limit=${limit}`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}: Failed to list jobs`);
+    return await res.json();
+  }
+
+  static connectJobEvents(jobId, onEvent, onDone, onError, sinceSeq = 0) {
+    const url = `${this.requireBaseUrl()}/api/jobs/${encodeURIComponent(jobId)}/events?since=${sinceSeq}`;
+    const source = new EventSource(url, { withCredentials: true });
+    source.addEventListener('event', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (onEvent) onEvent(data);
+      } catch (err) {
+        console.error('SSE job event parse error:', err);
+      }
+    });
+    source.addEventListener('done', e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (onDone) onDone(data);
+      } catch {}
+      source.close();
+    });
+    source.addEventListener('error', err => {
+      if (onError) onError(err);
+    });
+    return source;
+  }
+
+  static async getHealthLiveness(timeoutMs = 4000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/health/liveness`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  }
+
+  static async getHealthReadiness(timeoutMs = 6000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/health/readiness`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  }
+
+  static async getMetrics(timeoutMs = 6000) {
+    const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/metrics`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.json();
+  }
+
   static async stopSimulation(timeoutMs = 5000) {
     const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/simulate/stop`, { method: 'POST' }, timeoutMs);
     return await res.json();
