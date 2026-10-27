@@ -422,6 +422,32 @@ async function runTestSuite() {
     sim.seek(2500);
     const n18At2500 = sim.nodes.get(18);
     assert(n18At2500.pos_error_m === 0.0, 'Trace scrubber replays estimator_reset event setting pos_error_m to 0.0m');
+
+    // Zero is a valid coordinate value, not an absent estimate or ground truth.
+    const zeroCoordinateSim = new SimulationEngine();
+    zeroCoordinateSim.loadTrace([
+      { t: 0, ev: 'node_init', id: 77, role: 'survivor', x: 0, y: 0, lat_e6: 100, lon_e6: 200 },
+      { t: 1000, ev: 'reposition', node: 77, x: 100, y: 100 },
+      { t: 2000, ev: 'estimator_reset', node: 77 }
+    ]);
+    const zeroNode = zeroCoordinateSim.nodes.get(77);
+    zeroNode.est_lat_e6 = 0;
+    zeroNode.est_lon_e6 = 0;
+    zeroCoordinateSim.seek(1500);
+    assert(zeroCoordinateSim.nodes.get(77).pos_error_m > 0, 'A zero-valued estimate remains valid when recalculating reposition error');
+
+    const zeroResetSim = new SimulationEngine();
+    zeroResetSim.loadTrace([
+      { t: 0, ev: 'node_init', id: 78, role: 'survivor', x: 0, y: 0, lat_e6: 100, lon_e6: 200 },
+      { t: 1000, ev: 'estimator_reset', node: 78 }
+    ]);
+    const zeroResetNode = zeroResetSim.nodes.get(78);
+    zeroResetNode.gt_lat_e6 = 0;
+    zeroResetNode.gt_lon_e6 = 0;
+    zeroResetNode.lat_e6 = 999;
+    zeroResetNode.lon_e6 = 999;
+    zeroResetSim.seek(1500);
+    assert(zeroResetNode.est_lat_e6 === 0 && zeroResetNode.est_lon_e6 === 0, 'Estimator reset preserves valid zero-valued ground-truth coordinates');
   }
 
   console.log('\n================================================================');

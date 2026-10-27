@@ -120,7 +120,7 @@ class SetuDashboardApp {
             node.lon_e6 = geo.lon_e6;
             node.gt_lat_e6 = geo.lat_e6;
             node.gt_lon_e6 = geo.lon_e6;
-            if (node.est_lat_e6 && node.est_lon_e6) {
+            if (Number.isFinite(node.est_lat_e6) && Number.isFinite(node.est_lon_e6)) {
               node.pos_error_m = computePositionErrorM(
                 node.est_lat_e6,
                 node.est_lon_e6,
@@ -236,8 +236,8 @@ class SetuDashboardApp {
           } else {
             const node = this.sim.nodes.get(nodeId);
             if (node) {
-              node.est_lat_e6 = node.gt_lat_e6 || node.lat_e6;
-              node.est_lon_e6 = node.gt_lon_e6 || node.lon_e6;
+              node.est_lat_e6 = node.gt_lat_e6 ?? node.lat_e6;
+              node.est_lon_e6 = node.gt_lon_e6 ?? node.lon_e6;
               node.pos_error_m = 0.0;
               node.pos_mae_m = null;
               node.pos_rmse_m = null;

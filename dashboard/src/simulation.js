@@ -69,9 +69,8 @@ export function e6ToXy(lat_e6, lon_e6) {
  */
 export function computePositionErrorM(est_lat_e6, est_lon_e6, gt_lat_e6, gt_lon_e6) {
   if (
-    typeof est_lat_e6 !== 'number' || typeof est_lon_e6 !== 'number' ||
-    typeof gt_lat_e6 !== 'number' || typeof gt_lon_e6 !== 'number' ||
-    est_lat_e6 === 0 || est_lon_e6 === 0 || gt_lat_e6 === 0 || gt_lon_e6 === 0
+    !Number.isFinite(est_lat_e6) || !Number.isFinite(est_lon_e6) ||
+    !Number.isFinite(gt_lat_e6) || !Number.isFinite(gt_lon_e6)
   ) {
     return null;
   }
@@ -391,15 +390,15 @@ export class SimulationEngine {
               n.lon_e6 = geo.lon_e6;
               n.gt_lon_e6 = geo.lon_e6;
             }
-            if (n.est_lat_e6 && n.est_lon_e6) {
+            if (Number.isFinite(n.est_lat_e6) && Number.isFinite(n.est_lon_e6)) {
               n.pos_error_m = computePositionErrorM(n.est_lat_e6, n.est_lon_e6, n.gt_lat_e6, n.gt_lon_e6);
             }
           }
           break;
         case 'estimator_reset':
           if (n) {
-            n.est_lat_e6 = n.gt_lat_e6 || n.lat_e6;
-            n.est_lon_e6 = n.gt_lon_e6 || n.lon_e6;
+            n.est_lat_e6 = n.gt_lat_e6 ?? n.lat_e6;
+            n.est_lon_e6 = n.gt_lon_e6 ?? n.lon_e6;
             n.pos_error_m = 0.0;
             n.pos_mae_m = null;
             n.pos_rmse_m = null;

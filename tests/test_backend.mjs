@@ -156,7 +156,26 @@ async function runTests() {
     assert(false, `CORS check failed: ${err.message}`);
   }
 
-  // 5. Directory Traversal Protection on Trace Endpoint
+  // 5. Request validation must reject malformed input instead of silently simulating defaults.
+  console.log('\n[5/9] Testing simulation request validation...');
+  try {
+    const malformedJson = await request('POST', '/api/jobs', '{"params":');
+    assert(malformedJson.statusCode === 400, 'Malformed JSON simulation request is rejected with HTTP 400');
+    assert(malformedJson.json?.error === 'Malformed JSON request body', 'Malformed JSON response explains the input error');
+
+    const invalidParams = await request('POST', '/api/jobs', {
+      params: { survivors: 'not-a-number', duration: 2000 }
+    });
+    assert(invalidParams.statusCode === 400, 'Invalid simulation parameter is rejected instead of defaulted');
+    assert(invalidParams.json?.error?.includes('survivors'), 'Invalid-parameter response identifies the offending field');
+
+    const invalidStreamParams = await request('GET', '/api/simulate/stream?loss=not-a-number');
+    assert(invalidStreamParams.statusCode === 400, 'Invalid stream query parameter is rejected before opening SSE');
+  } catch (err) {
+    assert(false, `Simulation request validation failed: ${err.message}`);
+  }
+
+  // 6. Directory Traversal Protection on Trace Endpoint
   console.log('\n[5/8] Testing path traversal security on /api/trace/:filename...');
   try {
     const resTrav1 = await request('GET', '/api/trace/..%2f..%2fpackage.json');

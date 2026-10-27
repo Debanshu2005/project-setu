@@ -17,6 +17,48 @@ const DASHBOARD_DIR = __dirname;
 const SCENARIOS_DIR = path.join(ROOT_DIR, 'scenarios');
 const TRACES_DIR = path.join(SCENARIOS_DIR, 'traces');
 
+class RequestError extends Error {
+  constructor(statusCode, message) {
+    super(message);
+    this.name = 'RequestError';
+    this.statusCode = statusCode;
+  }
+}
+
+function errorStatus(err, fallback = 500) {
+  return Number.isInteger(err?.statusCode) ? err.statusCode : fallback;
+}
+
+function validateSimulationParams(params = {}) {
+  if (!params || typeof params !== 'object' || Array.isArray(params)) {
+    throw new RequestError(400, 'Simulation parameters must be a JSON object');
+  }
+
+  const schema = {
+    survivors: { min: 1, max: 100, integer: true },
+    relays: { min: 1, max: 30, integer: true },
+    zone: { min: 200, max: 5000 },
+    seed: { min: 0, max: 4294967295, integer: true },
+    duration: { min: 1000, max: 120000, integer: true },
+    sf: { min: 7, max: 12, integer: true },
+    loss: { min: 0, max: 0.9 },
+    path_exp: { min: 2, max: 6 }
+  };
+
+  const normalized = { ...params };
+  for (const [name, rule] of Object.entries(schema)) {
+    if (params[name] === undefined) continue;
+    const value = params[name];
+    if (typeof value !== 'number' || !Number.isFinite(value) ||
+        (rule.integer && !Number.isInteger(value)) || value < rule.min || value > rule.max) {
+      const type = rule.integer ? 'an integer' : 'a finite number';
+      throw new RequestError(400, `Invalid simulation parameter "${name}": expected ${type} between ${rule.min} and ${rule.max}`);
+    }
+    normalized[name] = value;
+  }
+  return normalized;
+}
+
 // Locate setu_sim executable
 function findSimulator() {
   if (process.env.SETU_SIM_PATH && fs.existsSync(process.env.SETU_SIM_PATH)) {
@@ -211,7 +253,7 @@ class SimulationJobManager {
 
     const randSuffix = Math.random().toString(36).substring(2, 8);
     const jobId = `sim_${Date.now()}_${randSuffix}`;
-    const job = new SimulationJob(jobId, params, triggers, faults, sessionId, this);
+    const job = new SimulationJob(jobId, validateSimulationParams(params), triggers, faults, sessionId, this);
 
     this.jobs.set(jobId, job);
     this.queue.push(jobId);
@@ -864,21 +906,31 @@ function sendError(res, statusCode, message, req = null) {
 function parseBody(req) {
   return new Promise((resolve, reject) => {
     let body = '';
+    let byteLength = 0;
+    let settled = false;
     req.on('data', chunk => {
-      body += chunk;
-      if (body.length > 50 * 1024 * 1024) { // 50MB limit
-        reject(new Error('Payload too large'));
+      if (settled) return;
+      byteLength += chunk.length;
+      if (byteLength > 50 * 1024 * 1024) { // 50MB limit
+        settled = true;
+        reject(new RequestError(413, 'Payload too large'));
+        req.resume();
+        return;
       }
+      body += chunk;
     });
     req.on('end', () => {
+      if (settled) return;
       if (!body) return resolve({});
       try {
         resolve(JSON.parse(body));
       } catch (err) {
-        resolve({ raw: body });
+        reject(new RequestError(400, 'Malformed JSON request body'));
       }
     });
-    req.on('error', reject);
+    req.on('error', err => {
+      if (!settled) reject(err);
+    });
   });
 }
 
@@ -1022,7 +1074,7 @@ const server = http.createServer(async (req, res) => {
       if (err.message && err.message.includes('queue is full')) {
         return sendError(res, 429, err.message, req);
       }
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1146,7 +1198,7 @@ const server = http.createServer(async (req, res) => {
       const result = await job.completionPromise;
       return sendJson(res, 200, result, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1158,16 +1210,16 @@ const server = http.createServer(async (req, res) => {
     }
 
     const searchParams = reqUrl.searchParams;
-    const params = {
-      survivors: searchParams.get('survivors'),
-      relays: searchParams.get('relays'),
-      zone: searchParams.get('zone'),
-      seed: searchParams.get('seed'),
-      duration: searchParams.get('duration'),
-      sf: searchParams.get('sf'),
-      loss: searchParams.get('loss'),
-      path_exp: searchParams.get('path_exp')
-    };
+    const params = {};
+    for (const name of ['survivors', 'relays', 'zone', 'seed', 'duration', 'sf', 'loss', 'path_exp']) {
+      if (searchParams.has(name)) params[name] = Number(searchParams.get(name));
+    }
+
+    try {
+      validateSimulationParams(params);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
 
     const streamHeaders = {
       'Content-Type': 'text/event-stream; charset=utf-8',
@@ -1177,7 +1229,12 @@ const server = http.createServer(async (req, res) => {
     applyCorsHeaders(streamHeaders, req);
     res.writeHead(200, streamHeaders);
 
-    const job = jobManager.createJob(params);
+    let job;
+    try {
+      job = jobManager.createJob(params);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
     res.write(`data: ${JSON.stringify({ type: 'start', traceFilename: job.traceFilename, jobId: job.id })}\n\n`);
 
     job.sseClients.add(res);
@@ -1268,7 +1325,7 @@ const server = http.createServer(async (req, res) => {
       }
       return sendJson(res, 200, { success: true, config: simManager.config, t: simManager.simTime }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1282,7 +1339,7 @@ const server = http.createServer(async (req, res) => {
       simManager.startContinuous(stepMs, 100);
       return sendJson(res, 200, { success: true, isRunning: true }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1301,7 +1358,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'step', ms });
       return sendJson(res, 200, { success: true, result, t: simManager.simTime }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1311,7 +1368,7 @@ const server = http.createServer(async (req, res) => {
       await simManager.stopAndReset();
       return sendJson(res, 200, { success: true, t: 0 }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1332,7 +1389,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'trigger', node, kind: rawKind });
       return sendJson(res, 200, { success: true, result, node, kind: rawKind }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1349,7 +1406,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'trigger_all', kind, mode, delay_ms: delayMs });
       return sendJson(res, 200, { success: true, result, t: simManager.simTime }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1378,7 +1435,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand(cmdObj);
       return sendJson(res, 200, { success: true, result, node }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1397,7 +1454,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'set_motion', node, profile });
       return sendJson(res, 200, { success: true, result, node, profile }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1415,7 +1472,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'schedule_gnss_outage', node, start_ms: startMs, duration_ms: durationMs });
       return sendJson(res, 200, { success: true, result, node, start_ms: startMs, duration_ms: durationMs }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1447,7 +1504,7 @@ const server = http.createServer(async (req, res) => {
       });
       return;
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1468,7 +1525,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'reposition', node, x, y });
       return sendJson(res, 200, { success: true, result, node: result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1484,7 +1541,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'reset_estimator', node });
       return sendJson(res, 200, { success: true, result, node: result }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1502,7 +1559,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
       return sendJson(res, 200, { success: true, result, a, b, blocked }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1513,7 +1570,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'get_state' });
       return sendJson(res, 200, result, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1524,7 +1581,7 @@ const server = http.createServer(async (req, res) => {
       const result = await simManager.sendCommand({ cmd: 'summary' });
       return sendJson(res, 200, result, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1565,7 +1622,7 @@ const server = http.createServer(async (req, res) => {
       }).filter(Boolean);
       return sendJson(res, 200, list, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1587,7 +1644,7 @@ const server = http.createServer(async (req, res) => {
       });
       return sendJson(res, 200, traces, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 
@@ -1637,7 +1694,7 @@ const server = http.createServer(async (req, res) => {
       fs.writeFileSync(fullPath, content, 'utf8');
       return sendJson(res, 200, { success: true, filename }, req);
     } catch (err) {
-      return sendError(res, 500, err.message, req);
+      return sendError(res, errorStatus(err), err.message, req);
     }
   }
 

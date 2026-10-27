@@ -91,7 +91,7 @@ export class TopologyVisualizer {
           this.draggedNode.lon_e6 = geo.lon_e6;
           this.draggedNode.gt_lat_e6 = geo.lat_e6;
           this.draggedNode.gt_lon_e6 = geo.lon_e6;
-          if (this.draggedNode.est_lat_e6 && this.draggedNode.est_lon_e6) {
+          if (Number.isFinite(this.draggedNode.est_lat_e6) && Number.isFinite(this.draggedNode.est_lon_e6)) {
             this.draggedNode.pos_error_m = computePositionErrorM(
               this.draggedNode.est_lat_e6,
               this.draggedNode.est_lon_e6,
@@ -120,7 +120,7 @@ export class TopologyVisualizer {
           node.lon_e6 = geo.lon_e6;
           node.gt_lat_e6 = geo.lat_e6;
           node.gt_lon_e6 = geo.lon_e6;
-          if (node.est_lat_e6 && node.est_lon_e6) {
+          if (Number.isFinite(node.est_lat_e6) && Number.isFinite(node.est_lon_e6)) {
             node.pos_error_m = computePositionErrorM(
               node.est_lat_e6,
               node.est_lon_e6,
