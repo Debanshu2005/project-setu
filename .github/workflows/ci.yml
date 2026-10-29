@@ -68,7 +68,7 @@ jobs:
         uses: docker/setup-buildx-action@v3
 
       - name: Build Docker image (includes inside-container ctest execution)
-        run: docker build -t project-setu-backend:ci .
+        run: docker build --build-arg GIT_COMMIT=${{ github.sha }} -t project-setu-backend:ci .
 
       - name: Test container startup and healthcheck
         run: |
@@ -77,6 +77,7 @@ jobs:
           docker logs setu-ci-container
           curl -s -f http://localhost:3000/health | grep '"status":"ok"' || (echo "Healthcheck failed" && exit 1)
           curl -s -f http://localhost:3000/api/status | grep '"simulatorFound":true' || (echo "Simulator not detected in container" && exit 1)
+          curl -s -f http://localhost:3000/version | grep '"service":"project-setu-backend"' || (echo "Backend /version check failed" && exit 1)
           docker stop setu-ci-container
           docker rm setu-ci-container
 

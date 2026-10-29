@@ -125,6 +125,23 @@ async function runTests() {
     assert(false, `/api/status failed: ${err.message}`);
   }
 
+  // 3b. Version Endpoints (/version and /api/version)
+  console.log('\n[3b] Testing /version and /api/version deployment endpoints...');
+  try {
+    const resVer = await request('GET', '/version');
+    assert(resVer.statusCode === 200, '/version returns HTTP 200');
+    assert(resVer.json?.service === 'project-setu-backend', '/version reports service name');
+    assert('gitCommit' in (resVer.json || {}), '/version includes gitCommit field');
+    assert('buildTime' in (resVer.json || {}), '/version includes buildTime field');
+    assert('environment' in (resVer.json || {}), '/version includes environment field');
+
+    const resApiVer = await request('GET', '/api/version');
+    assert(resApiVer.statusCode === 200, '/api/version returns HTTP 200');
+    assert(resApiVer.json?.service === 'project-setu-backend', '/api/version reports service name');
+  } catch (err) {
+    assert(false, `/version endpoint failed: ${err.message}`);
+  }
+
   // 4. CORS Security Header Verification
   console.log('\n[4/10] Testing CORS policy...');
   try {

@@ -273,3 +273,42 @@ TEST(multi_interferer_cumulative_collision) {
   CHECK_EQ(w->alerts().size(), 0u);
   CHECK(w->counters().collisions >= 1);
 }
+
+TEST(sub_sensitivity_cumulative_interference_collision) {
+  ChannelParams ch = clean();
+  auto w = std::make_unique<World>(ch, 42);
+  add(*w, 0, Role::Hub, 0, 0);
+  // S1 at d=322.53m: RSSI ~ -120.0 dBm (decodable on its own, above sens -123 dBm)
+  add(*w, 1, Role::Survivor, 322.53, 0);
+  // S2 at d=463.14m: RSSI ~ -125.5 dBm (sub-sensitivity, 2.5 dB below sens -123 dBm)
+  add(*w, 2, Role::Survivor, 463.14, 0);
+  // S3 at d=463.14m: RSSI ~ -125.5 dBm (sub-sensitivity, 2.5 dB below sens -123 dBm)
+  add(*w, 3, Role::Survivor, 0, 463.14);
+
+  // Hidden nodes: survivors cannot hear each other, all reach the central Hub
+  w->block_link(1, 2);
+  w->block_link(1, 3);
+  w->block_link(2, 3);
+
+  const double r1 = w->mean_rssi(1, 0);
+  const double r2 = w->mean_rssi(2, 0);
+  const double r3 = w->mean_rssi(3, 0);
+  CHECK(r1 >= -123.0);  // S1 is above sensitivity threshold
+  CHECK(r2 < -123.0);   // S2 is sub-sensitivity (demodulation fails individually)
+  CHECK(r3 < -123.0);   // S3 is sub-sensitivity (demodulation fails individually)
+  CHECK(r2 >= -133.0);  // S2 is within 10 dB physical interference floor
+  CHECK(r3 >= -133.0);  // S3 is within 10 dB physical interference floor
+
+  // Linear sum of sub-sensitivity interferers:
+  // P_int = 10^(-12.55) + 10^(-12.55) = 2 * 10^(-12.55) = -122.49 dBm >= -123.0 dBm
+  // SIR = -120.0 - (-122.49) = 2.49 dB < 6.0 dB capture threshold.
+  // When sub-sensitivity signals are physically summed (sens - 10 dB), S1 MUST suffer collision!
+  w->button_press(1, 1000, 150);
+  w->button_press(2, 1000, 150);
+  w->button_press(3, 1000, 150);
+
+  w->run_until(1850);
+
+  CHECK_EQ(w->alerts().size(), 0u);
+  CHECK(w->counters().collisions >= 1);
+}

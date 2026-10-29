@@ -223,6 +223,46 @@ export class SetuApi {
     }
   }
 
+  static async getVersion(url = null, timeoutMs = 6000) {
+    const target = (url || this.getBaseUrl()).replace(/\/+$/, '');
+    if (!target) return { ok: false, error: 'No backend URL configured' };
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      let res = await fetch(`${target}/version`, { signal: controller.signal, headers: { Accept: 'application/json' } });
+      if (!res.ok) {
+        res = await fetch(`${target}/api/version`, { signal: controller.signal, headers: { Accept: 'application/json' } });
+      }
+      clearTimeout(id);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: true, data };
+      }
+      return { ok: false, status: res.status };
+    } catch (err) {
+      clearTimeout(id);
+      return { ok: false, error: err.name === 'AbortError' ? 'Timeout' : err.message };
+    }
+  }
+
+  static async getFrontendVersion(timeoutMs = 4000) {
+    if (typeof window === 'undefined') return { ok: false, error: 'Browser environment required' };
+    const controller = new AbortController();
+    const id = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      const res = await fetch('/api/version', { signal: controller.signal, headers: { Accept: 'application/json' } });
+      clearTimeout(id);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        return { ok: true, data };
+      }
+      return { ok: false, status: res.status };
+    } catch (err) {
+      clearTimeout(id);
+      return { ok: false, error: err.name === 'AbortError' ? 'Timeout' : err.message };
+    }
+  }
+
   static async pingBackend(url = null, timeoutMs = 8000) {
     const target = (url || this.getBaseUrl()).replace(/\/+$/, '');
     if (!target) return { ok: false, error: 'No backend URL configured' };

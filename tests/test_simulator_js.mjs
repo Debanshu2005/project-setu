@@ -247,6 +247,65 @@ console.log('\n[Test 7] Trace Telemetry Realism (Drop RSSI & RX SNR)...');
   }
 }
 
+// -----------------------------------------------------------------------------
+// Test 8: Sub-Sensitivity Multi-Interferer Cumulative Interference Collision
+// -----------------------------------------------------------------------------
+console.log('\n[Test 8] Sub-Sensitivity Multi-Interferer Cumulative Collision...');
+{
+  const sim = new SetuSimulator({ survivors: 3, relays: 0, zone: 2000, seed: 42 });
+  sim.shadowSigmaDb = 0.0;
+  sim.fadingSigmaDb = 0.0;
+
+  // S1 at d = 322.53m: RSSI ~ -120.0 dBm (decodable on its own, above sens -123.0 dBm)
+  sim.nodes.get(1).x = 60 + 322.53;
+  sim.nodes.get(1).y = 60;
+
+  // S2 at d = 463.14m: RSSI ~ -125.5 dBm (sub-sensitivity, 2.5 dB below sens -123.0 dBm)
+  sim.nodes.get(2).x = 60 + 463.14;
+  sim.nodes.get(2).y = 60;
+
+  // S3 at d = 463.14m: RSSI ~ -125.5 dBm (sub-sensitivity, 2.5 dB below sens -123.0 dBm)
+  sim.nodes.get(3).x = 60;
+  sim.nodes.get(3).y = 60 + 463.14;
+
+  const r1 = sim.calculateMeanRssi(1, 0);
+  const r2 = sim.calculateMeanRssi(2, 0);
+  const r3 = sim.calculateMeanRssi(3, 0);
+
+  assert(Math.abs(r1 - (-120.0)) < 0.2, `S1 RSSI is ~ -120.0 dBm (Got: ${r1.toFixed(1)} dBm)`);
+  assert(Math.abs(r2 - (-125.5)) < 0.2, `S2 RSSI is ~ -125.5 dBm (Got: ${r2.toFixed(1)} dBm)`);
+  assert(Math.abs(r3 - (-125.5)) < 0.2, `S3 RSSI is ~ -125.5 dBm (Got: ${r3.toFixed(1)} dBm)`);
+  assert(r1 >= -123.0, `S1 RSSI is above sensitivity threshold (${r1.toFixed(1)} dBm >= -123.0 dBm)`);
+  assert(r2 < -123.0, `S2 RSSI is sub-sensitivity (${r2.toFixed(1)} dBm < -123.0 dBm)`);
+  assert(r3 < -123.0, `S3 RSSI is sub-sensitivity (${r3.toFixed(1)} dBm < -123.0 dBm)`);
+  assert(r2 >= -133.0, `S2 RSSI is within 10 dB cutoff floor (${r2.toFixed(1)} dBm >= -133.0 dBm)`);
+  assert(r3 >= -133.0, `S3 RSSI is within 10 dB cutoff floor (${r3.toFixed(1)} dBm >= -133.0 dBm)`);
+
+  // Block links between survivors so they cannot sense each other (hidden terminal)
+  sim.blockedLinks.add('1-2');
+  sim.blockedLinks.add('1-3');
+  sim.blockedLinks.add('2-3');
+
+  // Transmit simultaneously
+  sim.addTrigger(1, 'short', 1000);
+  sim.addTrigger(2, 'short', 1000);
+  sim.addTrigger(3, 'short', 1000);
+
+  const res = sim.run();
+  const airtime = loraAirtimeMs(25, 7, 125000);
+  const initialEndTime = 1000 + 150 + airtime;
+
+  // With cumulative sum across sub-sensitivity interferers (sens - 10 dB),
+  // P_int = 10^(-12.55) + 10^(-12.55) = -122.5 dBm >= -123.0 dBm.
+  // SIR = -120.0 - (-122.5) = 2.5 dB < 6.0 dB. S1 must collide on attempt 0!
+  const s1DeliveredInitial = res.summary.events.filter(e => e.t === initialEndTime && e.origin === 1);
+  assert(s1DeliveredInitial.length === 0,
+    `Survivor 1 did not deliver at t=${initialEndTime}ms due to sub-sensitivity cumulative collision (Got: ${s1DeliveredInitial.length})`);
+
+  const s1Collision = res.traceEvents.find(e => e.ev === 'drop' && e.node === 0 && e.from === 1 && e.why === 'collision');
+  assert(Boolean(s1Collision), 'Survivor 1 registered collision drop at Hub due to sub-sensitivity interference');
+}
+
 console.log('\n================================================================');
 console.log(`  PORTABLE SIMULATOR SUITE: ${passed} PASSED, ${failed} FAILED`);
 console.log('================================================================');

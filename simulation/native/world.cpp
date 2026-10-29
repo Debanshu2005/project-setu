@@ -533,7 +533,7 @@ void World::finish_tx(const Tx& tx) {
           continue;
         if (o.from == r) continue;
         const double ro = mean_rssi(o.from, r);
-        if (ro >= sens_) {
+        if (ro >= sens_ - 10.0) {
           total_interf_mw += std::pow(10.0, ro / 10.0);
         }
       }

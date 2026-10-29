@@ -5,7 +5,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -78,6 +78,46 @@ function findSimulator() {
     if (fs.existsSync(c)) return c;
   }
   return null;
+}
+
+// Retrieve actual deployment build metadata without hardcoding git SHAs
+const CACHED_BUILD_METADATA = (() => {
+  let gitCommit = (
+    process.env.RENDER_GIT_COMMIT ||
+    process.env.GIT_COMMIT ||
+    process.env.VERCEL_GIT_COMMIT_SHA ||
+    ''
+  ).trim();
+
+  if (!gitCommit) {
+    try {
+      const gitOut = execSync('git rev-parse HEAD', {
+        cwd: ROOT_DIR,
+        encoding: 'utf8',
+        timeout: 1500,
+        stdio: ['ignore', 'pipe', 'ignore']
+      });
+      if (gitOut && gitOut.trim()) {
+        gitCommit = gitOut.trim();
+      }
+    } catch {
+      // Git unavailable, not in git repo, or timed out
+    }
+  }
+
+  const buildTime = (process.env.BUILD_TIME || '').trim() || null;
+  const environment = process.env.RENDER ? 'render' : (process.env.VERCEL_ENV ? 'vercel' : (process.env.NODE_ENV || 'unknown'));
+
+  return {
+    service: 'project-setu-backend',
+    gitCommit: gitCommit || null,
+    buildTime,
+    environment
+  };
+})();
+
+function getBuildMetadata() {
+  return CACHED_BUILD_METADATA;
 }
 
 // Ensure traces directory exists
@@ -954,16 +994,27 @@ const server = http.createServer(async (req, res) => {
   }
 
   // ---------------------------------------------------------------------------
+  // Version Endpoint (Milestone 1 Deployment Verification)
+  // ---------------------------------------------------------------------------
+  if (req.method === 'GET' && (pathname === '/version' || pathname === '/api/version')) {
+    return sendJson(res, 200, getBuildMetadata(), req);
+  }
+
+  // ---------------------------------------------------------------------------
   // Health & Monitoring Probes (Phase G)
   // ---------------------------------------------------------------------------
 
   // Fast Liveness Probe (Does not touch disk or child processes)
   if (req.method === 'GET' && (pathname === '/health' || pathname === '/health/liveness' || pathname === '/api/health')) {
     const simPath = findSimulator();
+    const meta = getBuildMetadata();
     return sendJson(res, 200, {
       status: 'ok',
       liveness: true,
       service: 'setu-simulation-backend',
+      gitCommit: meta.gitCommit,
+      buildTime: meta.buildTime,
+      environment: meta.environment,
       timestamp: Date.now(),
       uptimeSeconds: Math.floor(process.uptime()),
       simulatorFound: Boolean(simPath),
@@ -1028,9 +1079,13 @@ const server = http.createServer(async (req, res) => {
   // GET /api/status
   if (req.method === 'GET' && pathname === '/api/status') {
     const simPath = findSimulator();
+    const meta = getBuildMetadata();
     return sendJson(res, 200, {
       status: 'online',
       serviceHealth: 'ok',
+      gitCommit: meta.gitCommit,
+      buildTime: meta.buildTime,
+      environment: meta.environment,
       simulatorFound: Boolean(simPath),
       simulatorHealthy: Boolean(simPath),
       simulatorPath: simPath ? path.relative(ROOT_DIR, simPath) : null,

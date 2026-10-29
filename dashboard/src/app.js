@@ -634,6 +634,8 @@ class SetuDashboardApp {
     const btnResetBackend = document.getElementById('btnResetBackendUrl');
     const lblEngineStatus = document.getElementById('lblBackendEngineStatus');
     const lblBackendSource = document.getElementById('lblBackendSource');
+    const lblCommitBadge = document.getElementById('lblBackendCommitBadge');
+    const lblFrontendVersion = document.getElementById('lblFrontendVersionStatus');
 
     if (!modalBackend || !btnOpenBackend) {
       console.warn('Backend modal elements not found in DOM');

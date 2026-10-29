@@ -60,6 +60,13 @@ COPY scenarios ./scenarios
 RUN mkdir -p /app/scenarios/traces
 
 # Environment configuration
+ARG RENDER_GIT_COMMIT
+ARG GIT_COMMIT
+ARG BUILD_TIME
+
+ENV RENDER_GIT_COMMIT=${RENDER_GIT_COMMIT}
+ENV GIT_COMMIT=${GIT_COMMIT}
+ENV BUILD_TIME=${BUILD_TIME}
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV SETU_SIM_PATH=/app/build/setu_sim
