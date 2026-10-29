@@ -159,6 +159,94 @@ console.log('\n[Test 5] Overlapping Staggered Transmissions...');
   assert(res.summary.totals.collisions >= 2, 'Both staggered transmissions registered collision drops');
 }
 
+// -----------------------------------------------------------------------------
+// Test 6: Multi-Interferer Cumulative Co-Channel Collision (SINR Linear Sum)
+// -----------------------------------------------------------------------------
+console.log('\n[Test 6] Multi-Interferer Cumulative Co-Channel Collision...');
+{
+  const sim = new SetuSimulator({ survivors: 3, relays: 0, zone: 200, seed: 99 });
+  sim.shadowSigmaDb = 0;
+  sim.fadingSigmaDb = 0;
+
+  // Hub is at (60, 60)
+  // Survivor 1: d = 23.15m -> RSSI ~ -80.0 dBm
+  sim.nodes.get(1).x = 60 + 23.15;
+  sim.nodes.get(1).y = 60;
+
+  // Survivor 2: d = 36.79m -> RSSI ~ -87.0 dBm (7 dB below S1)
+  sim.nodes.get(2).x = 60 + 36.79;
+  sim.nodes.get(2).y = 60;
+
+  // Survivor 3: d = 36.79m -> RSSI ~ -87.0 dBm (7 dB below S1)
+  sim.nodes.get(3).x = 60;
+  sim.nodes.get(3).y = 60 + 36.79;
+
+  const r1 = sim.calculateMeanRssi(1, 0);
+  const r2 = sim.calculateMeanRssi(2, 0);
+  const r3 = sim.calculateMeanRssi(3, 0);
+
+  assert(Math.abs(r1 - (-80.0)) < 0.2, `S1 RSSI is ~ -80.0 dBm (Got: ${r1.toFixed(1)} dBm)`);
+  assert(Math.abs(r2 - (-87.0)) < 0.2, `S2 RSSI is ~ -87.0 dBm (Got: ${r2.toFixed(1)} dBm)`);
+  assert(Math.abs(r3 - (-87.0)) < 0.2, `S3 RSSI is ~ -87.0 dBm (Got: ${r3.toFixed(1)} dBm)`);
+
+  const diff12 = r1 - r2;
+  const diff13 = r1 - r3;
+  assert(diff12 >= 6.0 && diff13 >= 6.0, `Each interferer individually satisfies capture >=6dB (${diff12.toFixed(1)}dB, ${diff13.toFixed(1)}dB)`);
+
+  // All 3 transmit at the exact same instant
+  sim.addTrigger(1, 'short', 1000);
+  sim.addTrigger(2, 'short', 1000);
+  sim.addTrigger(3, 'short', 1000);
+
+  const res = sim.run();
+  const airtime = loraAirtimeMs(25, 7, 125000);
+  const initialEndTime = 1000 + 150 + airtime;
+
+  // With cumulative power sum, P_int = P2 + P3 = -84.0 dBm -> SIR = 4.0 dB < 6.0 dB capture margin.
+  // Therefore Survivor 1 MUST suffer a collision drop on attempt 0!
+  const s1DeliveredInitial = res.summary.events.filter(e => e.t === initialEndTime && e.origin === 1);
+  assert(s1DeliveredInitial.length === 0,
+    `Survivor 1 did NOT deliver at initial attempt t=${initialEndTime}ms due to cumulative interference (Got: ${s1DeliveredInitial.length})`);
+
+  const s1Collision = res.traceEvents.find(e => e.ev === 'drop' && e.node === 0 && e.from === 1 && e.why === 'collision');
+  assert(Boolean(s1Collision), 'Survivor 1 registered collision drop at Hub');
+}
+
+// -----------------------------------------------------------------------------
+// Test 7: Trace Telemetry Realism (RSSI on Drop & Physical SNR on RX)
+// -----------------------------------------------------------------------------
+console.log('\n[Test 7] Trace Telemetry Realism (Drop RSSI & RX SNR)...');
+{
+  const sim = new SetuSimulator({ survivors: 1, relays: 0, zone: 200, seed: 42 });
+  sim.nodes.get(1).x = 100;
+  sim.nodes.get(1).y = 60;
+
+  sim.addTrigger(1, 'short', 1000);
+  const res = sim.run();
+
+  const rxEvents = res.traceEvents.filter(e => e.ev === 'rx');
+  assert(rxEvents.length > 0, 'Found RX events in trace');
+  for (const rx of rxEvents) {
+    assert(typeof rx.rssi === 'number', `RX event has numeric rssi: ${rx.rssi}`);
+    assert(typeof rx.snr === 'number', `RX event has numeric snr: ${rx.snr}`);
+    const expectedSnr = Math.min(15.0, Math.max(-20.0, parseFloat((rx.rssi - (-117.0)).toFixed(1))));
+    assert(Math.abs(rx.snr - expectedSnr) < 0.2, `RX SNR matches physical noise floor model (${rx.snr} vs ${expectedSnr})`);
+  }
+
+  // Place survivor beyond sensitivity to trigger weak drop
+  const simWeak = new SetuSimulator({ survivors: 1, relays: 0, zone: 5000, seed: 42 });
+  simWeak.nodes.get(1).x = 2000;
+  simWeak.nodes.get(1).y = 2000;
+  simWeak.addTrigger(1, 'short', 1000);
+  const resWeak = simWeak.run();
+
+  const weakDrops = resWeak.traceEvents.filter(e => e.ev === 'drop' && e.why === 'weak');
+  if (weakDrops.length > 0) {
+    assert(typeof weakDrops[0].rssi === 'number', `Weak drop has numeric rssi: ${weakDrops[0].rssi}`);
+    assert(weakDrops[0].rssi < -123.0, `Weak drop rssi is below sensitivity threshold (${weakDrops[0].rssi} < -123.0)`);
+  }
+}
+
 console.log('\n================================================================');
 console.log(`  PORTABLE SIMULATOR SUITE: ${passed} PASSED, ${failed} FAILED`);
 console.log('================================================================');

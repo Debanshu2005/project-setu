@@ -495,6 +495,7 @@ bool World::channel_busy_for(uint16_t id) const {
 void World::finish_tx(const Tx& tx) {
   std::normal_distribution<double> fade(0.0, ch_.fading_sigma_db);
   std::uniform_real_distribution<double> u01(0.0, 1.0);
+  const double noise_floor = -174.0 + 10.0 * std::log10(static_cast<double>(ch_.bw_hz)) + 6.0;
   for (auto& kv : nodes_) {
     const uint16_t r = kv.first;
     if (r == tx.from || !kv.second->online || kv.second->battery == 0) continue;
@@ -504,7 +505,7 @@ void World::finish_tx(const Tx& tx) {
     char b[128];
     if (rssi < sens_) {
       counters_.weak++;
-      std::snprintf(b, sizeof b, ",\"from\":%u,\"why\":\"weak\"", tx.from);
+      std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f,\"why\":\"weak\"", tx.from, rssi);
       trace_event("drop", r, b);
       continue;
     }
@@ -519,12 +520,26 @@ void World::finish_tx(const Tx& tx) {
         counters_.halfduplex++;
         break;
       }
-      const double ro = mean_rssi(o.from, r);
-      if (ro >= sens_ && rssi - ro < ch_.capture_db) {
-        dropped = true;
-        why = "collision";
-        counters_.collisions++;
-        break;
+    }
+    if (!dropped) {
+      // Cumulative co-channel interference power sum (SINR model)
+      double total_interf_mw = 0.0;
+      for (auto& o : txs_) {
+        if ((o.from == tx.from && o.start == tx.start) || !(o.start < tx.end && o.end > tx.start))
+          continue;
+        if (o.from == r) continue;
+        const double ro = mean_rssi(o.from, r);
+        if (ro >= sens_ - 10.0) {
+          total_interf_mw += std::pow(10.0, ro / 10.0);
+        }
+      }
+      if (total_interf_mw > 0.0) {
+        const double total_interf_dbm = 10.0 * std::log10(total_interf_mw);
+        if (total_interf_dbm >= sens_ && (rssi - total_interf_dbm) < ch_.capture_db) {
+          dropped = true;
+          why = "collision";
+          counters_.collisions++;
+        }
       }
     }
     if (!dropped && ch_.random_loss > 0 && u01(rng_) < ch_.random_loss) {
@@ -533,18 +548,19 @@ void World::finish_tx(const Tx& tx) {
       counters_.lost++;
     }
     if (dropped) {
-      std::snprintf(b, sizeof b, ",\"from\":%u,\"why\":\"%s\"", tx.from, why);
+      std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f,\"why\":\"%s\"", tx.from, rssi, why);
       trace_event("drop", r, b);
       continue;
     }
     counters_.delivered++;
     kv.second->consume_energy(ch_.rx_energy_pct, "rx");
-    std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f,\"battery\":%u,\"energy_mah\":%.3f",
-                  tx.from, rssi, kv.second->battery, kv.second->energy_consumed_mah);
+    const double snr = std::clamp(rssi - noise_floor, -20.0, 15.0);
+    std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f,\"snr\":%.1f,\"battery\":%u,\"energy_mah\":%.3f",
+                  tx.from, rssi, snr, kv.second->battery, kv.second->energy_consumed_mah);
     trace_event("rx", r, b);
     firmware_radio_isr(r, tx.data.data(), tx.data.size(),
                        static_cast<int16_t>(std::lround(rssi)),
-                       static_cast<int8_t>(std::clamp(static_cast<int>(rssi - sens_), -20, 20)));
+                       static_cast<int8_t>(std::lround(snr)));
   }
 }
 

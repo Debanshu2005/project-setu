@@ -237,7 +237,7 @@ export class AnalyticsWorkspaceComponent {
 
     const pathExp = meta.path_exp || LORA_RADIO_CONSTANTS.defaultPathExp;
     const sf = meta.sf || 7;
-    const sens = LORA_RADIO_CONSTANTS.sensitivityBySf[sf] || -124.0;
+    const sens = LORA_RADIO_CONSTANTS.sensitivityBySf[sf] || -123.0;
     const pdrStr = m.lifecycle.pdr !== null ? `${m.lifecycle.pdr.toFixed(1)}%` : 'N/A';
     const latAvg = m.latency.avgMs !== null ? `${m.latency.avgMs.toFixed(0)}ms` : 'N/A';
     const latP95 = m.latency.p95Ms !== null ? `${m.latency.p95Ms.toFixed(0)}ms` : 'N/A';
@@ -317,7 +317,8 @@ export class AnalyticsWorkspaceComponent {
   renderRadioPropagationView(container) {
     const pathExp = this.sim.meta.path_exp || LORA_RADIO_CONSTANTS.defaultPathExp;
     const sf = this.sim.meta.sf || 7;
-    const sens = LORA_RADIO_CONSTANTS.sensitivityBySf[sf] || -124.0;
+    const sens = LORA_RADIO_CONSTANTS.sensitivityBySf[sf] || -123.0;
+    const noiseFloor = LORA_RADIO_CONSTANTS.noiseFloorDbm || -117.0;
 
     container.innerHTML = `
       <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
@@ -432,7 +433,7 @@ export class AnalyticsWorkspaceComponent {
 
           const dVal = Math.round(dist * 10) / 10;
           const rVal = Math.round(ev.rssi * 10) / 10;
-          const snrVal = typeof ev.snr === 'number' ? Math.round(ev.snr * 10) / 10 : Math.round((ev.rssi - (-119.0)) * 10) / 10;
+          const snrVal = typeof ev.snr === 'number' ? Math.round(ev.snr * 10) / 10 : Math.round((ev.rssi - noiseFloor) * 10) / 10;
 
           rssiPoints.push({
             x: dVal,
@@ -476,13 +477,14 @@ export class AnalyticsWorkspaceComponent {
             dist = Math.hypot(txNode.x - rxNode.x, txNode.y - rxNode.y);
           }
 
+          const dropRssi = typeof ev.rssi === 'number' ? ev.rssi : (sens - 2.0);
           rssiPoints.push({
             x: Math.round(dist * 10) / 10,
-            y: sens - 2.0, // Sub-sensitivity drop
+            y: Math.round(dropRssi * 10) / 10,
             nodeA: txNode.id,
             nodeB: rxNode.id,
             success: false,
-            linkMargin: -2.0
+            linkMargin: Math.round((dropRssi - sens) * 10) / 10
           });
         }
       }
@@ -516,7 +518,7 @@ export class AnalyticsWorkspaceComponent {
             success: !l.blocked,
             label: `Baseline Link: Node ${l.a} ➔ ${l.b}`
           });
-          const snr = Math.round((rssi - (-119.0)) * 10) / 10;
+          const snr = Math.round((rssi - noiseFloor) * 10) / 10;
           snrPoints.push({
             x: dist,
             y: snr,

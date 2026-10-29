@@ -29,6 +29,15 @@ TEST(airtime_matches_semtech_calculator) {
   CHECK(lora_airtime_ms(25, 12, 125000) > lora_airtime_ms(25, 10, 125000));
 }
 
+TEST(lora_sensitivity_table_matches_sx1262) {
+  CHECK_EQ(static_cast<int>(lora_sensitivity_dbm(7) * 10), -1230);
+  CHECK_EQ(static_cast<int>(lora_sensitivity_dbm(8) * 10), -1260);
+  CHECK_EQ(static_cast<int>(lora_sensitivity_dbm(9) * 10), -1290);
+  CHECK_EQ(static_cast<int>(lora_sensitivity_dbm(10) * 10), -1320);
+  CHECK_EQ(static_cast<int>(lora_sensitivity_dbm(11) * 10), -1345);
+  CHECK_EQ(static_cast<int>(lora_sensitivity_dbm(12) * 10), -1370);
+}
+
 TEST(duty_cycle_budget) {
   DutyCycle d;  // 1 % of 1 h = 36 000 ms
   CHECK_EQ(d.budget_ms(), 36000u);

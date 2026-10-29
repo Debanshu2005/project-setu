@@ -10,12 +10,13 @@ export const LORA_RADIO_CONSTANTS = Object.freeze({
   shadowSigmaDb: 4.0,         // Log-normal shadowing standard deviation (dB)
   fadingSigmaDb: 1.5,         // Fast fading standard deviation (dB)
   captureMarginDb: 6.0,       // Co-channel capture effect threshold (dB)
+  noiseFloorDbm: -117.0,      // SX1262 thermal noise floor at 125 kHz BW (kT*B + NF: -174 + 51 + 6)
   sensitivityBySf: {          // Receiver sensitivity threshold (dBm) by Spreading Factor (125 kHz BW)
-    7: -124.0,
-    8: -127.0,
-    9: -130.0,
-    10: -133.0,
-    11: -135.0,
+    7: -123.0,
+    8: -126.0,
+    9: -129.0,
+    10: -132.0,
+    11: -134.5,
     12: -137.0
   },
   nominalBatteryMah: 300.0,   // Nominal 1S LiPo capacity (mAh)
@@ -521,6 +522,8 @@ export function generateLinkQualityMatrix(nodesMap = new Map(), linksList = [], 
         rxSuccess: 0,
         drops: 0,
         rssiSum: 0,
+        snrSum: 0,
+        snrCount: 0,
         rssi: null,
         snr: null,
         prr: null,
@@ -562,6 +565,10 @@ export function generateLinkQualityMatrix(nodesMap = new Map(), linksList = [], 
         if (typeof ev.rssi === 'number') {
           cell.rssiSum += ev.rssi;
         }
+        if (typeof ev.snr === 'number') {
+          cell.snrSum += ev.snr;
+          cell.snrCount++;
+        }
       }
     } else if (ev.ev === 'drop') {
       const fromId = ev.from;
@@ -577,7 +584,8 @@ export function generateLinkQualityMatrix(nodesMap = new Map(), linksList = [], 
   }
 
   // Compute final link metrics
-  const sensitivity = LORA_RADIO_CONSTANTS.sensitivityBySf[7] || -124.0;
+  const sensitivity = LORA_RADIO_CONSTANTS.sensitivityBySf[7] || -123.0;
+  const noiseFloor = LORA_RADIO_CONSTANTS.noiseFloorDbm || -117.0;
 
   for (let r = 0; r < n; r++) {
     for (let c = 0; c < n; c++) {
@@ -587,7 +595,8 @@ export function generateLinkQualityMatrix(nodesMap = new Map(), linksList = [], 
         cell.status = 'MEASURED';
         const avgRssi = cell.rxSuccess > 0 ? (cell.rssiSum / cell.rxSuccess) : null;
         cell.rssi = avgRssi !== null ? Math.round(avgRssi * 10) / 10 : null;
-        cell.snr = avgRssi !== null ? Math.round((avgRssi - sensitivity) * 10) / 10 : null;
+        const avgSnr = cell.snrCount > 0 ? (cell.snrSum / cell.snrCount) : (avgRssi !== null ? (avgRssi - noiseFloor) : null);
+        cell.snr = avgSnr !== null ? Math.round(avgSnr * 10) / 10 : null;
         cell.linkMargin = avgRssi !== null ? Math.round((avgRssi - sensitivity) * 10) / 10 : null;
         cell.prr = Math.round((cell.rxSuccess / cell.samples) * 1000) / 10;
         cell.lossRate = Math.round((cell.drops / cell.samples) * 1000) / 10;

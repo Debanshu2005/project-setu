@@ -451,43 +451,66 @@ export class SetuSimulator {
           const rssi = parseFloat((meanRssi + this.gauss(0, this.fadingSigmaDb)).toFixed(1));
           if (rssi < this.sens) {
             this.counters.weak++;
-            this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'weak' });
+            this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, rssi, why: 'weak' });
             continue;
           }
 
-          // Check collision with other overlapping transmissions (matching native C++ channel model)
-          let collision = false;
+          // Check half-duplex and collision with other overlapping transmissions
+          let dropped = false;
+          let why = '';
           for (const other of this.activeTxs) {
             if (other === tx || (other.from === tx.from && other.start === tx.start)) continue;
             // Overlap condition: other started before tx ended, and ended after tx started
             if (!(other.start < tx.end && other.end > tx.start)) continue;
 
             if (other.from === rxNode.id) {
-              collision = true;
+              dropped = true;
+              why = 'halfduplex';
               this.counters.halfduplex++;
-              this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'halfduplex' });
-              break;
-            }
-            const otherRssi = this.calculateMeanRssi(other.from, rxNode.id);
-            if (otherRssi >= this.sens && (rssi - otherRssi < this.captureDb)) {
-              collision = true;
-              this.counters.collisions++;
-              this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'collision' });
               break;
             }
           }
-          if (collision) continue;
 
-            // Random loss
-            if (this.loss > 0 && this.prng() < this.loss) {
-              this.counters.lost++;
-              this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'loss' });
-              continue;
+          // Cumulative co-channel interference power sum (SINR model)
+          if (!dropped) {
+            let totalInterfMw = 0;
+            for (const other of this.activeTxs) {
+              if (other === tx || (other.from === tx.from && other.start === tx.start)) continue;
+              if (!(other.start < tx.end && other.end > tx.start)) continue;
+              if (other.from === rxNode.id) continue;
+
+              const otherRssi = this.calculateMeanRssi(other.from, rxNode.id);
+              if (otherRssi >= this.sens - 10.0) {
+                totalInterfMw += Math.pow(10, otherRssi / 10);
+              }
             }
 
-            // Successful Delivery
-            this.counters.delivered++;
-            this.traceEvents.push({ t: now, ev: 'rx', node: rxNode.id, from: tx.from, rssi });
+            if (totalInterfMw > 0) {
+              const totalInterfDbm = 10 * Math.log10(totalInterfMw);
+              if (totalInterfDbm >= this.sens && (rssi - totalInterfDbm < this.captureDb)) {
+                dropped = true;
+                why = 'collision';
+                this.counters.collisions++;
+              }
+            }
+          }
+
+          if (!dropped && this.loss > 0 && this.prng() < this.loss) {
+            dropped = true;
+            why = 'loss';
+            this.counters.lost++;
+          }
+
+          if (dropped) {
+            this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, rssi, why });
+            continue;
+          }
+
+          // Successful Delivery
+          this.counters.delivered++;
+          const noiseFloor = -174.0 + 10.0 * Math.log10(this.bwHz) + 6.0;
+          const snr = Math.min(15.0, Math.max(-20.0, parseFloat((rssi - noiseFloor).toFixed(1))));
+          this.traceEvents.push({ t: now, ev: 'rx', node: rxNode.id, from: tx.from, rssi, snr });
 
             // Handle packet in receiving node
             const p = tx.packet;

@@ -81,12 +81,13 @@ console.log('[Test 1] Log-Distance Path Loss Model & Theoretical Curve Calculati
   const rssiSevere = calculateTheoreticalRssi(100.0, 4.5);
   check('Severe rubble RSSI at d=100m (n=4.5)', rssiSevere, -122.2);
 
-  // Link Margin against SF7 sensitivity (-124 dBm):
+  // Link Margin against SF7 sensitivity (-123 dBm):
   const sensSf7 = LORA_RADIO_CONSTANTS.sensitivityBySf[7];
-  check('SF7 Receiver Sensitivity is -124.0 dBm', sensSf7, -124.0);
+  check('SF7 Receiver Sensitivity is -123.0 dBm', sensSf7, -123.0);
+  check('SX1262 125 kHz Noise Floor is -117.0 dBm', LORA_RADIO_CONSTANTS.noiseFloorDbm, -117.0);
 
-  const margin100 = rssi100 - sensSf7;
-  check('Link Margin at d=100m (n=3.5)', margin100, 21.8);
+  const margin100 = Math.round((rssi100 - sensSf7) * 10) / 10;
+  check('Link Margin at d=100m (n=3.5)', margin100, 20.8);
 }
 
 // -----------------------------------------------------------------------------

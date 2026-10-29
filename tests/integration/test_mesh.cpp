@@ -217,3 +217,39 @@ TEST(simulation_is_deterministic) {
   };
   CHECK(run() == run());
 }
+
+TEST(multi_interferer_cumulative_collision) {
+  ChannelParams ch = clean();
+  auto w = std::make_unique<World>(ch, 42);
+  add(*w, 0, Role::Hub, 0, 0);
+  // S1 at d=23.15m: RSSI ~ -80 dBm
+  add(*w, 1, Role::Survivor, 23.15, 0);
+  // S2 at d=36.79m: RSSI ~ -87 dBm (7 dB below S1)
+  add(*w, 2, Role::Survivor, 36.79, 0);
+  // S3 at d=36.79m: RSSI ~ -87 dBm (7 dB below S1)
+  add(*w, 3, Role::Survivor, 0, 36.79);
+
+  // Classic hidden-node scenario: survivors cannot hear each other (blocked by rubble),
+  // but all three reach the central Hub.
+  w->block_link(1, 2);
+  w->block_link(1, 3);
+  w->block_link(2, 3);
+
+  const double r1 = w->mean_rssi(1, 0);
+  const double r2 = w->mean_rssi(2, 0);
+  const double r3 = w->mean_rssi(3, 0);
+  CHECK(r1 - r2 >= 6.0); // each alone >= 6 dB capture
+  CHECK(r1 - r3 >= 6.0);
+
+  // All 3 transmit at t=1000ms simultaneously (short press released at 1150ms, double_gap expires at 1750ms, airtime 62ms finishes at 1812ms)
+  w->button_press(1, 1000, 150);
+  w->button_press(2, 1000, 150);
+  w->button_press(3, 1000, 150);
+
+  // Run past initial transmission window (1850ms)
+  w->run_until(1850);
+
+  // Survivor 1 must have collided due to cumulative interference P_int = P2 + P3 (-84 dBm, SIR = 4 dB < 6 dB)
+  CHECK_EQ(w->alerts().size(), 0u);
+  CHECK(w->counters().collisions >= 1);
+}
