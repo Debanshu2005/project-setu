@@ -14,8 +14,9 @@
     "test:positioning": "node tests/test_positioning_pipeline.mjs",
     "test:scientific": "node tests/test_scientific_analytics.mjs",
     "test:ui": "node tests/test_scientific_dashboard_ui.mjs",
-    "test:all": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs && node tests/test_scientific_analytics.mjs && node tests/test_scientific_dashboard_ui.mjs",
-    "test": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs && node tests/test_scientific_analytics.mjs && node tests/test_scientific_dashboard_ui.mjs"
+    "test:all": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs && node tests/test_scientific_analytics.mjs && node tests/test_scientific_dashboard_ui.mjs && node tests/test_simulator_js.mjs",
+    "test": "node tests/test_custom_simulation.mjs && node tests/test_reliability.mjs && node tests/test_backend.mjs && node tests/test_analytics.mjs && node tests/test_positioning_pipeline.mjs && node tests/test_scientific_analytics.mjs && node tests/test_scientific_dashboard_ui.mjs && node tests/test_simulator_js.mjs",
+    "test:simulator": "node tests/test_simulator_js.mjs"
   },
   "keywords": [
     "disaster-response",

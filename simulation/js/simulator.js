@@ -396,6 +396,11 @@ export class SetuSimulator {
               continue;
             }
 
+            // Skip if node is already transmitting
+            if (this.activeTxs.some(t => t.from === n.id && now < t.end)) {
+              continue;
+            }
+
             // Start transmission
             this.counters.tx++;
             this.traceEvents.push({
@@ -428,44 +433,50 @@ export class SetuSimulator {
       }
 
       // 3. Complete transmissions that end at 'now'
-      for (let tIdx = 0; tIdx < this.activeTxs.length; tIdx++) {
-        const tx = this.activeTxs[tIdx];
+      const endingTxs = [];
+      for (const tx of this.activeTxs) {
         if (tx.end === now) {
-          this.activeTxs.splice(tIdx, 1);
-          tIdx--;
+          endingTxs.push(tx);
+        }
+      }
 
-          // Deliver to all other online nodes
-          for (const [, rxNode] of this.nodes) {
-            if (rxNode.id === tx.from || !rxNode.online) continue;
+      for (const tx of endingTxs) {
+        // Deliver to all other online nodes
+        for (const [, rxNode] of this.nodes) {
+          if (rxNode.id === tx.from || !rxNode.online) continue;
 
-            const meanRssi = this.calculateMeanRssi(tx.from, rxNode.id);
-            if (meanRssi < this.sens - 6.0) continue;
+          const meanRssi = this.calculateMeanRssi(tx.from, rxNode.id);
+          if (meanRssi < this.sens - 6.0) continue;
 
-            const rssi = parseFloat((meanRssi + this.gauss(0, this.fadingSigmaDb)).toFixed(1));
-            if (rssi < this.sens) {
-              this.counters.weak++;
-              this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'weak' });
-              continue;
+          const rssi = parseFloat((meanRssi + this.gauss(0, this.fadingSigmaDb)).toFixed(1));
+          if (rssi < this.sens) {
+            this.counters.weak++;
+            this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'weak' });
+            continue;
+          }
+
+          // Check collision with other overlapping transmissions (matching native C++ channel model)
+          let collision = false;
+          for (const other of this.activeTxs) {
+            if (other === tx || (other.from === tx.from && other.start === tx.start)) continue;
+            // Overlap condition: other started before tx ended, and ended after tx started
+            if (!(other.start < tx.end && other.end > tx.start)) continue;
+
+            if (other.from === rxNode.id) {
+              collision = true;
+              this.counters.halfduplex++;
+              this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'halfduplex' });
+              break;
             }
-
-            // Check collision with other active transmissions
-            let collision = false;
-            for (const other of this.activeTxs) {
-              if (other.from === rxNode.id) {
-                collision = true;
-                this.counters.halfduplex++;
-                this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'halfduplex' });
-                break;
-              }
-              const otherRssi = this.calculateMeanRssi(other.from, rxNode.id);
-              if (otherRssi >= this.sens && (rssi - otherRssi < this.captureDb)) {
-                collision = true;
-                this.counters.collisions++;
-                this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'collision' });
-                break;
-              }
+            const otherRssi = this.calculateMeanRssi(other.from, rxNode.id);
+            if (otherRssi >= this.sens && (rssi - otherRssi < this.captureDb)) {
+              collision = true;
+              this.counters.collisions++;
+              this.traceEvents.push({ t: now, ev: 'drop', node: rxNode.id, from: tx.from, why: 'collision' });
+              break;
             }
-            if (collision) continue;
+          }
+          if (collision) continue;
 
             // Random loss
             if (this.loss > 0 && this.prng() < this.loss) {
@@ -554,8 +565,10 @@ export class SetuSimulator {
             }
           }
         }
+
+        // Prune transmissions older than overlap window (6000ms, matching C++ world.cpp)
+        this.activeTxs = this.activeTxs.filter(tx => tx.end + 6000 >= now);
       }
-    }
 
     return {
       traceEvents: this.traceEvents,
