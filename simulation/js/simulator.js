@@ -480,7 +480,7 @@ export class SetuSimulator {
               if (other.from === rxNode.id) continue;
 
               const otherRssi = this.calculateMeanRssi(other.from, rxNode.id);
-              if (otherRssi >= this.sens - 10.0) {
+              if (otherRssi >= this.sens) {
                 totalInterfMw += Math.pow(10, otherRssi / 10);
               }
             }

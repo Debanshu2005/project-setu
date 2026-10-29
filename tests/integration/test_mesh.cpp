@@ -1,4 +1,5 @@
 // Multi-node scenarios: the real core running over the modelled RF channel.
+#include <iostream>
 #include "testlib.hpp"
 #include "world.hpp"
 
@@ -176,10 +177,29 @@ TEST(escalation_general_then_trapped_both_reach_hub) {
 TEST(flood_terminates_without_loops_in_a_big_mesh) {
   ChannelParams ch;  // default: shadowing + fading on
   auto w = make_demo_world(20, 5, 1200, ch, 7);
+  w->set_trace(&std::cout);
   const size_t n = w->node_ids().size();
   w->button_press(7, 1000, 1700);
   w->run_until(30000);
   CHECK(alert_from(*w, 7) != nullptr);
+  const auto& s7 = w->node(7).stats();
+  std::printf("\nDEBUG Node 7: acked=%d retries=%u tx_sos=%u tx_ack=%u tx_relay=%u queue_drops=%u duty_blocked=%u\n",
+              w->node(7).sos_acked(), s7.retries, s7.tx_sos, s7.tx_ack, s7.tx_relay, s7.queue_drops, s7.duty_blocked);
+  auto n7 = w->get_node_info(7);
+  std::printf("Node 7 pos: (%.1f, %.1f). Links from Node 7:\n", n7.x, n7.y);
+  for (auto id : w->node_ids()) {
+    if (id == 7) continue;
+    double r = w->mean_rssi(7, id);
+    if (r >= w->sensitivity() - 6.0) {
+      auto o = w->get_node_info(id);
+      std::printf("  -> Node %u (%s) at (%.1f, %.1f): dist=%.1fm rssi=%.1f dBm\n",
+                  id, o.role == Role::Hub ? "Hub" : (o.role == Role::Relay ? "Relay" : "Survivor"),
+                  o.x, o.y, std::hypot(n7.x - o.x, n7.y - o.y), r);
+    }
+  }
+  std::printf("Node 7 radio events (received/dropped):\n");
+  // Let's check Node 7's dedup cache or queue
+  std::printf("Node 7 stats: retries=%u tx_sos=%u\n", s7.retries, s7.tx_sos);
   CHECK(w->node(7).sos_acked());
   uint64_t tx = 0;
   for (auto id : w->node_ids()) {

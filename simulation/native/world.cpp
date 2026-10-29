@@ -413,8 +413,10 @@ double World::mean_rssi(uint16_t a, uint16_t b) const {
   const auto& nb = *nodes_.at(b);
   const double d = std::max(1.0, std::hypot(na.x - nb.x, na.y - nb.y));
   std::mt19937 lr(seed_ ^ (k.first * 65537u + k.second * 2246822519u));
-  std::normal_distribution<double> g(0.0, ch_.shadow_sigma_db);
-  const double pl = ch_.ref_loss_db + 10.0 * ch_.path_exp * std::log10(d) + ch_.extra_loss_db + g(lr);
+  const double shadow = (ch_.shadow_sigma_db > 0.0)
+                            ? std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr)
+                            : 0.0;
+  const double pl = ch_.ref_loss_db + 10.0 * ch_.path_exp * std::log10(d) + ch_.extra_loss_db + shadow;
   return ch_.tx_dbm - pl;
 }
 
@@ -493,7 +495,6 @@ bool World::channel_busy_for(uint16_t id) const {
 }
 
 void World::finish_tx(const Tx& tx) {
-  std::normal_distribution<double> fade(0.0, ch_.fading_sigma_db);
   std::uniform_real_distribution<double> u01(0.0, 1.0);
   const double noise_floor = -174.0 + 10.0 * std::log10(static_cast<double>(ch_.bw_hz)) + 6.0;
   for (auto& kv : nodes_) {
@@ -501,7 +502,10 @@ void World::finish_tx(const Tx& tx) {
     if (r == tx.from || !kv.second->online || kv.second->battery == 0) continue;
     const double mean = mean_rssi(tx.from, r);
     if (mean < sens_ - 6.0) continue;  // far outside range: not worth tracing
-    const double rssi = mean + fade(rng_);
+    const double fade = (ch_.fading_sigma_db > 0.0)
+                            ? std::normal_distribution<double>(0.0, ch_.fading_sigma_db)(rng_)
+                            : 0.0;
+    const double rssi = mean + fade;
     char b[128];
     if (rssi < sens_) {
       counters_.weak++;
@@ -529,7 +533,7 @@ void World::finish_tx(const Tx& tx) {
           continue;
         if (o.from == r) continue;
         const double ro = mean_rssi(o.from, r);
-        if (ro >= sens_ - 10.0) {
+        if (ro >= sens_) {
           total_interf_mw += std::pow(10.0, ro / 10.0);
         }
       }
@@ -777,14 +781,18 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
       c.node_id = static_cast<uint16_t>(100 + i);
       c.role = setu::Role::Relay;
       uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-      w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jitter(r),
-                  (i / cols + 1) * zone / (rows + 1) + jitter(r), r_batt);
+      const double jy = jitter(r);
+      const double jx = jitter(r);
+      w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jx,
+                  (i / cols + 1) * zone / (rows + 1) + jy, r_batt);
     }
     for (int i = 0; i < survivors; i++) {
       c.node_id = static_cast<uint16_t>(i + 1);
       c.role = setu::Role::Survivor;
       uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-      w->add_node(c, pos(r), pos(r), s_batt);
+      const double py = pos(r);
+      const double px = pos(r);
+      w->add_node(c, px, py, s_batt);
     }
     if (w->planned_connected()) return w;
   }
