@@ -238,6 +238,7 @@ void run_path_loss_sweep_experiment(uint32_t seed) {
 
 int run_interactive(int survivors, int relays, double zone, ChannelParams ch, uint32_t seed) {
   std::unique_ptr<World> w;
+  bool allow_disconnected = false;
   std::map<uint16_t, uint8_t> initial_batteries;
   std::map<uint16_t, MotionProfile> initial_motion_profiles;
   std::map<uint16_t, bool> initial_online;
@@ -245,7 +246,7 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
   std::map<uint16_t, bool> initial_dr;
 
   auto init_world = [&](int s_count, int r_count, double z, ChannelParams c, uint32_t sd, const std::map<uint16_t, uint8_t>& batts) {
-    w = make_demo_world(s_count, r_count, z, c, sd, setu::NodeConfig(), batts);
+    w = make_demo_world(s_count, r_count, z, c, sd, setu::NodeConfig(), batts, allow_disconnected);
     w->set_trace(&std::cout);
     for (const auto& kv : initial_motion_profiles) {
       w->set_motion_profile(kv.first, kv.second);
@@ -446,6 +447,7 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       if (line.find("\"sf\":") != std::string::npos) ch.sf = static_cast<uint8_t>(json_get_int(line, "sf", ch.sf));
       if (line.find("\"loss\":") != std::string::npos) ch.random_loss = json_get_double(line, "loss", ch.random_loss);
       if (line.find("\"path_exp\":") != std::string::npos) ch.path_exp = json_get_double(line, "path_exp", ch.path_exp);
+      if (line.find("\"allow_disconnected\":") != std::string::npos) allow_disconnected = json_get_bool(line, "allow_disconnected", allow_disconnected);
       if (line.find("\"reset_all\":true") != std::string::npos) {
         initial_batteries.clear();
         initial_motion_profiles.clear();
@@ -481,6 +483,7 @@ int main(int argc, char** argv) {
   std::string trace_path;
   bool interactive = false;
   bool experiment_path_loss = false;
+  bool allow_disconnected = false;
   std::vector<Trigger> triggers;
   std::vector<std::pair<std::string, std::string>> misc;  // (kind, arg)
 
@@ -511,6 +514,8 @@ int main(int argc, char** argv) {
     } else if (a == "--kill" || a == "--revive" || a == "--gps-off" || a == "--no-dr" ||
                a == "--block" || a == "--motion" || a == "--battery") {
       misc.push_back({a, next()});
+    } else if (a == "--allow-disconnected") {
+      allow_disconnected = true;
     } else {
       die("unknown option " + a);
     }
@@ -527,7 +532,7 @@ int main(int argc, char** argv) {
 
   std::unique_ptr<World> w;
   try {
-    w = make_demo_world(survivors, relays, zone, ch, seed);
+    w = make_demo_world(survivors, relays, zone, ch, seed, setu::NodeConfig(), {}, allow_disconnected);
   } catch (const std::exception& e) {
     die(e.what());
   }

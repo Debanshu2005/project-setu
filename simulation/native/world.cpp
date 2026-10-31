@@ -10,6 +10,7 @@
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
+#include <iostream>
 
 #include "setu/duty_cycle.hpp"
 #include "firmware_task_node.hpp"
@@ -420,22 +421,81 @@ double World::mean_rssi(uint16_t a, uint16_t b) const {
   return ch_.tx_dbm - pl;
 }
 
-bool World::planned_connected() const {
+PlannedConnectivityReport World::planned_connectivity_report() const {
+  PlannedConnectivityReport rep;
+  rep.total_nodes = nodes_.size();
+  if (nodes_.empty()) {
+    rep.connected = true;
+    return rep;
+  }
+
   uint16_t hub = 0;
-  for (auto& kv : nodes_)
-    if (kv.second->node->config().role == setu::Role::Hub) hub = kv.first;
-  std::set<uint16_t> seen{hub};
+  bool hub_found = false;
+  for (const auto& kv : nodes_) {
+    if (kv.second->node->config().role == setu::Role::Hub) {
+      hub = kv.first;
+      hub_found = true;
+      break;
+    }
+  }
+
+  const double max_loss = ch_.tx_dbm - sens_ - ch_.connect_margin_db - ch_.ref_loss_db - ch_.extra_loss_db;
+  if (max_loss > 0.0 && ch_.path_exp > 0.0) {
+    rep.max_viable_range_m = std::pow(10.0, max_loss / (10.0 * ch_.path_exp));
+  } else {
+    rep.max_viable_range_m = 1.0;
+  }
+
+  if (!hub_found) {
+    rep.connected = false;
+    rep.connected_to_hub = 0;
+    rep.disconnected_count = nodes_.size();
+    rep.component_count = 0;
+    return rep;
+  }
+
+  std::set<uint16_t> hub_reachable{hub};
   std::vector<uint16_t> todo{hub};
   while (!todo.empty()) {
     uint16_t u = todo.back();
     todo.pop_back();
-    for (auto& kv : nodes_)
-      if (!seen.count(kv.first) && mean_rssi(u, kv.first) >= sens_ + ch_.connect_margin_db) {
-        seen.insert(kv.first);
+    for (const auto& kv : nodes_) {
+      if (!hub_reachable.count(kv.first) && mean_rssi(u, kv.first) >= sens_ + ch_.connect_margin_db) {
+        hub_reachable.insert(kv.first);
         todo.push_back(kv.first);
       }
+    }
   }
-  return seen.size() == nodes_.size();
+
+  rep.connected_to_hub = hub_reachable.size();
+  rep.disconnected_count = nodes_.size() - hub_reachable.size();
+  rep.connected = (hub_reachable.size() == nodes_.size());
+
+  std::set<uint16_t> all_visited;
+  size_t components = 0;
+  for (const auto& kv : nodes_) {
+    if (!all_visited.count(kv.first)) {
+      components++;
+      std::vector<uint16_t> comp_todo{kv.first};
+      all_visited.insert(kv.first);
+      while (!comp_todo.empty()) {
+        uint16_t curr = comp_todo.back();
+        comp_todo.pop_back();
+        for (const auto& other : nodes_) {
+          if (!all_visited.count(other.first) && mean_rssi(curr, other.first) >= sens_ + ch_.connect_margin_db) {
+            all_visited.insert(other.first);
+            comp_todo.push_back(other.first);
+          }
+        }
+      }
+    }
+  }
+  rep.component_count = components;
+  return rep;
+}
+
+bool World::planned_connected() const {
+  return planned_connectivity_report().connected;
 }
 
 double World::position_error_m(uint16_t id, int32_t lat_e6, int32_t lon_e6) const {
@@ -766,7 +826,15 @@ std::vector<SimNodeInfo> World::get_all_nodes_info() const {
 
 std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, const ChannelParams& ch,
                                        uint32_t seed, const setu::NodeConfig& base,
-                                       const std::map<uint16_t, uint8_t>& initial_batteries) {
+                                       const std::map<uint16_t, uint8_t>& initial_batteries,
+                                       bool allow_disconnected) {
+  PlannedConnectivityReport best_report;
+  size_t best_connected_count = 0;
+  std::unique_ptr<World> best_world = nullptr;
+
+  const int cols = (relays == 5) ? 3 : std::max(1, static_cast<int>(std::round(std::sqrt(relays))));
+  const int rows = std::max(1, (relays + cols - 1) / cols);
+
   for (uint32_t s = seed; s < seed + 500; s++) {
     auto w = std::make_unique<World>(ch, s);
     std::mt19937 r(s);
@@ -776,7 +844,6 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
     c.role = setu::Role::Hub;
     uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
     w->add_node(c, 60, 60, hub_batt);
-    const int cols = 3, rows = std::max(1, (relays + cols - 1) / cols);
     for (int i = 0; i < relays; i++) {
       c.node_id = static_cast<uint16_t>(100 + i);
       c.role = setu::Role::Relay;
@@ -794,9 +861,40 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
       const double px = pos(r);
       w->add_node(c, px, py, s_batt);
     }
-    if (w->planned_connected()) return w;
+
+    auto report = w->planned_connectivity_report();
+    if (report.connected) return w;
+
+    if (report.connected_to_hub > best_connected_count || best_world == nullptr) {
+      best_connected_count = report.connected_to_hub;
+      best_report = report;
+      if (allow_disconnected) {
+        best_world = std::move(w);
+      }
+    }
   }
-  throw std::runtime_error("could not generate a connected demo topology");
+
+  if (allow_disconnected && best_world != nullptr) {
+    std::cerr << "setu_sim: [WARN] running with disconnected topology (reachability "
+              << best_connected_count << "/" << best_report.total_nodes
+              << " nodes connected to Hub, path_exp=" << ch.path_exp << ")\n";
+    return best_world;
+  }
+
+  char buf[512];
+  std::snprintf(
+      buf, sizeof(buf),
+      "could not generate a connected demo topology after 500 attempts: "
+      "path_exp=%.2f, seed=%u, survivors=%d, relays=%d, zone=%.0fm. "
+      "Max viable radio range is ~%.1fm (TX %.1f dBm, sens %.1f dBm, margin %.1f dB), "
+      "leaving %zu/%zu nodes disconnected from Hub (%zu components). "
+      "Placement constraints infeasible for fully connected topology; reduce zone size, "
+      "increase relay density, lower path loss exponent, or enable --allow-disconnected.",
+      ch.path_exp, seed, survivors, relays, zone,
+      best_report.max_viable_range_m, ch.tx_dbm, setu::lora_sensitivity_dbm(ch.sf), ch.connect_margin_db,
+      best_report.disconnected_count, best_report.total_nodes,
+      best_report.component_count);
+  throw std::runtime_error(buf);
 }
 
 }  // namespace sim

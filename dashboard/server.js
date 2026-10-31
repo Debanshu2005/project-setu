@@ -364,6 +364,7 @@ class SimulationJobManager {
     const sf = Math.min(12, Math.max(7, parseInt(p.sf, 10) || 7));
     const loss = Math.min(0.9, Math.max(0.0, parseFloat(p.loss) || 0.0));
     const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(p.path_exp) || 3.5));
+    const allowDisconnected = Boolean(p.allow_disconnected || p.allowDisconnected || job.allow_disconnected);
 
     const args = [
       '--survivors', String(survivors),
@@ -376,6 +377,9 @@ class SimulationJobManager {
       '--path-exp', String(pathExp),
       '--trace', '-'
     ];
+    if (allowDisconnected) {
+      args.push('--allow-disconnected');
+    }
 
     if (Array.isArray(job.triggers)) {
       for (const tr of job.triggers) {
@@ -497,7 +501,8 @@ class SimulationJobManager {
         if (job.completionReject) job.completionReject(new Error(job.error || 'Job cancelled'));
       } else if (code !== 0) {
         job.status = 'failed';
-        job.error = `Simulator exited with code ${code}: ${stderrData || stdoutBuffer || 'Unknown error'}`;
+        const cleanErr = (stderrData || stdoutBuffer || 'Unknown error').trim();
+        job.error = `Simulator exited with code ${code}: ${cleanErr}`;
         this.metrics.failedTotal++;
         job.broadcastSSE('done', { status: 'failed', error: job.error, code, jobId: job.id });
         if (job.completionReject) job.completionReject(new Error(job.error));

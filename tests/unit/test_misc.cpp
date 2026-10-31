@@ -85,3 +85,101 @@ TEST(zero_sigma_channel_precondition_safety) {
   double r = w.mean_rssi(0, 1);
   CHECK(r > -150.0 && r < 0.0);
 }
+
+TEST(path_loss_exponent_scales_attenuation_and_link_viability) {
+  sim::ChannelParams ch30;
+  ch30.path_exp = 3.0;
+  ch30.shadow_sigma_db = 0.0;
+  ch30.fading_sigma_db = 0.0;
+
+  sim::ChannelParams ch40;
+  ch40.path_exp = 4.0;
+  ch40.shadow_sigma_db = 0.0;
+  ch40.fading_sigma_db = 0.0;
+
+  sim::World w30(ch30, 100);
+  setu::NodeConfig c;
+  c.node_id = 0;
+  w30.add_node(c, 0, 0);
+  c.node_id = 1;
+  w30.add_node(c, 200, 0); // 200m distance
+
+  sim::World w40(ch40, 100);
+  c.node_id = 0;
+  w40.add_node(c, 0, 0);
+  c.node_id = 1;
+  w40.add_node(c, 200, 0); // 200m distance
+
+  double rssi30 = w30.mean_rssi(0, 1);
+  double rssi40 = w40.mean_rssi(0, 1);
+
+  // Theoretical path loss difference at 200m: 10 * (4.0 - 3.0) * log10(200) = 10 * 2.301 = 23.01 dB
+  CHECK(rssi30 > rssi40);
+  CHECK(std::abs((rssi30 - rssi40) - 23.01) < 0.1);
+
+  // At SF7 (sensitivity -123 dBm), 200m is viable under n=3.0 but non-viable under n=4.0
+  CHECK(rssi30 >= -123.0);
+  CHECK(rssi40 < -123.0);
+}
+
+TEST(make_demo_world_path_loss_3_0_and_3_5_feasible) {
+  sim::ChannelParams ch30;
+  ch30.path_exp = 3.0;
+  auto w30 = sim::make_demo_world(20, 5, 1200, ch30, 42);
+  CHECK(w30 != nullptr);
+  CHECK(w30->planned_connected());
+
+  sim::ChannelParams ch35;
+  ch35.path_exp = 3.5;
+  auto w35 = sim::make_demo_world(20, 5, 1200, ch35, 42);
+  CHECK(w35 != nullptr);
+  CHECK(w35->planned_connected());
+}
+
+TEST(make_demo_world_path_loss_4_0_succeeds_in_feasible_geometry) {
+  sim::ChannelParams ch40;
+  ch40.path_exp = 4.0;
+  // Under reduced zone (400m), node spacing matches physical radio range (~156.7m)
+  auto w40 = sim::make_demo_world(20, 5, 400, ch40, 42);
+  CHECK(w40 != nullptr);
+  CHECK(w40->planned_connected());
+}
+
+TEST(make_demo_world_path_loss_4_0_infeasible_produces_actionable_diagnostic) {
+  sim::ChannelParams ch40;
+  ch40.path_exp = 4.0;
+
+  bool caught = false;
+  try {
+    // 1200m zone with only 5 relays is physically infeasible at n=4.0
+    sim::make_demo_world(20, 5, 1200, ch40, 42);
+  } catch (const std::runtime_error& e) {
+    caught = true;
+    std::string msg = e.what();
+    // 1. Exact backward-compatible prefix must match
+    CHECK(msg.find("could not generate a connected demo topology") != std::string::npos);
+    // 2. Actionable diagnostic details must be present
+    CHECK(msg.find("after 500 attempts") != std::string::npos);
+    CHECK(msg.find("path_exp=4.00") != std::string::npos);
+    CHECK(msg.find("seed=42") != std::string::npos);
+    CHECK(msg.find("zone=1200m") != std::string::npos);
+    CHECK(msg.find("survivors=20, relays=5") != std::string::npos);
+    CHECK(msg.find("Max viable radio range is ~156.7m") != std::string::npos);
+    CHECK(msg.find("disconnected from Hub") != std::string::npos);
+    CHECK(msg.find("--allow-disconnected") != std::string::npos);
+  }
+  CHECK(caught);
+}
+
+TEST(make_demo_world_path_loss_4_0_with_allow_disconnected) {
+  sim::ChannelParams ch40;
+  ch40.path_exp = 4.0;
+  // With allow_disconnected=true, simulation does not abort; it returns best topology
+  auto w = sim::make_demo_world(20, 5, 1200, ch40, 42, setu::NodeConfig(), {}, true);
+  CHECK(w != nullptr);
+  CHECK_EQ(w->node_ids().size(), 26u);
+  // Verify that report correctly detects the disconnected nodes without crashing
+  auto rep = w->planned_connectivity_report();
+  CHECK_EQ(rep.total_nodes, 26u);
+  CHECK(rep.connected_to_hub > 0u);
+}

@@ -1790,6 +1790,10 @@ class SetuDashboardApp {
     const sf = parseInt(document.getElementById('simSf').value, 10);
     const loss = parseFloat(document.getElementById('simLoss').value);
     const pathExp = parseFloat(document.getElementById('simPathExp').value);
+    const zoneEl = document.getElementById('simZone');
+    const zone = zoneEl ? (parseFloat(zoneEl.value) || 1200) : 1200;
+    const allowDiscEl = document.getElementById('simAllowDisconnected');
+    const allowDisconnected = allowDiscEl ? Boolean(allowDiscEl.checked) : false;
 
     const faults = [];
     if (this.sim && this.sim.nodes) {
@@ -1830,7 +1834,8 @@ class SetuDashboardApp {
         sf,
         loss,
         path_exp: pathExp,
-        zone: 1200
+        zone,
+        allow_disconnected: allowDisconnected
       },
       triggers: [
         { node: 1, kind: 'short', t: 1000 },

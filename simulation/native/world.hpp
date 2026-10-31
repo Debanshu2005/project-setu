@@ -90,6 +90,15 @@ struct SimNodeInfo {
   setu::NodeStats stats;
 };
 
+struct PlannedConnectivityReport {
+  bool connected = false;
+  size_t total_nodes = 0;
+  size_t connected_to_hub = 0;
+  size_t disconnected_count = 0;
+  size_t component_count = 0;
+  double max_viable_range_m = 0.0;
+};
+
 class World {
  public:
   World(const ChannelParams& ch, uint32_t seed);
@@ -137,6 +146,7 @@ class World {
   std::vector<uint16_t> node_ids() const;
   double mean_rssi(uint16_t a, uint16_t b) const;   // dBm, -inf if blocked
   double sensitivity() const { return sens_; }
+  PlannedConnectivityReport planned_connectivity_report() const;
   bool planned_connected() const;                   // every node can reach a hub at connect_margin
   double position_error_m(uint16_t id, int32_t lat_e6, int32_t lon_e6) const;
   void dump_topology_trace();
@@ -174,9 +184,11 @@ class World {
 
 // Hub in a corner, relays on a loose grid, survivors scattered. Retries seeds until the
 // planned topology is connected. Hub id 0, relays 100.., survivors 1..N.
+// If allow_disconnected is true and full connectivity is infeasible, returns best generated topology.
 std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone_m,
                                        const ChannelParams& ch, uint32_t seed,
                                        const setu::NodeConfig& base = setu::NodeConfig(),
-                                       const std::map<uint16_t, uint8_t>& initial_batteries = {});
+                                       const std::map<uint16_t, uint8_t>& initial_batteries = {},
+                                       bool allow_disconnected = false);
 
 }  // namespace sim
