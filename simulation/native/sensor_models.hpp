@@ -27,16 +27,18 @@ namespace sim {
  */
 enum class MotionProfile : uint8_t {
   Stationary = 0,
-  Walking = 1,
-  Running = 2,
-  SuddenMovement = 3,
-  FallImpact = 4,
-  Irregular = 5
+  Moving = 1,
+  Walking = 2,
+  Running = 3,
+  SuddenMovement = 4,
+  FallImpact = 5,
+  Irregular = 6
 };
 
 inline const char* motion_profile_str(MotionProfile p) {
   switch (p) {
     case MotionProfile::Stationary: return "stationary";
+    case MotionProfile::Moving: return "moving";
     case MotionProfile::Walking: return "walking";
     case MotionProfile::Running: return "running";
     case MotionProfile::SuddenMovement: return "sudden_movement";
@@ -127,6 +129,7 @@ class Mpu6050SensorModel {
         dyn_ay = 0.01 * std::cos(phase_ * 2.0 * M_PI * 8.0);
         break;
 
+      case MotionProfile::Moving:
       case MotionProfile::Walking: {
         // ~1.8 Hz cadence, periodic forward/vertical acceleration, arm swing
         double f = 1.8;
@@ -255,6 +258,7 @@ class Mpu6050SensorModel {
  private:
   double profile_frequency_hz() const {
     switch (profile_) {
+      case MotionProfile::Moving:
       case MotionProfile::Walking: return 1.8;
       case MotionProfile::Running: return 2.8;
       case MotionProfile::Irregular: return 1.5;

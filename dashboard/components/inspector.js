@@ -171,6 +171,7 @@ export class InspectorComponent {
               <span>Motion Profile (Inertial):</span>
               <select id="selMotionProfile" style="font-size: 10px; padding: 3px 6px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #38bdf8; border-radius: var(--radius-sm); cursor: pointer;">
                 <option value="stationary" ${n.motion_profile === 'stationary' ? 'selected' : ''}>🚶‍♂️ Stationary</option>
+                <option value="moving" ${n.motion_profile === 'moving' ? 'selected' : ''}>🚶 Moving</option>
                 <option value="walking" ${n.motion_profile === 'walking' ? 'selected' : ''}>🚶 Walking (1.8 Hz)</option>
                 <option value="running" ${n.motion_profile === 'running' ? 'selected' : ''}>🏃 Running (2.8 Hz)</option>
                 <option value="sudden_movement" ${n.motion_profile === 'sudden_movement' ? 'selected' : ''}>⚡ Sudden Movement</option>
@@ -385,6 +386,7 @@ export class InspectorComponent {
       btnOnline.addEventListener('click', () => {
         const newOnline = !n.online;
         n.online = newOnline;
+        n.initial_online = newOnline;
         if (this.onStateChange) {
           this.onStateChange(n.id, { online: newOnline });
         }
@@ -428,6 +430,7 @@ export class InspectorComponent {
       btnGnss.addEventListener('click', () => {
         const newGnss = !n.gnss_on;
         n.gnss_on = newGnss;
+        n.initial_gnss_on = newGnss;
         if (this.onStateChange) {
           this.onStateChange(n.id, { gnss_on: newGnss });
         }
@@ -441,6 +444,7 @@ export class InspectorComponent {
       btnDr.addEventListener('click', () => {
         const newDr = !n.dr_on;
         n.dr_on = newDr;
+        n.initial_dr_on = newDr;
         if (this.onStateChange) {
           this.onStateChange(n.id, { dr_on: newDr });
         }
@@ -466,6 +470,7 @@ export class InspectorComponent {
       selMotion.addEventListener('change', e => {
         const profile = e.target.value;
         n.motion_profile = profile;
+        n.initial_motion_profile = profile;
         if (this.onMotionChange) {
           this.onMotionChange(n.id, profile);
         }

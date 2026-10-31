@@ -258,3 +258,23 @@ TEST(position_tracker_ground_truth_repositioning_and_estimate_independence) {
   CHECK_EQ(tracker.last_est_lon_e6(), new_gt_lon);
   CHECK_EQ(tracker.current_error_m(), 0.0);
 }
+
+TEST(mpu6050_moving_profile_step_detection_and_kinematics) {
+  Mpu6050SensorModel moving_imu(101);
+  moving_imu.set_profile(MotionProfile::Moving);
+
+  CHECK(std::string(motion_profile_str(MotionProfile::Moving)) == "moving");
+
+  int moving_steps = 0;
+  // Simulate 3 seconds of moving profile (300 ticks of 10ms = 100 Hz)
+  for (uint32_t t = 10; t <= 3000; t += 10) {
+    ImuSample s = moving_imu.update(t);
+    if (s.step_detected) {
+      moving_steps++;
+      CHECK(std::abs(s.step_length_m - 0.72f) <= 0.05f);
+    }
+  }
+  // Human moving at ~1.8 Hz cadence for 3 seconds -> ~5 steps (cadence active)
+  CHECK(moving_steps >= 4);
+  CHECK(moving_steps <= 6);
+}

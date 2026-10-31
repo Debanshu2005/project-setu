@@ -399,6 +399,8 @@ class SimulationJobManager {
           else if (kind === 'gps-off') args.push('--gps-off', `${target}@${t}`);
           else if (kind === 'no-dr') args.push('--no-dr', `${target}@${t}`);
           else if (kind === 'block') args.push('--block', `${target}@${t}`);
+          else if (kind === 'motion') args.push('--motion', `${target}:${ft.profile || 'moving'}@${t}`);
+          else if (kind === 'battery') args.push('--battery', `${target}:${ft.battery !== undefined ? ft.battery : 100}@${t}`);
         }
       }
     }
@@ -1504,7 +1506,7 @@ const server = http.createServer(async (req, res) => {
         return sendError(res, 400, 'node parameter is required and must be an integer', req);
       }
       const rawProfile = String(body.profile || 'stationary').toLowerCase().replace('-', '_');
-      const validProfiles = ['stationary', 'walking', 'running', 'sudden_movement', 'fall_impact', 'irregular'];
+      const validProfiles = ['stationary', 'moving', 'walking', 'running', 'sudden_movement', 'fall_impact', 'irregular'];
       const profile = validProfiles.includes(rawProfile) ? rawProfile : 'stationary';
       const result = await simManager.sendCommand({ cmd: 'set_motion', node, profile });
       return sendJson(res, 200, { success: true, result, node, profile }, req);

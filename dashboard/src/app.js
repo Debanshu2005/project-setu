@@ -1022,12 +1022,19 @@ class SetuDashboardApp {
             existing.active_sos = n.active_sos;
             existing.gnss_on = n.gnss_on;
             existing.dr_on = n.dr_on;
+            if (n.motion_profile) {
+              existing.motion_profile = n.motion_profile;
+              existing.initial_motion_profile = n.motion_profile;
+            }
             existing.stats = n.stats;
           }
         }
       }
       this.updateMetrics();
       this.topo.render();
+      if (this.inspector && this.inspector.selectedNode) {
+        this.inspector.renderNode();
+      }
       return;
     }
 
@@ -1130,6 +1137,30 @@ class SetuDashboardApp {
         nb.battery = 0;
         nb.online = false;
       }
+    } else if (ev.ev === 'motion_profile') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb && ev.profile) {
+        nb.motion_profile = ev.profile;
+        nb.initial_motion_profile = ev.profile;
+      }
+    } else if (ev.ev === 'gps_off') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) nb.gnss_on = false;
+    } else if (ev.ev === 'gps_on') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) nb.gnss_on = true;
+    } else if (ev.ev === 'dr_off') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) nb.dr_on = false;
+    } else if (ev.ev === 'dr_on') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) nb.dr_on = true;
+    } else if (ev.ev === 'node_kill') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) nb.online = false;
+    } else if (ev.ev === 'node_revive') {
+      const nb = this.sim.nodes.get(ev.node);
+      if (nb) nb.online = true;
     }
 
     // Clean up finished packet rings
@@ -1353,7 +1384,10 @@ class SetuDashboardApp {
             existing.pos_mae_m = typeof n.pos_mae_m === 'number' ? n.pos_mae_m : (n.pos_mae_m === null ? null : existing.pos_mae_m);
             existing.pos_rmse_m = typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : (n.pos_rmse_m === null ? null : existing.pos_rmse_m);
             existing.pos_max_err_m = typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : (n.pos_max_err_m === null ? null : existing.pos_max_err_m);
-            existing.motion_profile = n.motion_profile || 'stationary';
+            existing.motion_profile = n.motion_profile || existing.initial_motion_profile || existing.motion_profile || 'stationary';
+            if (n.motion_profile) {
+              existing.initial_motion_profile = n.motion_profile;
+            }
             existing.gnss_status = n.gnss_status || (n.gnss ? 'FIX_3D' : 'NO_FIX');
             existing.stats = {
               tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
@@ -1373,6 +1407,7 @@ class SetuDashboardApp {
               initial_battery: n.initial_battery !== undefined ? n.initial_battery : (n.battery !== undefined ? n.battery : 100),
               energy_consumed_mah: typeof n.energy_consumed_mah === 'number' ? n.energy_consumed_mah : 0,
               online: n.online,
+              initial_online: n.online !== undefined ? n.online : true,
               active_sos: n.active,
               ack_received: n.acked,
               active: n.active,
@@ -1385,7 +1420,9 @@ class SetuDashboardApp {
               button_q_ovf: n.button_q_ovf !== undefined ? n.button_q_ovf : 0,
               radio_q_ovf: n.radio_q_ovf !== undefined ? n.radio_q_ovf : 0,
               gnss_on: n.gnss !== undefined ? n.gnss : true,
+              initial_gnss_on: n.gnss !== undefined ? n.gnss : true,
               dr_on: n.dr !== undefined ? n.dr : true,
+              initial_dr_on: n.dr !== undefined ? n.dr : true,
               lat_e6: typeof n.lat_e6 === 'number' ? n.lat_e6 : xyToE6(n.x, n.y).lat_e6,
               lon_e6: typeof n.lon_e6 === 'number' ? n.lon_e6 : xyToE6(n.x, n.y).lon_e6,
               gt_lat_e6: typeof n.gt_lat_e6 === 'number' ? n.gt_lat_e6 : (typeof n.lat_e6 === 'number' ? n.lat_e6 : xyToE6(n.x, n.y).lat_e6),
@@ -1398,6 +1435,7 @@ class SetuDashboardApp {
               pos_rmse_m: typeof n.pos_rmse_m === 'number' ? n.pos_rmse_m : null,
               pos_max_err_m: typeof n.pos_max_err_m === 'number' ? n.pos_max_err_m : null,
               motion_profile: n.motion_profile || 'stationary',
+              initial_motion_profile: n.motion_profile || 'stationary',
               gnss_status: n.gnss_status || (n.gnss ? 'FIX_3D' : 'NO_FIX'),
               stats: {
                 tx: (n.tx_sos || 0) + (n.tx_relay || 0) + (n.tx_ack || 0),
@@ -1753,6 +1791,36 @@ class SetuDashboardApp {
     const loss = parseFloat(document.getElementById('simLoss').value);
     const pathExp = parseFloat(document.getElementById('simPathExp').value);
 
+    const faults = [];
+    if (this.sim && this.sim.nodes) {
+      for (const [id, n] of this.sim.nodes) {
+        const prof = n.initial_motion_profile || n.motion_profile;
+        if (prof && prof !== 'stationary') {
+          faults.push({ kind: 'motion', target: id, profile: prof, t: 0 });
+        }
+        const batt = n.initial_battery !== undefined ? n.initial_battery : n.battery;
+        if (typeof batt === 'number' && batt !== 100) {
+          faults.push({ kind: 'battery', target: id, battery: batt, t: 0 });
+        }
+        if (n.initial_online === false || n.online === false) {
+          faults.push({ kind: 'kill', target: id, t: 0 });
+        }
+        if (n.initial_gnss_on === false || n.gnss_on === false) {
+          faults.push({ kind: 'gps-off', target: id, t: 0 });
+        }
+        if (n.initial_dr_on === false || n.dr_on === false) {
+          faults.push({ kind: 'no-dr', target: id, t: 0 });
+        }
+      }
+    }
+    if (this.sim && Array.isArray(this.sim.links)) {
+      for (const link of this.sim.links) {
+        if (link.blocked) {
+          faults.push({ kind: 'block', target: `${link.a}-${link.b}`, t: 0 });
+        }
+      }
+    }
+
     const payload = {
       params: {
         survivors,
@@ -1768,7 +1836,7 @@ class SetuDashboardApp {
         { node: 1, kind: 'short', t: 1000 },
         { node: 2, kind: 'double', t: 3000 }
       ],
-      faults: []
+      faults
     };
 
     if (this.modalRunSim) {

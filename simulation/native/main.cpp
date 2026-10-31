@@ -239,10 +239,26 @@ void run_path_loss_sweep_experiment(uint32_t seed) {
 int run_interactive(int survivors, int relays, double zone, ChannelParams ch, uint32_t seed) {
   std::unique_ptr<World> w;
   std::map<uint16_t, uint8_t> initial_batteries;
+  std::map<uint16_t, MotionProfile> initial_motion_profiles;
+  std::map<uint16_t, bool> initial_online;
+  std::map<uint16_t, bool> initial_gnss;
+  std::map<uint16_t, bool> initial_dr;
 
   auto init_world = [&](int s_count, int r_count, double z, ChannelParams c, uint32_t sd, const std::map<uint16_t, uint8_t>& batts) {
     w = make_demo_world(s_count, r_count, z, c, sd, setu::NodeConfig(), batts);
     w->set_trace(&std::cout);
+    for (const auto& kv : initial_motion_profiles) {
+      w->set_motion_profile(kv.first, kv.second);
+    }
+    for (const auto& kv : initial_online) {
+      w->set_online(kv.first, kv.second);
+    }
+    for (const auto& kv : initial_gnss) {
+      w->set_gnss(kv.first, kv.second);
+    }
+    for (const auto& kv : initial_dr) {
+      w->set_dead_reckoning(kv.first, kv.second);
+    }
   };
 
   try {
@@ -306,11 +322,29 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       std::cout << "{\"ok\":true,\"cmd\":\"trigger_all\",\"kind\":\"" << kind << "\",\"delay_ms\":" << delay_ms << "}\n" << std::flush;
     } else if (cmd == "set_node") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
-      if (line.find("\"online\":") != std::string::npos) w->set_online(id, json_get_bool(line, "online", true));
-      if (line.find("\"gnss\":") != std::string::npos) w->set_gnss(id, json_get_bool(line, "gnss", true));
-      else if (line.find("\"gnss_on\":") != std::string::npos) w->set_gnss(id, json_get_bool(line, "gnss_on", true));
-      if (line.find("\"dr\":") != std::string::npos) w->set_dead_reckoning(id, json_get_bool(line, "dr", true));
-      else if (line.find("\"dr_on\":") != std::string::npos) w->set_dead_reckoning(id, json_get_bool(line, "dr_on", true));
+      if (line.find("\"online\":") != std::string::npos) {
+        bool onl = json_get_bool(line, "online", true);
+        w->set_online(id, onl);
+        initial_online[id] = onl;
+      }
+      if (line.find("\"gnss\":") != std::string::npos) {
+        bool gn = json_get_bool(line, "gnss", true);
+        w->set_gnss(id, gn);
+        initial_gnss[id] = gn;
+      } else if (line.find("\"gnss_on\":") != std::string::npos) {
+        bool gn = json_get_bool(line, "gnss_on", true);
+        w->set_gnss(id, gn);
+        initial_gnss[id] = gn;
+      }
+      if (line.find("\"dr\":") != std::string::npos) {
+        bool dr = json_get_bool(line, "dr", true);
+        w->set_dead_reckoning(id, dr);
+        initial_dr[id] = dr;
+      } else if (line.find("\"dr_on\":") != std::string::npos) {
+        bool dr = json_get_bool(line, "dr_on", true);
+        w->set_dead_reckoning(id, dr);
+        initial_dr[id] = dr;
+      }
       if (line.find("\"battery\":") != std::string::npos) {
         uint8_t batt = static_cast<uint8_t>(json_get_int(line, "battery", 100));
         w->set_battery(id, batt);
@@ -321,18 +355,21 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 0));
       bool on = json_get_bool(line, "gnss", true);
       w->set_gnss(id, on);
+      initial_gnss[id] = on;
       std::cout << "{\"ok\":true,\"cmd\":\"set_gnss\",\"node\":" << id << ",\"gnss\":" << (on ? "true" : "false") << "}\n" << std::flush;
     } else if (cmd == "set_motion") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
       std::string prof = json_get_str(line, "profile");
       MotionProfile p = MotionProfile::Stationary;
-      if (prof == "walking") p = MotionProfile::Walking;
+      if (prof == "moving") p = MotionProfile::Moving;
+      else if (prof == "walking") p = MotionProfile::Walking;
       else if (prof == "running") p = MotionProfile::Running;
       else if (prof == "sudden_movement") p = MotionProfile::SuddenMovement;
       else if (prof == "fall_impact") p = MotionProfile::FallImpact;
       else if (prof == "irregular") p = MotionProfile::Irregular;
       w->set_motion_profile(id, p);
-      std::cout << "{\"ok\":true,\"cmd\":\"set_motion\",\"node\":" << id << ",\"profile\":\"" << prof << "\"}\n" << std::flush;
+      initial_motion_profiles[id] = p;
+      std::cout << "{\"ok\":true,\"cmd\":\"set_motion\",\"node\":" << id << ",\"profile\":\"" << motion_profile_str(p) << "\"}\n" << std::flush;
     } else if (cmd == "schedule_gnss_outage") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
       uint32_t start_ms = static_cast<uint32_t>(json_get_int(line, "start_ms", 1000));
@@ -388,6 +425,13 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
     } else if (cmd == "summary") {
       print_summary(*w, seed, ch.sf, w->now());
     } else if (cmd == "reset") {
+      if (line.find("\"reset_all\":true") != std::string::npos) {
+        initial_batteries.clear();
+        initial_motion_profiles.clear();
+        initial_online.clear();
+        initial_gnss.clear();
+        initial_dr.clear();
+      }
       try {
         init_world(survivors, relays, zone, ch, seed, initial_batteries);
         std::cout << "{\"ok\":true,\"cmd\":\"reset\",\"t\":0,\"nodes\":" << w->node_ids().size() << "}\n" << std::flush;
@@ -402,6 +446,13 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       if (line.find("\"sf\":") != std::string::npos) ch.sf = static_cast<uint8_t>(json_get_int(line, "sf", ch.sf));
       if (line.find("\"loss\":") != std::string::npos) ch.random_loss = json_get_double(line, "loss", ch.random_loss);
       if (line.find("\"path_exp\":") != std::string::npos) ch.path_exp = json_get_double(line, "path_exp", ch.path_exp);
+      if (line.find("\"reset_all\":true") != std::string::npos) {
+        initial_batteries.clear();
+        initial_motion_profiles.clear();
+        initial_online.clear();
+        initial_gnss.clear();
+        initial_dr.clear();
+      }
       if (line.find("\"reset_batteries\":true") != std::string::npos) {
         initial_batteries.clear();
       }
@@ -458,7 +509,7 @@ int main(int argc, char** argv) {
       if (c == std::string::npos) die("--trigger needs ID:KIND@T");
       triggers.push_back({static_cast<uint16_t>(std::stoi(lhs.substr(0, c))), lhs.substr(c + 1), t});
     } else if (a == "--kill" || a == "--revive" || a == "--gps-off" || a == "--no-dr" ||
-               a == "--block") {
+               a == "--block" || a == "--motion" || a == "--battery") {
       misc.push_back({a, next()});
     } else {
       die("unknown option " + a);
@@ -506,15 +557,49 @@ int main(int argc, char** argv) {
     uint32_t t;
     if (!split_at(m.second, lhs, t)) die(m.first + " needs VALUE@T");
     World* wp = w.get();
-    if (m.first == "--kill") { auto id = static_cast<uint16_t>(std::stoi(lhs)); w->schedule(t, [wp, id] { wp->set_online(id, false); }); }
-    else if (m.first == "--revive") { auto id = static_cast<uint16_t>(std::stoi(lhs)); w->schedule(t, [wp, id] { wp->set_online(id, true); }); }
-    else if (m.first == "--gps-off") { auto id = static_cast<uint16_t>(std::stoi(lhs)); w->schedule(t, [wp, id] { wp->set_gnss(id, false); }); }
-    else if (m.first == "--no-dr") { auto id = static_cast<uint16_t>(std::stoi(lhs)); w->schedule(t, [wp, id] { wp->set_dead_reckoning(id, false); }); }
-    else {
+    if (m.first == "--kill") {
+      auto id = static_cast<uint16_t>(std::stoi(lhs));
+      if (t == 0) wp->set_online(id, false);
+      else w->schedule(t, [wp, id] { wp->set_online(id, false); });
+    } else if (m.first == "--revive") {
+      auto id = static_cast<uint16_t>(std::stoi(lhs));
+      if (t == 0) wp->set_online(id, true);
+      else w->schedule(t, [wp, id] { wp->set_online(id, true); });
+    } else if (m.first == "--gps-off") {
+      auto id = static_cast<uint16_t>(std::stoi(lhs));
+      if (t == 0) wp->set_gnss(id, false);
+      else w->schedule(t, [wp, id] { wp->set_gnss(id, false); });
+    } else if (m.first == "--no-dr") {
+      auto id = static_cast<uint16_t>(std::stoi(lhs));
+      if (t == 0) wp->set_dead_reckoning(id, false);
+      else w->schedule(t, [wp, id] { wp->set_dead_reckoning(id, false); });
+    } else if (m.first == "--motion") {
+      auto c = lhs.find(':');
+      if (c == std::string::npos) die("--motion needs ID:PROFILE@T");
+      auto id = static_cast<uint16_t>(std::stoi(lhs.substr(0, c)));
+      std::string prof = lhs.substr(c + 1);
+      MotionProfile p = MotionProfile::Stationary;
+      if (prof == "moving") p = MotionProfile::Moving;
+      else if (prof == "walking") p = MotionProfile::Walking;
+      else if (prof == "running") p = MotionProfile::Running;
+      else if (prof == "sudden_movement") p = MotionProfile::SuddenMovement;
+      else if (prof == "fall_impact") p = MotionProfile::FallImpact;
+      else if (prof == "irregular") p = MotionProfile::Irregular;
+      if (t == 0) wp->set_motion_profile(id, p);
+      else w->schedule(t, [wp, id, p] { wp->set_motion_profile(id, p); });
+    } else if (m.first == "--battery") {
+      auto c = lhs.find(':');
+      if (c == std::string::npos) die("--battery needs ID:PERCENT@T");
+      auto id = static_cast<uint16_t>(std::stoi(lhs.substr(0, c)));
+      auto batt = static_cast<uint8_t>(std::stoi(lhs.substr(c + 1)));
+      if (t == 0) wp->set_battery(id, batt);
+      else w->schedule(t, [wp, id, batt] { wp->set_battery(id, batt); });
+    } else {
       auto d = lhs.find('-');
       if (d == std::string::npos) die("--block needs A-B@T");
       auto x = static_cast<uint16_t>(std::stoi(lhs.substr(0, d))), y = static_cast<uint16_t>(std::stoi(lhs.substr(d + 1)));
-      w->schedule(t, [wp, x, y] { wp->block_link(x, y); });
+      if (t == 0) wp->block_link(x, y);
+      else w->schedule(t, [wp, x, y] { wp->block_link(x, y); });
     }
   }
 

@@ -141,6 +141,18 @@ export class SimulationEngine {
     if (sessionInfo) {
       this.session = { ...this.session, ...sessionInfo };
     }
+    // Preserve existing configured initial states across trace reloads
+    const preservedConfigs = new Map();
+    for (const [id, n] of this.nodes) {
+      preservedConfigs.set(id, {
+        initial_motion_profile: n.initial_motion_profile || n.motion_profile,
+        initial_battery: n.initial_battery !== undefined ? n.initial_battery : n.battery,
+        initial_online: n.initial_online !== undefined ? n.initial_online : n.online,
+        initial_gnss_on: n.initial_gnss_on !== undefined ? n.initial_gnss_on : n.gnss_on,
+        initial_dr_on: n.initial_dr_on !== undefined ? n.initial_dr_on : n.dr_on
+      });
+    }
+
     this.currentTime = 0;
     this.nodes.clear();
     this.links = [];
@@ -158,6 +170,17 @@ export class SimulationEngine {
         const id = parseInt(ev.id !== undefined ? ev.id : ev.node, 10);
         if (isNaN(id)) continue;
         const normRole = normalizeRole(ev.role, id);
+        const prev = preservedConfigs.get(id);
+        const initMotion = ev.motion_profile || (prev && prev.initial_motion_profile) || 'stationary';
+        const initBatt = typeof ev.initial_battery === 'number' ? ev.initial_battery
+          : (typeof ev.battery === 'number' ? ev.battery : (prev && prev.initial_battery !== undefined ? prev.initial_battery : 100));
+        const initOnline = ev.online !== undefined ? (ev.online !== false)
+          : (prev && prev.initial_online !== undefined ? prev.initial_online : true);
+        const initGnss = ev.gnss_on !== undefined ? ev.gnss_on
+          : (prev && prev.initial_gnss_on !== undefined ? prev.initial_gnss_on : true);
+        const initDr = ev.dr_on !== undefined ? ev.dr_on
+          : (prev && prev.initial_dr_on !== undefined ? prev.initial_dr_on : true);
+
         this.nodes.set(id, {
           id: id,
           role: normRole,
@@ -165,12 +188,17 @@ export class SimulationEngine {
           y: typeof ev.y === 'number' ? ev.y : 0,
           lat_e6: typeof ev.lat_e6 === 'number' ? ev.lat_e6 : 0,
           lon_e6: typeof ev.lon_e6 === 'number' ? ev.lon_e6 : 0,
-          battery: typeof ev.battery === 'number' ? ev.battery : 100,
-          initial_battery: typeof ev.initial_battery === 'number' ? ev.initial_battery : (typeof ev.battery === 'number' ? ev.battery : 100),
+          battery: initBatt,
+          initial_battery: initBatt,
           energy_consumed_mah: typeof ev.energy_consumed_mah === 'number' ? ev.energy_consumed_mah : (typeof ev.energy_mah === 'number' ? ev.energy_mah : 0.0),
-          online: ev.online !== false,
-          gnss_on: true,
-          dr_on: true,
+          online: initOnline,
+          initial_online: initOnline,
+          gnss_on: initGnss,
+          initial_gnss_on: initGnss,
+          dr_on: initDr,
+          initial_dr_on: initDr,
+          motion_profile: initMotion,
+          initial_motion_profile: initMotion,
           active_sos: false,
           acked: false,
           gave_up: false,
@@ -197,6 +225,12 @@ export class SimulationEngine {
       const candidateIds = [ev.node, ev.target, ev.to, ev.from].filter(x => typeof x === 'number' && !isNaN(x));
       for (const cid of candidateIds) {
         if (!this.nodes.has(cid)) {
+          const prev = preservedConfigs.get(cid);
+          const initMotion = (prev && prev.initial_motion_profile) || 'stationary';
+          const initBatt = prev && prev.initial_battery !== undefined ? prev.initial_battery : 100;
+          const initOnline = prev && prev.initial_online !== undefined ? prev.initial_online : true;
+          const initGnss = prev && prev.initial_gnss_on !== undefined ? prev.initial_gnss_on : true;
+          const initDr = prev && prev.initial_dr_on !== undefined ? prev.initial_dr_on : true;
           this.nodes.set(cid, {
             id: cid,
             role: normalizeRole(null, cid),
@@ -204,12 +238,17 @@ export class SimulationEngine {
             y: 0,
             lat_e6: 0,
             lon_e6: 0,
-            battery: 100,
-            initial_battery: 100,
+            battery: initBatt,
+            initial_battery: initBatt,
             energy_consumed_mah: 0.0,
-            online: true,
-            gnss_on: true,
-            dr_on: true,
+            online: initOnline,
+            initial_online: initOnline,
+            gnss_on: initGnss,
+            initial_gnss_on: initGnss,
+            dr_on: initDr,
+            initial_dr_on: initDr,
+            motion_profile: initMotion,
+            initial_motion_profile: initMotion,
             active_sos: false,
             acked: false,
             gave_up: false,
@@ -237,13 +276,14 @@ export class SimulationEngine {
     targetTime = Math.max(0, Math.min(this.meta.duration, targetTime));
     this.currentTime = targetTime;
 
-    // Reset all nodes to base state
+    // Reset all nodes to configured base state
     for (const [, node] of this.nodes) {
-      node.online = true;
+      node.online = typeof node.initial_online === 'boolean' ? node.initial_online : true;
       node.battery = typeof node.initial_battery === 'number' ? node.initial_battery : 100;
       node.energy_consumed_mah = 0.0;
-      node.gnss_on = true;
-      node.dr_on = true;
+      node.gnss_on = typeof node.initial_gnss_on === 'boolean' ? node.initial_gnss_on : true;
+      node.dr_on = typeof node.initial_dr_on === 'boolean' ? node.initial_dr_on : true;
+      node.motion_profile = node.initial_motion_profile || 'stationary';
       node.active_sos = false;
       node.acked = false;
       node.gave_up = false;
@@ -264,6 +304,17 @@ export class SimulationEngine {
       const n = this.nodes.get(ev.node);
 
       switch (ev.ev) {
+        case 'motion_profile':
+          if (n && ev.profile) {
+            n.motion_profile = ev.profile;
+          }
+          break;
+        case 'battery':
+          if (n && typeof ev.battery === 'number') {
+            n.battery = ev.battery;
+            if (n.battery === 0) n.online = false;
+          }
+          break;
         case 'node_kill':
           if (n) n.online = false;
           break;
