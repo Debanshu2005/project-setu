@@ -4,6 +4,8 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <cinttypes>
+#include <inttypes.h>
 #include <atomic>
 #include "setu/node.hpp"
 #include "setu/hal.hpp"
@@ -124,10 +126,12 @@ static std::atomic<uint32_t> s_radio_rx_drops{0};
     uint32_t now = ctx->clock->now_ms();
     if (now - last_sensor_poll >= 5000) {
       last_sensor_poll = now;
-      ESP_LOGI(TAG, "Heartbeat: Node seq=%u, battery=%u%%, state=%s, rx_pkts=%u, rx_drops=%u",
-               ctx->node->seq(), ctx->battery->percent(),
+      ESP_LOGI(TAG, "Heartbeat: Node seq=%u, battery=%u%%, state=%s, rx_pkts=%" PRIu64 ", rx_drops=%" PRIu64,
+               static_cast<unsigned int>(ctx->node->seq()),
+               static_cast<unsigned int>(ctx->battery->percent()),
                ctx->node->sos_active() ? "EMERGENCY_ACTIVE" : "STANDBY",
-               s_radio_rx_packets.load(), s_radio_rx_drops.load());
+               static_cast<uint64_t>(s_radio_rx_packets.load()),
+               static_cast<uint64_t>(s_radio_rx_drops.load()));
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -165,7 +169,8 @@ static std::atomic<uint32_t> s_radio_rx_drops{0};
         } else {
           // Bounded queue saturated: record and document drop
           s_radio_rx_drops++;
-          ESP_LOGW(TAG, "s_radio_rx_queue saturated! Dropped packet. Total drops=%u", s_radio_rx_drops.load());
+          ESP_LOGW(TAG, "s_radio_rx_queue saturated! Dropped packet. Total drops=%" PRIu64,
+                   static_cast<uint64_t>(s_radio_rx_drops.load()));
         }
       }
     }
@@ -361,7 +366,8 @@ extern "C" void app_main() {
 
   if (t_radio != pdPASS || t_gps != pdPASS || t_motion != pdPASS || t_haptic != pdPASS || t_core != pdPASS) {
     ESP_LOGE(TAG, "FATAL: Failed to spawn all FreeRTOS tasks (radio=%d, gps=%d, motion=%d, haptic=%d, core=%d)",
-             t_radio, t_gps, t_motion, t_haptic, t_core);
+             static_cast<int>(t_radio), static_cast<int>(t_gps), static_cast<int>(t_motion),
+             static_cast<int>(t_haptic), static_cast<int>(t_core));
   }
 
   ESP_LOGI(TAG, "Project Setu Wristband Firmware Online & Operational");
