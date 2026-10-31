@@ -11,6 +11,8 @@
 #include <algorithm>
 #include <vector>
 #include <string>
+#include <mutex>
+#include <functional>
 #include "setu/hal.hpp"
 #include "setu/packet.hpp"
 
@@ -25,9 +27,11 @@
 #include "driver/uart.h"
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "freertos/semphr.h"
+#include "freertos/queue.h"
 #endif
 
 namespace setu {
@@ -123,17 +127,56 @@ class Sx1262Radio : public IRadio {
   static constexpr uint8_t CMD_SET_DIO2_AS_RF_SWITCH_CTRL = 0x9D;
   static constexpr uint8_t CMD_SET_REGULATOR_MODE = 0x96;
 
+  // Semtech SX1262 IRQ Status Masks (16-bit register)
+  static constexpr uint16_t IRQ_NONE               = 0x0000;
+  static constexpr uint16_t IRQ_TX_DONE            = 0x0001;
+  static constexpr uint16_t IRQ_RX_DONE            = 0x0002;
+  static constexpr uint16_t IRQ_PREAMBLE_DETECTED  = 0x0004;
+  static constexpr uint16_t IRQ_SYNCWORD_VALID     = 0x0008;
+  static constexpr uint16_t IRQ_HEADER_VALID       = 0x0010;
+  static constexpr uint16_t IRQ_HEADER_ERR         = 0x0020;
+  static constexpr uint16_t IRQ_CRC_ERR            = 0x0040;
+  static constexpr uint16_t IRQ_CAD_DONE           = 0x0080;
+  static constexpr uint16_t IRQ_CAD_DETECTED       = 0x0100;
+  static constexpr uint16_t IRQ_TIMEOUT            = 0x0200;
+  static constexpr uint16_t IRQ_ALL                = 0xFFFF;
+
+  struct IrqResult {
+    uint16_t raw_irqs = 0;
+    bool tx_done = false;
+    bool rx_done = false;
+    bool timeout = false;
+    bool crc_error = false;
+    size_t rx_len = 0;
+    int16_t rx_rssi = 0;
+    int8_t rx_snr = 0;
+  };
+
   Sx1262Radio(int cs_pin = 5, int irq_pin = 4, int rst_pin = 3, int busy_pin = 2)
       : cs_(cs_pin), irq_(irq_pin), rst_(rst_pin), busy_(busy_pin),
         radio_ready_(false), state_(RadioState::Uninitialized),
         frequency_hz_(868000000), sf_(7), bw_hz_(125000), cr_(1), tx_power_dbm_(14),
-        tx_count_(0), rx_count_(0), crc_errors_(0), busy_timeouts_(0) {}
+        tx_count_(0), rx_count_(0), crc_errors_(0), busy_timeouts_(0),
+        tx_completed_(false), tx_timeout_(false) {
+#if defined(ESP_PLATFORM)
+    spi_mutex_ = xSemaphoreCreateMutex();
+    tx_done_sem_ = xSemaphoreCreateBinary();
+#endif
+  }
 
   ~Sx1262Radio() {
 #if defined(ESP_PLATFORM)
     if (spi_dev_) {
       spi_bus_remove_device(spi_dev_);
       spi_dev_ = nullptr;
+    }
+    if (spi_mutex_) {
+      vSemaphoreDelete(spi_mutex_);
+      spi_mutex_ = nullptr;
+    }
+    if (tx_done_sem_) {
+      vSemaphoreDelete(tx_done_sem_);
+      tx_done_sem_ = nullptr;
     }
 #endif
   }
@@ -145,6 +188,9 @@ class Sx1262Radio : public IRadio {
     tx_power_dbm_ = tx_power;
 
 #if defined(ESP_PLATFORM)
+    if (!spi_mutex_) spi_mutex_ = xSemaphoreCreateMutex();
+    if (!tx_done_sem_) tx_done_sem_ = xSemaphoreCreateBinary();
+
     // 1. Configure GPIO pins (RST as output, BUSY and DIO1 as input)
     gpio_config_t io_conf = {};
     io_conf.pin_bit_mask = (1ULL << rst_);
@@ -225,34 +271,49 @@ class Sx1262Radio : public IRadio {
     if (!radio_ready_) return false;
 
 #if defined(ESP_PLATFORM)
-    // Wait for radio BUSY to clear
+    if (!spi_mutex_) return false;
+    if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(500)) != pdTRUE) {
+      return false; // Radio lock acquisition timeout
+    }
+
+    if (state_ == RadioState::Transmitting) {
+      xSemaphoreGive(spi_mutex_);
+      return false; // Hardware busy transmitting
+    }
+
     if (!wait_busy(50000)) {
       busy_timeouts_++;
       recover_fault();
+      xSemaphoreGive(spi_mutex_);
       return false;
     }
 
     state_ = RadioState::Transmitting;
+    tx_completed_ = false;
+    tx_timeout_ = false;
+    if (tx_done_sem_) {
+      xSemaphoreTake(tx_done_sem_, 0); // Drain any stale token
+    }
 
     // 1. Enter Standby RC
     uint8_t standby_param = 0x00; // STDBY_RC
     write_cmd(CMD_SET_STANDBY, &standby_param, 1);
 
-    // 2. Write payload into SX1262 FIFO buffer at offset 0
+    // 2. Write payload into FIFO at offset 0
     write_buffer(0x00, data, len);
 
-    // 3. Set packet parameters: payload length = len
+    // 3. Set packet parameters
     uint8_t pkt_params[6] = {
-      0x00, 0x08, // Preamble length (8 symbols)
-      0x00,       // Header type: 0x00 = explicit
-      static_cast<uint8_t>(len), // Payload length
-      0x01,       // CRC: 0x01 = ON
+      0x00, 0x08, // Preamble (8 symbols)
+      0x00,       // Explicit header
+      static_cast<uint8_t>(len),
+      0x01,       // CRC ON
       0x00        // Standard IQ
     };
     write_cmd(CMD_SET_PACKET_PARAMS, pkt_params, 6);
 
-    // 4. Clear pending interrupts
-    uint8_t clr_irq[2] = {0xFF, 0xFF};
+    // 4. Clear any stale TxDone or Timeout flags
+    uint8_t clr_irq[2] = {0x02, 0x01}; // TxDone (0x01) | Timeout (0x0200)
     write_cmd(CMD_CLEAR_IRQ_STATUS, clr_irq, 2);
 
     // 5. Start transmission with 2-second timeout (timeout = 2000ms * 64kHz)
@@ -264,38 +325,36 @@ class Sx1262Radio : public IRadio {
     };
     write_cmd(CMD_SET_TX, tx_timeout, 3);
 
-    // 6. Bounded wait for transmission completion (polling TxDone IRQ flag)
-    bool tx_done = false;
-    for (int poll = 0; poll < 100; ++poll) {
-      vTaskDelay(pdMS_TO_TICKS(10));
-      uint8_t irq_status[2] = {0};
-      read_cmd(CMD_GET_IRQ_STATUS, irq_status, 2);
-      uint16_t irq = (irq_status[0] << 8) | irq_status[1];
-      if (irq & 0x0001) { // TxDone flag
-        tx_done = true;
-        break;
-      }
-      if (irq & 0x0200) { // Timeout flag
-        break;
-      }
+    // 6. Release SPI mutex so radio_rx_task can safely query IRQ status when DIO1 fires
+    xSemaphoreGive(spi_mutex_);
+
+    // 7. Bounded wait on tx_done_sem_ (unblocked by process_irqs on Core 0)
+    bool wait_ok = (xSemaphoreTake(tx_done_sem_, pdMS_TO_TICKS(1500)) == pdTRUE);
+
+    // 8. Re-acquire SPI mutex to finalize transceiver state
+    if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(500)) != pdTRUE) {
+      return false;
     }
 
-    // 7. Clear IRQs and restore continuous RX mode
-    write_cmd(CMD_CLEAR_IRQ_STATUS, clr_irq, 2);
-    set_rx_mode();
-
-    if (tx_done) {
+    if (wait_ok && tx_completed_ && !tx_timeout_) {
       tx_count_++;
       state_ = RadioState::Receiving;
+      set_rx_mode();
+      xSemaphoreGive(spi_mutex_);
       return true;
     } else {
       recover_fault();
+      xSemaphoreGive(spi_mutex_);
       return false;
     }
 #else
+    std::lock_guard<std::mutex> lock(mock_mutex_);
     if (mock_force_send_failure_) return false;
     tx_count_++;
+    tx_completed_ = true;
+    state_ = RadioState::Receiving;
     last_tx_payload_.assign(data, data + len);
+    mock_pending_irqs_ |= IRQ_TX_DONE;
     return true;
 #endif
   }
@@ -303,9 +362,11 @@ class Sx1262Radio : public IRadio {
   bool channel_busy() override {
     if (!radio_ready_) return false;
 #if defined(ESP_PLATFORM)
-    // Read instant RSSI or CAD status
+    if (!spi_mutex_) return false;
+    if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(10)) != pdTRUE) return true;
     uint8_t status = 0;
     read_cmd(CMD_GET_RX_BUFFER_STATUS, &status, 1);
+    xSemaphoreGive(spi_mutex_);
     return false;
 #else
     return mock_channel_busy_;
@@ -313,67 +374,186 @@ class Sx1262Radio : public IRadio {
   }
 
   /**
+   * Authoritative, thread-safe SX1262 IRQ dispatcher.
+   * Inspects pending IRQs, clears ONLY the handled flags (selective clearing),
+   * extracts RX payloads, and handles TX completion/timeout without clearing unconsumed flags.
+   */
+  bool process_irqs(IrqResult& result, uint8_t* rx_out_buf = nullptr, size_t max_rx_len = 0) {
+    if (!radio_ready_) return false;
+
+#if defined(ESP_PLATFORM)
+    if (!spi_mutex_) return false;
+    if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+
+    uint8_t irq_status[2] = {0};
+    if (!read_cmd(CMD_GET_IRQ_STATUS, irq_status, 2)) {
+      xSemaphoreGive(spi_mutex_);
+      return false;
+    }
+    uint16_t irq = (static_cast<uint16_t>(irq_status[0]) << 8) | irq_status[1];
+    result.raw_irqs = irq;
+    if (irq == 0) {
+      xSemaphoreGive(spi_mutex_);
+      return false;
+    }
+
+    uint16_t handled_mask = 0;
+
+    // 1. Inspect TX completion
+    if (irq & IRQ_TX_DONE) {
+      result.tx_done = true;
+      tx_completed_ = true;
+      handled_mask |= IRQ_TX_DONE;
+      if (tx_done_sem_) {
+        xSemaphoreGive(tx_done_sem_);
+      }
+    }
+
+    // 2. Inspect Timeout
+    if (irq & IRQ_TIMEOUT) {
+      result.timeout = true;
+      tx_timeout_ = true;
+      handled_mask |= IRQ_TIMEOUT;
+      if (tx_done_sem_) {
+        xSemaphoreGive(tx_done_sem_);
+      }
+    }
+
+    // 3. Inspect RX completion
+    if (irq & IRQ_RX_DONE) {
+      handled_mask |= IRQ_RX_DONE;
+      if (irq & IRQ_CRC_ERR) {
+        result.crc_error = true;
+        crc_errors_++;
+        handled_mask |= IRQ_CRC_ERR;
+      } else {
+        uint8_t rx_status[2] = {0};
+        read_cmd(CMD_GET_RX_BUFFER_STATUS, rx_status, 2);
+        uint8_t payload_len = rx_status[0];
+        uint8_t start_offset = rx_status[1];
+
+        if (payload_len == kPacketSize && rx_out_buf != nullptr && max_rx_len >= kPacketSize) {
+          read_buffer(start_offset, rx_out_buf, payload_len);
+          result.rx_len = payload_len;
+
+          uint8_t pkt_status[3] = {0};
+          read_cmd(CMD_GET_PACKET_STATUS, pkt_status, 3);
+          result.rx_rssi = -static_cast<int16_t>(pkt_status[0] / 2);
+          result.rx_snr = static_cast<int8_t>(pkt_status[1] / 4);
+          result.rx_done = true;
+          rx_count_++;
+        }
+      }
+      set_rx_mode();
+    }
+
+    // 4. Handle informational flags (preamble, syncword, header, CAD)
+    uint16_t info_mask = irq & (IRQ_PREAMBLE_DETECTED | IRQ_SYNCWORD_VALID | IRQ_HEADER_VALID | IRQ_HEADER_ERR | IRQ_CAD_DONE | IRQ_CAD_DETECTED);
+    if (info_mask != 0) {
+      handled_mask |= info_mask;
+    }
+
+    // 5. Selectively clear ONLY handled flags
+    if (handled_mask != 0) {
+      uint8_t clr[2] = {
+        static_cast<uint8_t>((handled_mask >> 8) & 0xFF),
+        static_cast<uint8_t>(handled_mask & 0xFF)
+      };
+      write_cmd(CMD_CLEAR_IRQ_STATUS, clr, 2);
+    }
+
+    xSemaphoreGive(spi_mutex_);
+    return true;
+#else
+    std::lock_guard<std::mutex> lock(mock_mutex_);
+    result.raw_irqs = mock_pending_irqs_;
+    if (mock_pending_irqs_ == 0) return false;
+
+    uint16_t handled_mask = 0;
+
+    if (mock_pending_irqs_ & IRQ_TX_DONE) {
+      result.tx_done = true;
+      tx_completed_ = true;
+      handled_mask |= IRQ_TX_DONE;
+    }
+    if (mock_pending_irqs_ & IRQ_TIMEOUT) {
+      result.timeout = true;
+      tx_timeout_ = true;
+      handled_mask |= IRQ_TIMEOUT;
+    }
+    if (mock_pending_irqs_ & IRQ_RX_DONE) {
+      handled_mask |= IRQ_RX_DONE;
+      if (mock_pending_irqs_ & IRQ_CRC_ERR) {
+        result.crc_error = true;
+        crc_errors_++;
+        handled_mask |= IRQ_CRC_ERR;
+      } else if (!mock_rx_queue_.empty()) {
+        auto item = mock_rx_queue_.front();
+        mock_rx_queue_.erase(mock_rx_queue_.begin());
+        if (rx_out_buf && max_rx_len >= item.data.size()) {
+          std::memcpy(rx_out_buf, item.data.data(), item.data.size());
+          result.rx_len = item.data.size();
+          result.rx_rssi = item.rssi;
+          result.rx_snr = item.snr;
+          result.rx_done = true;
+          rx_count_++;
+        }
+      }
+    }
+    uint16_t info_mask = mock_pending_irqs_ & (IRQ_PREAMBLE_DETECTED | IRQ_SYNCWORD_VALID | IRQ_HEADER_VALID | IRQ_HEADER_ERR | IRQ_CAD_DONE | IRQ_CAD_DETECTED);
+    if (info_mask != 0) {
+      handled_mask |= info_mask;
+    }
+
+    mock_pending_irqs_ &= ~handled_mask;
+    return true;
+#endif
+  }
+
+  /**
    * Reads a received packet from SX1262 SPI FIFO.
-   * Called by the radio task when DIO1 interrupt occurs.
+   * Backward-compatible wrapper delegating to process_irqs with selective IRQ clearing.
    */
   bool read_rx_packet(uint8_t* out_buf, size_t max_len, size_t& out_len, int16_t& out_rssi, int8_t& out_snr) {
     if (!radio_ready_ || out_buf == nullptr) return false;
+    IrqResult res;
+    if (process_irqs(res, out_buf, max_len) && res.rx_done) {
+      out_len = res.rx_len;
+      out_rssi = res.rx_rssi;
+      out_snr = res.rx_snr;
+      return true;
+    }
+    return false;
+  }
 
+  uint16_t get_irq_status() {
 #if defined(ESP_PLATFORM)
-    // 1. Read IRQ status
+    if (!spi_mutex_) return 0;
+    if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) return 0;
     uint8_t irq_status[2] = {0};
     read_cmd(CMD_GET_IRQ_STATUS, irq_status, 2);
-    uint16_t irq = (irq_status[0] << 8) | irq_status[1];
-
-    // Check for CRC Error (bit 6 = 0x0040) or RxTimeout (bit 9 = 0x0200)
-    if (irq & 0x0040) {
-      crc_errors_++;
-      uint8_t clr[2] = {0xFF, 0xFF};
-      write_cmd(CMD_CLEAR_IRQ_STATUS, clr, 2);
-      set_rx_mode();
-      return false;
-    }
-
-    // 2. Get RX Buffer Status (payload length & start offset)
-    uint8_t rx_status[2] = {0};
-    read_cmd(CMD_GET_RX_BUFFER_STATUS, rx_status, 2);
-    uint8_t payload_len = rx_status[0];
-    uint8_t start_offset = rx_status[1];
-
-    if (payload_len != kPacketSize || payload_len > max_len) {
-      uint8_t clr[2] = {0xFF, 0xFF};
-      write_cmd(CMD_CLEAR_IRQ_STATUS, clr, 2);
-      set_rx_mode();
-      return false;
-    }
-
-    // 3. Read packet bytes from FIFO
-    read_buffer(start_offset, out_buf, payload_len);
-    out_len = payload_len;
-
-    // 4. Query Packet Status (RSSI and SNR)
-    uint8_t pkt_status[3] = {0};
-    read_cmd(CMD_GET_PACKET_STATUS, pkt_status, 3);
-    out_rssi = -static_cast<int16_t>(pkt_status[0] / 2); // RssiPkt in dBm
-    out_snr = static_cast<int8_t>(pkt_status[1] / 4);    // SnrPkt in dB
-
-    // 5. Clear IRQs and re-enter RX
-    uint8_t clr[2] = {0xFF, 0xFF};
-    write_cmd(CMD_CLEAR_IRQ_STATUS, clr, 2);
-    set_rx_mode();
-
-    rx_count_++;
-    return true;
+    xSemaphoreGive(spi_mutex_);
+    return (static_cast<uint16_t>(irq_status[0]) << 8) | irq_status[1];
 #else
-    if (mock_rx_queue_.empty()) return false;
-    auto item = mock_rx_queue_.front();
-    mock_rx_queue_.erase(mock_rx_queue_.begin());
-    if (item.data.size() > max_len) return false;
-    std::memcpy(out_buf, item.data.data(), item.data.size());
-    out_len = item.data.size();
-    out_rssi = item.rssi;
-    out_snr = item.snr;
-    rx_count_++;
+    std::lock_guard<std::mutex> lock(mock_mutex_);
+    return mock_pending_irqs_;
+#endif
+  }
+
+  bool clear_irq_status(uint16_t irq_mask) {
+#if defined(ESP_PLATFORM)
+    if (!spi_mutex_) return false;
+    if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(100)) != pdTRUE) return false;
+    uint8_t clr[2] = {
+      static_cast<uint8_t>((irq_mask >> 8) & 0xFF),
+      static_cast<uint8_t>(irq_mask & 0xFF)
+    };
+    bool ok = write_cmd(CMD_CLEAR_IRQ_STATUS, clr, 2);
+    xSemaphoreGive(spi_mutex_);
+    return ok;
+#else
+    std::lock_guard<std::mutex> lock(mock_mutex_);
+    mock_pending_irqs_ &= ~irq_mask;
     return true;
 #endif
   }
@@ -395,6 +575,27 @@ class Sx1262Radio : public IRadio {
     item.rssi = rssi;
     item.snr = snr;
     mock_rx_queue_.push_back(item);
+#if !defined(ESP_PLATFORM)
+    mock_pending_irqs_ |= IRQ_RX_DONE;
+#endif
+  }
+
+  void inject_mock_irq(uint16_t flags) {
+#if !defined(ESP_PLATFORM)
+    std::lock_guard<std::mutex> lock(mock_mutex_);
+    mock_pending_irqs_ |= flags;
+#else
+    (void)flags;
+#endif
+  }
+
+  uint16_t mock_pending_irqs() const {
+#if !defined(ESP_PLATFORM)
+    std::lock_guard<std::mutex> lock(mock_mutex_);
+    return mock_pending_irqs_;
+#else
+    return 0;
+#endif
   }
 
  private:
@@ -554,6 +755,17 @@ class Sx1262Radio : public IRadio {
   uint32_t crc_errors_;
   uint32_t busy_timeouts_;
 
+  bool tx_completed_;
+  bool tx_timeout_;
+
+#if defined(ESP_PLATFORM)
+  SemaphoreHandle_t spi_mutex_ = nullptr;
+  SemaphoreHandle_t tx_done_sem_ = nullptr;
+#else
+  mutable std::mutex mock_mutex_;
+  uint16_t mock_pending_irqs_ = 0;
+#endif
+
   // Mock simulation state
   bool mock_force_init_failure_ = false;
   bool mock_force_send_failure_ = false;
@@ -565,6 +777,90 @@ class Sx1262Radio : public IRadio {
     int8_t snr;
   };
   std::vector<MockRxItem> mock_rx_queue_;
+};
+
+/**
+ * Streaming NMEA sentence framer with persistent accumulation buffer.
+ * Defends against chunk fragmentation, multiple sentences per read,
+ * leading serial noise/garbage, missing terminators, and buffer overflows.
+ */
+class NmeaFramer {
+ public:
+  static constexpr size_t kMaxSentenceLen = 128;
+  using SentenceCallback = std::function<void(const char* sentence)>;
+
+  NmeaFramer()
+      : in_sentence_(false), pos_(0), overflowed_(false),
+        dropped_bytes_(0), sentences_framed_(0) {
+    buf_[0] = '\0';
+  }
+
+  void push_byte(char c, const SentenceCallback& cb) {
+    if (!in_sentence_) {
+      if (c == '$') {
+        in_sentence_ = true;
+        buf_[0] = '$';
+        pos_ = 1;
+        overflowed_ = false;
+      } else {
+        dropped_bytes_++;
+      }
+      return;
+    }
+
+    // If an unexpected new '$' arrives while already in a sentence, reset
+    if (c == '$') {
+      dropped_bytes_ += pos_;
+      buf_[0] = '$';
+      pos_ = 1;
+      overflowed_ = false;
+      return;
+    }
+
+    if (c == '\r' || c == '\n') {
+      if (in_sentence_ && !overflowed_ && pos_ >= 4) {
+        buf_[pos_] = '\0';
+        sentences_framed_++;
+        cb(buf_);
+      }
+      in_sentence_ = false;
+      pos_ = 0;
+      overflowed_ = false;
+      return;
+    }
+
+    if (pos_ < kMaxSentenceLen - 1) {
+      buf_[pos_++] = c;
+    } else {
+      overflowed_ = true;
+      dropped_bytes_++;
+    }
+  }
+
+  void push_bytes(const char* data, size_t len, const SentenceCallback& cb) {
+    if (!data) return;
+    for (size_t i = 0; i < len; ++i) {
+      push_byte(data[i], cb);
+    }
+  }
+
+  void reset() {
+    in_sentence_ = false;
+    pos_ = 0;
+    overflowed_ = false;
+  }
+
+  size_t sentences_framed() const { return sentences_framed_; }
+  size_t dropped_bytes() const { return dropped_bytes_; }
+  bool is_in_sentence() const { return in_sentence_; }
+
+ private:
+  bool in_sentence_;
+  size_t pos_;
+  bool overflowed_;
+  size_t dropped_bytes_;
+  size_t sentences_framed_;
+  char buf_[kMaxSentenceLen];
 };
 
 /**
@@ -669,9 +965,26 @@ class Neo6mGnss : public IGnss {
     return now >= last_fix_ms_ ? (now - last_fix_ms_) : 0;
   }
 
+  NmeaFramer& framer() { return framer_; }
+
+  /**
+   * Streams a chunk of raw UART bytes through the persistent framer.
+   * Feeds each cleanly framed sentence to feed_nmea().
+   */
+  bool feed_uart_chunk(const char* data, size_t len, Esp32Clock* clock_discipline = nullptr) {
+    bool parsed_any = false;
+    framer_.push_bytes(data, len, [&](const char* sentence) {
+      if (feed_nmea(sentence, clock_discipline)) {
+        parsed_any = true;
+      }
+    });
+    return parsed_any;
+  }
+
   void set_mock_system_ms(uint32_t ms) { mock_system_ms_ = ms; }
 
  private:
+  NmeaFramer framer_;
   uint32_t get_system_ms() const {
 #if defined(ESP_PLATFORM)
     return static_cast<uint32_t>(esp_timer_get_time() / 1000ULL);
@@ -846,11 +1159,27 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
   static constexpr uint8_t REG_GYRO_CONFIG = 0x1B;
   static constexpr uint8_t REG_ACCEL_XOUT_H = 0x3B;
 
+  // Scale factors for +/- 4g and +/- 500 deg/s configured ranges
+  static constexpr float kAccelScale = 9.80665f / 8192.0f; // m/s^2 per LSB
+  static constexpr float kGyroScale = (3.14159265358979323846f / 180.0f) / 65.5f; // rad/s per LSB
+
+  // Step detection thresholds and timing window
+  static constexpr float kStepPeakThresh = 11.8f;   // ~1.20g
+  static constexpr float kStepTroughThresh = 8.6f;  // ~0.88g
+  static constexpr uint32_t kMinStepCadenceMs = 250;  // Max 4 steps/sec
+  static constexpr uint32_t kMaxStepCadenceMs = 2000; // Min 0.5 steps/sec
+
+  enum class StepState {
+    WaitingForPeak,
+    WaitingForTrough
+  };
+
   Mpu6050DeadReckoning(int sda_pin = 21, int scl_pin = 22)
       : sda_(sda_pin), scl_(scl_pin), sensor_online_(false),
         has_estimate_(false), est_lat_e6_(0), est_lon_e6_(0),
         step_count_(0), anchor_time_ms_(0), last_step_time_ms_(0),
-        gyro_heading_rad_(0.0f) {}
+        gyro_heading_rad_(0.0f), gz_bias_(0.0f),
+        step_state_(StepState::WaitingForPeak), peak_time_ms_(0) {}
 
   bool init_i2c() {
 #if defined(ESP_PLATFORM)
@@ -883,12 +1212,90 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
     write_reg(REG_GYRO_CONFIG, 0x08);
 
     sensor_online_ = true;
+    calibrate_gyro();
     return true;
 #else
     sensor_online_ = true;
     return true;
 #endif
   }
+
+  /**
+   * Processes a raw IMU sample, performs unit conversion, bias compensation,
+   * heading integration, and cadence-validated step detection.
+   */
+  void sample(int16_t ax, int16_t ay, int16_t az, int16_t gx, int16_t gy, int16_t gz, uint32_t dt_ms) {
+    (void)gx; (void)gy;
+    // 1. Angular velocity around z-axis (heading change)
+    float omega_z = (static_cast<float>(gz) - gz_bias_) * kGyroScale;
+    gyro_heading_rad_ += omega_z * (static_cast<float>(dt_ms) / 1000.0f);
+    // Wrap to [-PI, +PI]
+    while (gyro_heading_rad_ > 3.14159265f) gyro_heading_rad_ -= 6.2831853f;
+    while (gyro_heading_rad_ < -3.14159265f) gyro_heading_rad_ += 6.2831853f;
+
+    // 2. Acceleration vector magnitude in m/s^2
+    float ax_m = static_cast<float>(ax) * kAccelScale;
+    float ay_m = static_cast<float>(ay) * kAccelScale;
+    float az_m = static_cast<float>(az) * kAccelScale;
+    float a_mag = std::sqrt(ax_m * ax_m + ay_m * ay_m + az_m * az_m);
+
+    // 3. Cadence-validated Step Detector state machine
+    uint32_t now = get_system_ms();
+    if (step_state_ == StepState::WaitingForPeak) {
+      if (a_mag >= kStepPeakThresh) {
+        step_state_ = StepState::WaitingForTrough;
+        peak_time_ms_ = now;
+      }
+    } else if (step_state_ == StepState::WaitingForTrough) {
+      if (now >= peak_time_ms_ && (now - peak_time_ms_ > 1000)) {
+        step_state_ = StepState::WaitingForPeak; // Trough timeout
+      } else if (a_mag <= kStepTroughThresh) {
+        uint32_t cadence = (now >= last_step_time_ms_) ? (now - last_step_time_ms_) : 0;
+        if (cadence >= kMinStepCadenceMs && cadence <= kMaxStepCadenceMs) {
+          update_step(0.72f, gyro_heading_rad_);
+          last_step_time_ms_ = now;
+        } else if (cadence > kMaxStepCadenceMs) {
+          // First step after standing still
+          update_step(0.72f, gyro_heading_rad_);
+          last_step_time_ms_ = now;
+        }
+        step_state_ = StepState::WaitingForPeak;
+      }
+    }
+  }
+
+  /**
+   * Explicit GNSS Anchoring Policy:
+   * - Un-anchored estimator: accepts first valid GNSS fix immediately.
+   * - Already anchored: re-anchors ONLY if satellites >= 5 AND (time > 30s OR distance > 15m)
+   *   to prevent GPS multipath noise from continually thrashing relative dead-reckoning trajectory.
+   */
+  bool anchor_gnss_filtered(int32_t lat_e6, int32_t lon_e6, uint32_t satellites) {
+    if (!has_estimate_) {
+      anchor_last_gnss(lat_e6, lon_e6);
+      return true;
+    }
+    if (satellites < 5) return false;
+
+    uint32_t now = get_system_ms();
+    bool time_elapsed = (now >= anchor_time_ms_) && ((now - anchor_time_ms_) >= 30000);
+
+    constexpr double kMetersPerDegreeLat = 111132.95;
+    double d_lat = ((lat_e6 - est_lat_e6_) * 1e-6) * kMetersPerDegreeLat;
+    double lat_rad = (est_lat_e6_ * 1e-6) * (3.14159265358979323846 / 180.0);
+    double d_lon = ((lon_e6 - est_lon_e6_) * 1e-6) * kMetersPerDegreeLat * cos(lat_rad);
+    double dist_m = std::sqrt(d_lat * d_lat + d_lon * d_lon);
+
+    if (time_elapsed || dist_m >= 15.0) {
+      anchor_last_gnss(lat_e6, lon_e6);
+      return true;
+    }
+    return false;
+  }
+
+  void set_gyro_bias(float gz_bias) { gz_bias_ = gz_bias; }
+  float gyro_bias() const { return gz_bias_; }
+  float heading_rad() const { return gyro_heading_rad_; }
 
   bool estimate(int32_t& lat_e6, int32_t& lon_e6) override {
     if (!has_estimate_) return false;
@@ -983,6 +1390,63 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
   }
 #endif
 
+  bool read_sensors(int16_t& ax, int16_t& ay, int16_t& az, int16_t& gx, int16_t& gy, int16_t& gz) {
+#if defined(ESP_PLATFORM)
+    if (!sensor_online_) return false;
+    uint8_t data[14] = {0};
+    i2c_cmd_handle_t cmd = i2c_cmd_link_create();
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (MPU6050_ADDR << 1) | I2C_MASTER_WRITE, true);
+    i2c_master_write_byte(cmd, REG_ACCEL_XOUT_H, true);
+    i2c_master_start(cmd);
+    i2c_master_write_byte(cmd, (MPU6050_ADDR << 1) | I2C_MASTER_READ, true);
+    i2c_master_read(cmd, data, 13, I2C_MASTER_ACK);
+    i2c_master_read_byte(cmd, data + 13, I2C_MASTER_NACK);
+    i2c_master_stop(cmd);
+    esp_err_t ret = i2c_master_cmd_begin(I2C_NUM_0, cmd, pdMS_TO_TICKS(20));
+    i2c_cmd_link_delete(cmd);
+    if (ret != ESP_OK) return false;
+
+    ax = static_cast<int16_t>((data[0] << 8) | data[1]);
+    ay = static_cast<int16_t>((data[2] << 8) | data[3]);
+    az = static_cast<int16_t>((data[4] << 8) | data[5]);
+    gx = static_cast<int16_t>((data[8] << 8) | data[9]);
+    gy = static_cast<int16_t>((data[10] << 8) | data[11]);
+    gz = static_cast<int16_t>((data[12] << 8) | data[13]);
+    return true;
+#else
+    (void)ax; (void)ay; (void)az; (void)gx; (void)gy; (void)gz;
+    return false;
+#endif
+  }
+
+  void poll_hardware(uint32_t dt_ms) {
+    int16_t ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
+    if (read_sensors(ax, ay, az, gx, gy, gz)) {
+      sample(ax, ay, az, gx, gy, gz, dt_ms);
+    }
+  }
+
+  void calibrate_gyro(size_t samples = 30) {
+#if defined(ESP_PLATFORM)
+    float sum_gz = 0.0f;
+    size_t count = 0;
+    for (size_t i = 0; i < samples; ++i) {
+      int16_t ax, ay, az, gx, gy, gz;
+      if (read_sensors(ax, ay, az, gx, gy, gz)) {
+        sum_gz += static_cast<float>(gz);
+        count++;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (count > 0) {
+      gz_bias_ = sum_gz / static_cast<float>(count);
+    }
+#else
+    (void)samples;
+#endif
+  }
+
   int sda_, scl_;
   bool sensor_online_;
   bool has_estimate_;
@@ -992,6 +1456,9 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
   uint32_t anchor_time_ms_;
   uint32_t last_step_time_ms_;
   float gyro_heading_rad_;
+  float gz_bias_;
+  StepState step_state_;
+  uint32_t peak_time_ms_;
   uint32_t mock_system_ms_ = 0;
 };
 
@@ -1004,7 +1471,20 @@ class BatteryMonitor : public IBattery {
  public:
   BatteryMonitor(int adc_channel = 0)
       : adc_channel_(adc_channel), cached_pct_(100), last_raw_mv_(4200),
-        adc_healthy_(true), read_errors_(0) {}
+        adc_healthy_(true), read_errors_(0), has_cali_(false) {}
+
+  ~BatteryMonitor() {
+#if defined(ESP_PLATFORM)
+    if (cali_handle_) {
+      adc_cali_delete_scheme_curve_fitting(cali_handle_);
+      cali_handle_ = nullptr;
+    }
+    if (adc_handle_) {
+      adc_oneshot_del_unit(adc_handle_);
+      adc_handle_ = nullptr;
+    }
+#endif
+  }
 
   bool init_adc() {
 #if defined(ESP_PLATFORM)
@@ -1021,6 +1501,15 @@ class BatteryMonitor : public IBattery {
     config.atten = ADC_ATTEN_DB_12; // 0 to ~3.1V range
     ret = adc_oneshot_config_channel(adc_handle_, static_cast<adc_channel_t>(adc_channel_), &config);
     adc_healthy_ = (ret == ESP_OK);
+
+    // Attempt eFuse curve fitting calibration scheme
+    adc_cali_curve_fitting_config_t cali_config = {};
+    cali_config.unit_id = ADC_UNIT_1;
+    cali_config.chan = static_cast<adc_channel_t>(adc_channel_);
+    cali_config.atten = ADC_ATTEN_DB_12;
+    cali_config.bitwidth = ADC_BITWIDTH_DEFAULT;
+    esp_err_t cali_ret = adc_cali_create_scheme_curve_fitting(&cali_config, &cali_handle_);
+    has_cali_ = (cali_ret == ESP_OK);
     return adc_healthy_;
 #else
     return true;
@@ -1033,8 +1522,18 @@ class BatteryMonitor : public IBattery {
       int raw = 0;
       esp_err_t ret = adc_oneshot_read(adc_handle_, static_cast<adc_channel_t>(adc_channel_), &raw);
       if (ret == ESP_OK) {
-        // Approximate millivolts with 2:1 divider: (raw / 4095.0) * 3100mV * 2.0
-        uint32_t cell_mv = static_cast<uint32_t>((raw * 6200ULL) / 4095ULL);
+        uint32_t cell_mv = 0;
+        if (has_cali_ && cali_handle_) {
+          int voltage_mv = 0;
+          if (adc_cali_raw_to_voltage(cali_handle_, raw, &voltage_mv) == ESP_OK) {
+            cell_mv = static_cast<uint32_t>(voltage_mv * 2); // 2:1 resistive divider
+          } else {
+            cell_mv = static_cast<uint32_t>((raw * 6200ULL) / 4095ULL);
+          }
+        } else {
+          // Uncalibrated linear fallback
+          cell_mv = static_cast<uint32_t>((raw * 6200ULL) / 4095ULL);
+        }
         last_raw_mv_ = cell_mv;
         cached_pct_ = voltage_mv_to_percent(cell_mv);
       } else {
@@ -1063,16 +1562,19 @@ class BatteryMonitor : public IBattery {
   uint32_t raw_millivolts() const { return last_raw_mv_; }
   bool is_healthy() const { return adc_healthy_; }
   bool is_critical() const { return last_raw_mv_ <= 3350; }
+  bool is_calibrated() const { return has_cali_; }
 
  private:
 #if defined(ESP_PLATFORM)
   adc_oneshot_unit_handle_t adc_handle_ = nullptr;
+  adc_cali_handle_t cali_handle_ = nullptr;
 #endif
   int adc_channel_;
   uint8_t cached_pct_;
   uint32_t last_raw_mv_;
   bool adc_healthy_;
   uint32_t read_errors_;
+  bool has_cali_;
 };
 
 /**
@@ -1098,9 +1600,22 @@ class HapticLedDriver : public IHaptic {
     gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
     gpio_set_level(static_cast<gpio_num_t>(led_red_), 0);
     gpio_set_level(static_cast<gpio_num_t>(led_green_), 0);
-    return true;
+
+    if (!haptic_queue_) {
+      haptic_queue_ = xQueueCreate(8, sizeof(HapticPattern));
+    }
+    return haptic_queue_ != nullptr;
 #else
     return true;
+#endif
+  }
+
+  ~HapticLedDriver() {
+#if defined(ESP_PLATFORM)
+    if (haptic_queue_) {
+      vQueueDelete(haptic_queue_);
+      haptic_queue_ = nullptr;
+    }
 #endif
   }
 
@@ -1109,11 +1624,24 @@ class HapticLedDriver : public IHaptic {
     pattern_play_count_++;
 
 #if defined(ESP_PLATFORM)
+    if (haptic_queue_) {
+      // Non-blocking asynchronous push to haptic service queue
+      xQueueSend(haptic_queue_, &p, 0);
+    }
+#endif
+  }
+
+  /**
+   * Executes pattern steps asynchronously using FreeRTOS vTaskDelay.
+   * Yields the CPU on Core 0 and never stalls the protocol core on Core 1.
+   */
+  void execute_pattern(HapticPattern p) {
+#if defined(ESP_PLATFORM)
     switch (p) {
       case HapticPattern::PressRegistered:
         // Sharp tactile click: 30ms pulse
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(30000);
+        vTaskDelay(pdMS_TO_TICKS(30));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
         break;
 
@@ -1121,7 +1649,7 @@ class HapticLedDriver : public IHaptic {
         // General SOS: 200ms pulse + Green LED
         gpio_set_level(static_cast<gpio_num_t>(led_green_), 1);
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(200000);
+        vTaskDelay(pdMS_TO_TICKS(200));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
         gpio_set_level(static_cast<gpio_num_t>(led_green_), 0);
         break;
@@ -1130,11 +1658,11 @@ class HapticLedDriver : public IHaptic {
         // Medical: 150ms on + 100ms gap + 150ms on
         gpio_set_level(static_cast<gpio_num_t>(led_green_), 1);
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(150000);
+        vTaskDelay(pdMS_TO_TICKS(150));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
-        esp_rom_delay_us(100000);
+        vTaskDelay(pdMS_TO_TICKS(100));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(150000);
+        vTaskDelay(pdMS_TO_TICKS(150));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
         gpio_set_level(static_cast<gpio_num_t>(led_green_), 0);
         break;
@@ -1143,7 +1671,7 @@ class HapticLedDriver : public IHaptic {
         // Trapped: 800ms sustained buzz + Red LED
         gpio_set_level(static_cast<gpio_num_t>(led_red_), 1);
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(800000);
+        vTaskDelay(pdMS_TO_TICKS(800));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
         gpio_set_level(static_cast<gpio_num_t>(led_red_), 0);
         break;
@@ -1151,11 +1679,11 @@ class HapticLedDriver : public IHaptic {
       case HapticPattern::WakeDetected:
         // 2 quick 50ms chirps
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(50000);
+        vTaskDelay(pdMS_TO_TICKS(50));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
-        esp_rom_delay_us(50000);
+        vTaskDelay(pdMS_TO_TICKS(50));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(50000);
+        vTaskDelay(pdMS_TO_TICKS(50));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
         break;
 
@@ -1163,11 +1691,11 @@ class HapticLedDriver : public IHaptic {
         // Double reject buzz: 80ms on + 50ms off + 80ms on + Red LED
         gpio_set_level(static_cast<gpio_num_t>(led_red_), 1);
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(80000);
+        vTaskDelay(pdMS_TO_TICKS(80));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
-        esp_rom_delay_us(50000);
+        vTaskDelay(pdMS_TO_TICKS(50));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-        esp_rom_delay_us(80000);
+        vTaskDelay(pdMS_TO_TICKS(80));
         gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
         gpio_set_level(static_cast<gpio_num_t>(led_red_), 0);
         break;
@@ -1177,10 +1705,10 @@ class HapticLedDriver : public IHaptic {
         for (int i = 0; i < 3; ++i) {
           gpio_set_level(static_cast<gpio_num_t>(led_green_), 1);
           gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-          esp_rom_delay_us(150000);
+          vTaskDelay(pdMS_TO_TICKS(150));
           gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
           gpio_set_level(static_cast<gpio_num_t>(led_green_), 0);
-          esp_rom_delay_us(100000);
+          vTaskDelay(pdMS_TO_TICKS(100));
         }
         break;
 
@@ -1189,20 +1717,33 @@ class HapticLedDriver : public IHaptic {
         gpio_set_level(static_cast<gpio_num_t>(led_red_), 1);
         for (int i = 0; i < 3; ++i) {
           gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 1);
-          esp_rom_delay_us(250000);
+          vTaskDelay(pdMS_TO_TICKS(250));
           gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
-          esp_rom_delay_us(100000);
+          vTaskDelay(pdMS_TO_TICKS(100));
         }
         gpio_set_level(static_cast<gpio_num_t>(led_red_), 0);
         break;
     }
+    // Return all output pins to safe low level
+    gpio_set_level(static_cast<gpio_num_t>(haptic_pin_), 0);
+    gpio_set_level(static_cast<gpio_num_t>(led_red_), 0);
+    gpio_set_level(static_cast<gpio_num_t>(led_green_), 0);
+#else
+    (void)p;
 #endif
   }
+
+#if defined(ESP_PLATFORM)
+  QueueHandle_t queue() const { return haptic_queue_; }
+#endif
 
   HapticPattern last_pattern() const { return last_pattern_; }
   uint32_t play_count() const { return pattern_play_count_; }
 
  private:
+#if defined(ESP_PLATFORM)
+  QueueHandle_t haptic_queue_ = nullptr;
+#endif
   int haptic_pin_, led_red_, led_green_;
   HapticPattern last_pattern_;
   uint32_t pattern_play_count_;

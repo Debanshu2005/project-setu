@@ -1,5 +1,7 @@
 // Project Setu - Firmware Driver Adapters & Wire Compatibility Unit Tests
 #include <cstring>
+#include <string>
+#include <vector>
 #include "esp32_adapters.hpp"
 #include "host_mocks.hpp"
 #include "setu/node.hpp"
@@ -316,5 +318,228 @@ TEST(node_unsynchronized_clock_never_drops_emergency_sos) {
   // The emergency SOS with ts = 0 MUST NOT be dropped as expired!
   CHECK_EQ(relay.stats().rx_expired, 0u);
   CHECK_EQ(relay.stats().rx_total, 1u);
+}
+
+TEST(sx1262_selective_irq_clearing_and_combined_flags) {
+  Sx1262Radio radio;
+  radio.init();
+
+  // Prepare a received packet payload
+  uint8_t dummy_pkt[kPacketSize];
+  std::memset(dummy_pkt, 0xEE, sizeof(dummy_pkt));
+  radio.inject_mock_rx_packet(dummy_pkt, sizeof(dummy_pkt), -75, 10);
+
+  // Inject multiple concurrent IRQ flags:
+  // TxDone (0x0001), RxDone (0x0002), Preamble (0x0004), and an unhandled bit (0x8000)
+  radio.inject_mock_irq(Sx1262Radio::IRQ_TX_DONE | Sx1262Radio::IRQ_PREAMBLE_DETECTED | 0x8000);
+
+  uint8_t rx_buf[64] = {0};
+  Sx1262Radio::IrqResult res;
+  bool handled = radio.process_irqs(res, rx_buf, sizeof(rx_buf));
+  CHECK(handled);
+  CHECK(res.tx_done);
+  CHECK(res.rx_done);
+  CHECK_EQ(res.rx_len, kPacketSize);
+  CHECK_EQ(rx_buf[0], 0xEE);
+  CHECK_EQ(res.rx_rssi, -75);
+  CHECK_EQ(res.rx_snr, 10);
+
+  // Verify raw_irqs captured all active flags
+  CHECK((res.raw_irqs & Sx1262Radio::IRQ_TX_DONE) != 0);
+  CHECK((res.raw_irqs & Sx1262Radio::IRQ_RX_DONE) != 0);
+  CHECK((res.raw_irqs & 0x8000) != 0);
+
+  // Selective clearing check: TX_DONE, RX_DONE, and PREAMBLE were cleared,
+  // but unhandled 0x8000 remains pending and was NOT cleared!
+  CHECK_EQ(radio.mock_pending_irqs(), 0x8000);
+
+  // Cleanly clear remaining flag via explicit clear_irq_status
+  radio.clear_irq_status(0x8000);
+  CHECK_EQ(radio.mock_pending_irqs(), 0);
+}
+
+TEST(sx1262_rx_crc_error_and_timeout_recovery) {
+  Sx1262Radio radio;
+  radio.init();
+
+  // 1. Simulate RxDone with CRC Error
+  radio.inject_mock_irq(Sx1262Radio::IRQ_RX_DONE | Sx1262Radio::IRQ_CRC_ERR);
+  Sx1262Radio::IrqResult res;
+  uint8_t rx_buf[64] = {0};
+  bool handled = radio.process_irqs(res, rx_buf, sizeof(rx_buf));
+  CHECK(handled);
+  CHECK(res.crc_error);
+  CHECK(!res.rx_done);
+  CHECK_EQ(radio.crc_errors(), 1u);
+  CHECK_EQ(radio.mock_pending_irqs(), 0);
+
+  // 2. Simulate Transmission Timeout
+  radio.inject_mock_irq(Sx1262Radio::IRQ_TIMEOUT);
+  res = {};
+  handled = radio.process_irqs(res, rx_buf, sizeof(rx_buf));
+  CHECK(handled);
+  CHECK(res.timeout);
+  CHECK(!res.tx_done);
+  CHECK_EQ(radio.mock_pending_irqs(), 0);
+  CHECK(radio.state() == Sx1262Radio::RadioState::Receiving);
+}
+
+TEST(nmea_framer_streaming_partial_multiple_and_overflow) {
+  NmeaFramer framer;
+  std::vector<std::string> sentences;
+  auto cb = [&](const char* s) { sentences.emplace_back(s); };
+
+  // 1. Chunked delivery of a single sentence across multiple pushes
+  const char* chunk1 = "$GPRMC,123519,A,4807.038";
+  const char* chunk2 = ",N,01131.000,E,022.4,084.4,230394,003.1,W*6A\r\n";
+  framer.push_bytes(chunk1, std::strlen(chunk1), cb);
+  CHECK(sentences.empty());
+  framer.push_bytes(chunk2, std::strlen(chunk2), cb);
+  CHECK_EQ(sentences.size(), 1u);
+  CHECK(sentences[0] == "$GPRMC,123519,A,4807.038,N,01131.000,E,022.4,084.4,230394,003.1,W*6A");
+
+  // 2. Garbage prefix before valid sentence start ($)
+  sentences.clear();
+  const char* noisy = "\xFF\xFE\xDDGARBAGE_BYTES_#@!$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47\n";
+  framer.push_bytes(noisy, std::strlen(noisy), cb);
+  CHECK_EQ(sentences.size(), 1u);
+  CHECK(sentences[0] == "$GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,*47");
+  CHECK(framer.dropped_bytes() > 0);
+
+  // 3. Multiple back-to-back sentences in a single stream push
+  sentences.clear();
+  const char* multi = "$GPRMC,1*2A\r\n$GPGGA,2*3B\r\n";
+  framer.push_bytes(multi, std::strlen(multi), cb);
+  CHECK_EQ(sentences.size(), 2u);
+  CHECK(sentences[0] == "$GPRMC,1*2A");
+  CHECK(sentences[1] == "$GPGGA,2*3B");
+
+  // 4. Overflow protection (> 128 bytes without line ending)
+  sentences.clear();
+  std::string oversized = "$" + std::string(150, 'X') + "\r\n";
+  framer.push_bytes(oversized.data(), oversized.size(), cb);
+  CHECK(sentences.empty()); // Oversized sentence must be discarded
+
+  // 5. Clean recovery after overflow: next valid sentence parses successfully
+  const char* recovery = "$GPRMC,OK*00\r\n";
+  framer.push_bytes(recovery, std::strlen(recovery), cb);
+  CHECK_EQ(sentences.size(), 1u);
+  CHECK(sentences[0] == "$GPRMC,OK*00");
+}
+
+TEST(mpu6050_step_detector_cadence_and_gnss_anchoring_policy) {
+  Mpu6050DeadReckoning dr;
+
+  // 1. Initial fix: accepted unconditionally to seed un-anchored estimator
+  dr.set_mock_system_ms(1000);
+  CHECK(dr.anchor_gnss_filtered(22500000, 88400000, 3));
+
+  // 2. Step detection cadence test
+  // Initial peak at t = 1000ms
+  dr.sample(0, 0, 10500, 0, 0, 0, 20); // ~12.57 m/s^2 > 11.8f
+  CHECK_EQ(dr.steps(), 0u);
+
+  // Trough at t = 1350ms (cadence = 1350ms, valid first step)
+  dr.set_mock_system_ms(1350);
+  dr.sample(0, 0, 6500, 0, 0, 0, 20); // ~7.78 m/s^2 < 8.6f
+  CHECK_EQ(dr.steps(), 1u);
+
+  // Second step attempted too quickly:
+  // Peak at t = 1400ms, trough at t = 1450ms (cadence = 100ms < 250ms -> rejected)
+  dr.set_mock_system_ms(1400);
+  dr.sample(0, 0, 10500, 0, 0, 0, 20);
+  dr.set_mock_system_ms(1450);
+  dr.sample(0, 0, 6500, 0, 0, 0, 20);
+  CHECK_EQ(dr.steps(), 1u); // Rejected, count remains 1
+
+  // Third step with valid cadence:
+  // Peak at t = 1750ms, trough at t = 1900ms (cadence = 1900 - 1350 = 550ms -> accepted)
+  dr.set_mock_system_ms(1750);
+  dr.sample(0, 0, 10500, 0, 0, 0, 20);
+  dr.set_mock_system_ms(1900);
+  dr.sample(0, 0, 6500, 0, 0, 0, 20);
+  CHECK_EQ(dr.steps(), 2u);
+
+  // 3. GNSS Anchoring Policy test
+  // Subsequent fix with low satellite count (< 5): rejected
+  CHECK(!dr.anchor_gnss_filtered(22500010, 88400010, 4));
+
+  // Subsequent fix with 8 satellites, but only 5 seconds elapsed and < 15m displacement: rejected
+  dr.set_mock_system_ms(6000); // 5000ms after anchor at 1000ms
+  CHECK(!dr.anchor_gnss_filtered(22500010, 88400010, 8));
+
+  // Subsequent fix after 30+ seconds (dt = 35000 - 1000 = 34s >= 30s): accepted
+  dr.set_mock_system_ms(35000);
+  CHECK(dr.anchor_gnss_filtered(22500010, 88400010, 8));
+
+  // Subsequent fix with large displacement (> 15m) within 2 seconds: accepted
+  dr.set_mock_system_ms(37000);
+  CHECK(dr.anchor_gnss_filtered(22501000, 88401000, 8)); // ~110m away
+}
+
+TEST(single_owner_protocol_queue_saturation_and_ack) {
+  MockClock clk;
+  MockRandom rng;
+  MockRadio radio;
+  Hal hal{&clk, &rng, &radio, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr};
+
+  NodeConfig cfg;
+  cfg.node_id = 42;
+  Node node(cfg, hal);
+
+  // Model bounded FreeRTOS queue (capacity = 16)
+  struct RxQueueItem {
+    uint8_t buf[kPacketSize];
+    size_t len;
+  };
+  constexpr size_t kQueueCap = 16;
+  std::vector<RxQueueItem> rx_queue;
+  uint32_t rx_drops = 0;
+
+  // Create an ACK packet targeted to node 42
+  Packet ack_pkt;
+  ack_pkt.node_id = 99;
+  ack_pkt.seq = 500;
+  ack_pkt.target = 42;
+  ack_pkt.ref_seq = 1;
+  ack_pkt.hazard = Hazard::General;
+  ack_pkt.flags = kFlagAck;
+  uint8_t wire[kPacketSize];
+  serialize(ack_pkt, wire, sizeof(wire));
+
+  // Push 16 packets into bounded queue -> all succeed
+  for (size_t i = 0; i < kQueueCap; ++i) {
+    if (rx_queue.size() < kQueueCap) {
+      RxQueueItem item;
+      std::memcpy(item.buf, wire, sizeof(wire));
+      item.len = sizeof(wire);
+      rx_queue.push_back(item);
+    } else {
+      rx_drops++;
+    }
+  }
+  CHECK_EQ(rx_queue.size(), kQueueCap);
+  CHECK_EQ(rx_drops, 0u);
+
+  // 17th packet -> drops cleanly without queue corruption
+  if (rx_queue.size() < kQueueCap) {
+    RxQueueItem item;
+    std::memcpy(item.buf, wire, sizeof(wire));
+    item.len = sizeof(wire);
+    rx_queue.push_back(item);
+  } else {
+    rx_drops++;
+  }
+  CHECK_EQ(rx_queue.size(), kQueueCap);
+  CHECK_EQ(rx_drops, 1u);
+
+  // Single-owner protocol task drains queue sequentially
+  for (const auto& item : rx_queue) {
+    node.on_radio_rx(item.buf, item.len);
+  }
+  rx_queue.clear();
+
+  // Verify protocol processed packets without error
+  CHECK_EQ(node.stats().rx_total, 16u);
 }
 

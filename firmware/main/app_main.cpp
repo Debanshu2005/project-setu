@@ -83,12 +83,18 @@ struct AppContext {
   setu::esp32::Esp32Clock* clock;
   setu::esp32::BatteryMonitor* battery;
   setu::esp32::Sx1262Radio* radio;
+  setu::esp32::Neo6mGnss* gnss;
+  setu::esp32::Mpu6050DeadReckoning* dr;
+  setu::esp32::HapticLedDriver* haptics;
 };
 
-// Core Protocol Tick Task (100 Hz / 10ms cycle, Core 1)
+static uint32_t s_radio_rx_packets = 0;
+static uint32_t s_radio_rx_drops = 0;
+
+// Core Protocol Tick Task (100 Hz / 10ms cycle, Core 1 - Sole Owner of setu::Node)
 [[maybe_unused]] static void core_protocol_task(void* param) {
   AppContext* ctx = static_cast<AppContext*>(param);
-  printf("[SETU] Core protocol task started at 100 Hz on Core 1\n");
+  printf("[SETU] Core protocol task started at 100 Hz on Core 1 (Sole Owner of setu::Node)\n");
 
 #if defined(ESP_PLATFORM)
   uint32_t last_sensor_poll = 0;
@@ -96,22 +102,31 @@ struct AppContext {
 
   while (true) {
 #if defined(ESP_PLATFORM)
-    // 1. Drain pending button events from ISR queue
+    // 1. Drain pending radio RX packets sequentially into protocol engine
+    RadioRxEvent rx_evt;
+    while (xQueueReceive(s_radio_rx_queue, &rx_evt, 0) == pdTRUE) {
+      if (rx_evt.length == setu::kPacketSize) {
+        ctx->node->on_radio_rx(rx_evt.buffer, rx_evt.length);
+      }
+    }
+
+    // 2. Drain pending button events from ISR queue
     ButtonEvent btn_evt;
     while (xQueueReceive(s_button_queue, &btn_evt, 0) == pdTRUE) {
       ctx->node->on_button_edge(btn_evt.is_pressed);
     }
 
-    // 2. Advance authoritative protocol tick
+    // 3. Advance authoritative protocol tick
     ctx->node->tick();
 
-    // 3. Periodic battery & telemetry check every 5 seconds
+    // 4. Periodic battery & telemetry check every 5 seconds
     uint32_t now = ctx->clock->now_ms();
     if (now - last_sensor_poll >= 5000) {
       last_sensor_poll = now;
-      ESP_LOGI(TAG, "Heartbeat: Node seq=%u, battery=%u%%, state=%s",
+      ESP_LOGI(TAG, "Heartbeat: Node seq=%u, battery=%u%%, state=%s, rx_pkts=%u, rx_drops=%u",
                ctx->node->seq(), ctx->battery->percent(),
-               ctx->node->sos_active() ? "EMERGENCY_ACTIVE" : "STANDBY");
+               ctx->node->sos_active() ? "EMERGENCY_ACTIVE" : "STANDBY",
+               s_radio_rx_packets, s_radio_rx_drops);
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -132,12 +147,86 @@ struct AppContext {
     // Wait for notification from DIO1 interrupt
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
 
-    // Read packet from SX1262 SPI FIFO
-    RadioRxEvent rx_evt;
-    if (ctx->radio->read_rx_packet(rx_evt.buffer, sizeof(rx_evt.buffer), rx_evt.length, rx_evt.rssi, rx_evt.snr)) {
-      if (rx_evt.length == setu::kPacketSize) {
-        ctx->node->on_radio_rx(rx_evt.buffer, rx_evt.length);
+    // Read packet from SX1262 SPI FIFO via authoritative selective IRQ processor
+    uint8_t rx_buf[setu::kPacketSize];
+    setu::esp32::Sx1262Radio::IrqResult res;
+    if (ctx->radio->process_irqs(res, rx_buf, sizeof(rx_buf))) {
+      if (res.rx_done && res.rx_len == setu::kPacketSize) {
+        RadioRxEvent rx_evt;
+        std::memcpy(rx_evt.buffer, rx_buf, setu::kPacketSize);
+        rx_evt.length = res.rx_len;
+        rx_evt.rssi = res.rx_rssi;
+        rx_evt.snr = res.rx_snr;
+
+        // Deliver to bounded event queue for single-owner protocol task
+        if (xQueueSend(s_radio_rx_queue, &rx_evt, 0) == pdTRUE) {
+          s_radio_rx_packets++;
+        } else {
+          // Bounded queue saturated: record and document drop
+          s_radio_rx_drops++;
+          ESP_LOGW(TAG, "s_radio_rx_queue saturated! Dropped packet. Total drops=%u", s_radio_rx_drops);
+        }
       }
+    }
+  }
+#else
+  (void)ctx;
+#endif
+}
+
+// Dedicated GPS UART Ingestion Task (Core 0)
+[[maybe_unused]] static void gps_service_task(void* param) {
+  AppContext* ctx = static_cast<AppContext*>(param);
+  printf("[SETU] GPS UART ingestion task started on Core 0\n");
+
+#if defined(ESP_PLATFORM)
+  uint8_t uart_buf[128];
+  while (true) {
+    int len = uart_read_bytes(UART_NUM_1, uart_buf, sizeof(uart_buf), pdMS_TO_TICKS(100));
+    if (len > 0) {
+      ctx->gnss->framer().push_bytes(reinterpret_cast<const char*>(uart_buf), len, [&](const char* sentence) {
+        ctx->gnss->feed_nmea(sentence, ctx->clock);
+      });
+    }
+  }
+#else
+  (void)ctx;
+#endif
+}
+
+// Dedicated Motion/Dead-Reckoning Task (Core 0, 50 Hz)
+[[maybe_unused]] static void motion_service_task(void* param) {
+  AppContext* ctx = static_cast<AppContext*>(param);
+  printf("[SETU] Motion/Dead-Reckoning task started at 50 Hz on Core 0\n");
+
+#if defined(ESP_PLATFORM)
+  while (true) {
+    // Poll hardware registers and advance step/heading estimator
+    ctx->dr->poll_hardware(20);
+
+    // Apply explicit GNSS anchoring policy if GPS fix is active
+    int32_t lat = 0, lon = 0;
+    if (ctx->gnss->get_fix(lat, lon)) {
+      ctx->dr->anchor_gnss_filtered(lat, lon, ctx->gnss->satellites());
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+#else
+  (void)ctx;
+#endif
+}
+
+// Dedicated Asynchronous Haptic/LED Task (Core 0)
+[[maybe_unused]] static void haptic_service_task(void* param) {
+  AppContext* ctx = static_cast<AppContext*>(param);
+  printf("[SETU] Asynchronous haptic feedback task started on Core 0\n");
+
+#if defined(ESP_PLATFORM)
+  setu::HapticPattern p;
+  while (true) {
+    if (ctx->haptics->queue() && xQueueReceive(ctx->haptics->queue(), &p, portMAX_DELAY) == pdTRUE) {
+      ctx->haptics->execute_pattern(p);
     }
   }
 #else
