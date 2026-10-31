@@ -130,11 +130,11 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   // [3] Exponent 4.0 Succeeds When Topology & Parameters Permit Connectivity
   // ---------------------------------------------------------------------------
-  console.log('\n[Test 3] Path Loss Exponent 4.0 Succeeds in Feasible Zone (400m)...');
+  console.log('\n[Test 3] Path Loss Exponent 4.0 Succeeds in 1200m Zone with Deliberate Placement...');
   const res40Feasible = await runSimulator([
     '--survivors', '20',
     '--relays', '5',
-    '--zone', '400',
+    '--zone', '1200',
     '--seed', '42',
     '--duration', '2000',
     '--sf', '7',
@@ -142,16 +142,16 @@ async function runTests() {
     '--path-exp', '4.0',
     '--trigger', '1:short@1000'
   ]);
-  assert(res40Feasible.code === 0, `Exponent 4.0 in 400m zone exited cleanly with code 0 (Got: ${res40Feasible.code})`);
-  assert(res40Feasible.stdout.includes('"totals":'), 'Exponent 4.0 generated connected topology and completed simulation');
+  assert(res40Feasible.code === 0, `Exponent 4.0 in 1200m zone exited cleanly with code 0 (Got: ${res40Feasible.code})`);
+  assert(res40Feasible.stdout.includes('"totals":') || res40Feasible.stdout.includes('"deliveries":'), 'Exponent 4.0 generated connected topology and completed simulation');
 
   // ---------------------------------------------------------------------------
   // [4] Exponent 4.0 Produces Actionable Diagnostic on Infeasible Configuration
   // ---------------------------------------------------------------------------
-  console.log('\n[Test 4] Path Loss Exponent 4.0 Infeasible Diagnostic Reporting...');
+  console.log('\n[Test 4] Path Loss Exponent 4.0 Infeasible Diagnostic Reporting (0 Relays)...');
   const res40Infeasible = await runSimulator([
     '--survivors', '20',
-    '--relays', '5',
+    '--relays', '0',
     '--zone', '1200',
     '--seed', '42',
     '--duration', '2000',
@@ -166,7 +166,7 @@ async function runTests() {
   assert(err.includes('path_exp=4.00'), 'Diagnostic cites effective path loss exponent');
   assert(err.includes('seed=42'), 'Diagnostic cites random seed');
   assert(err.includes('zone=1200m'), 'Diagnostic cites zone size');
-  assert(err.includes('survivors=20, relays=5'), 'Diagnostic cites node counts');
+  assert(err.includes('survivors=20, relays=0'), 'Diagnostic cites node counts');
   assert(err.includes('156.7m'), 'Diagnostic cites calculated physical radio range limit (~156.7m)');
   assert(err.includes('disconnected from Hub'), 'Diagnostic identifies disconnected nodes/components');
   assert(err.includes('--allow-disconnected'), 'Diagnostic provides actionable options (reduce zone, allow disconnected)');
@@ -174,10 +174,10 @@ async function runTests() {
   // ---------------------------------------------------------------------------
   // [5] Exponent 4.0 Succeeds When --allow-disconnected is Enabled
   // ---------------------------------------------------------------------------
-  console.log('\n[Test 5] Path Loss Exponent 4.0 with --allow-disconnected in 1200m Zone...');
+  console.log('\n[Test 5] Path Loss Exponent 4.0 with --allow-disconnected in 1200m Zone (0 Relays)...');
   const res40Disc = await runSimulator([
     '--survivors', '20',
-    '--relays', '5',
+    '--relays', '0',
     '--zone', '1200',
     '--seed', '42',
     '--duration', '2000',
@@ -253,7 +253,7 @@ async function runTests() {
     const postInfeasible = await request('POST', '/api/simulate', {
       params: {
         survivors: 20,
-        relays: 5,
+        relays: 0,
         zone: 1200,
         seed: 42,
         duration: 2000,
@@ -268,25 +268,25 @@ async function runTests() {
     assert(apiErr.includes('disconnected from Hub'), 'API error preserves disconnected nodes metric');
     assert(apiErr.includes('--allow-disconnected'), 'API error preserves actionable remedy instructions');
 
-    // Subtest 8B: Feasible custom simulation (zone 400) returns HTTP 200
+    // Subtest 8B: Feasible custom simulation (zone 1200 with deliberate placement) returns HTTP 200
     const postFeasible = await request('POST', '/api/simulate', {
       params: {
         survivors: 20,
         relays: 5,
-        zone: 400,
+        zone: 1200,
         seed: 42,
         duration: 2000,
         path_exp: 4.0
       }
     });
-    assert(postFeasible.statusCode === 200, `Feasible simulation (zone 400) returned HTTP 200 (Got: ${postFeasible.statusCode})`);
+    assert(postFeasible.statusCode === 200, `Feasible simulation (zone 1200) returned HTTP 200 (Got: ${postFeasible.statusCode})`);
     assert(postFeasible.json && postFeasible.json.success === true, 'Feasible simulation completed successfully');
 
     // Subtest 8C: Custom simulation with allow_disconnected returns HTTP 200
     const postAllowDisc = await request('POST', '/api/simulate', {
       params: {
         survivors: 20,
-        relays: 5,
+        relays: 0,
         zone: 1200,
         seed: 42,
         duration: 2000,

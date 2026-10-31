@@ -36,7 +36,7 @@ function validateSimulationParams(params = {}) {
 
   const schema = {
     survivors: { min: 1, max: 100, integer: true },
-    relays: { min: 1, max: 30, integer: true },
+    relays: { min: 0, max: 30, integer: true },
     zone: { min: 200, max: 5000 },
     seed: { min: 0, max: 4294967295, integer: true },
     duration: { min: 1000, max: 120000, integer: true },
@@ -356,8 +356,8 @@ class SimulationJobManager {
     this.activeJobs.set(job.id, job);
 
     const p = job.params;
-    const survivors = Math.min(100, Math.max(1, parseInt(p.survivors, 10) || 20));
-    const relays = Math.min(30, Math.max(1, parseInt(p.relays, 10) || 5));
+    const survivors = Math.min(100, Math.max(1, p.survivors !== undefined ? parseInt(p.survivors, 10) : 20));
+    const relays = Math.min(30, Math.max(0, p.relays !== undefined ? parseInt(p.relays, 10) : 5));
     const zone = Math.min(5000, Math.max(200, parseFloat(p.zone) || 1200));
     const seed = Math.max(0, parseInt(p.seed, 10) || 7);
     const duration = Math.min(120000, Math.max(1000, parseInt(p.duration, 10) || 30000));

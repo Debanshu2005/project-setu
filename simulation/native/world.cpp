@@ -835,31 +835,160 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
   const int cols = (relays == 5) ? 3 : std::max(1, static_cast<int>(std::round(std::sqrt(relays))));
   const int rows = std::max(1, (relays + cols - 1) / cols);
 
+  const double sens = setu::lora_sensitivity_dbm(ch.sf);
+  const double max_loss = ch.tx_dbm - sens - ch.connect_margin_db - ch.ref_loss_db - ch.extra_loss_db;
+  const double d_viable = (max_loss > 0.0 && ch.path_exp > 0.0) ? std::pow(10.0, max_loss / (10.0 * ch.path_exp)) : 10.0;
+
   for (uint32_t s = seed; s < seed + 500; s++) {
     auto w = std::make_unique<World>(ch, s);
     std::mt19937 r(s);
-    std::uniform_real_distribution<double> jitter(-60, 60), pos(100, zone);
     setu::NodeConfig c = base;
-    c.node_id = 0;
-    c.role = setu::Role::Hub;
-    uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
-    w->add_node(c, 60, 60, hub_batt);
-    for (int i = 0; i < relays; i++) {
-      c.node_id = static_cast<uint16_t>(100 + i);
-      c.role = setu::Role::Relay;
-      uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-      const double jy = jitter(r);
-      const double jx = jitter(r);
-      w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jx,
-                  (i / cols + 1) * zone / (rows + 1) + jy, r_batt);
-    }
-    for (int i = 0; i < survivors; i++) {
-      c.node_id = static_cast<uint16_t>(i + 1);
-      c.role = setu::Role::Survivor;
-      uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-      const double py = pos(r);
-      const double px = pos(r);
-      w->add_node(c, px, py, s_batt);
+
+    if (s < seed + 25) {
+      // Phase 1: Classic uniform grid placement to preserve exact deterministic vectors
+      // for configurations where the grid is viable.
+      std::uniform_real_distribution<double> jitter(-60, 60), pos(100, zone);
+      c.node_id = 0;
+      c.role = setu::Role::Hub;
+      uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+      w->add_node(c, 60, 60, hub_batt);
+      for (int i = 0; i < relays; i++) {
+        c.node_id = static_cast<uint16_t>(100 + i);
+        c.role = setu::Role::Relay;
+        uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+        const double jy = jitter(r);
+        const double jx = jitter(r);
+        w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jx,
+                    (i / cols + 1) * zone / (rows + 1) + jy, r_batt);
+      }
+      for (int i = 0; i < survivors; i++) {
+        c.node_id = static_cast<uint16_t>(i + 1);
+        c.role = setu::Role::Survivor;
+        uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+        const double py = pos(r);
+        const double px = pos(r);
+        w->add_node(c, px, py, s_batt);
+      }
+    } else {
+      // Phase 2: Deliberate progressive placement
+      // Builds a verified connected backbone extending outward from the Hub,
+      // and places survivors within verified link range of backbone nodes.
+      const double hub_x = std::min(60.0, zone * 0.1);
+      const double hub_y = std::min(60.0, zone * 0.1);
+      c.node_id = 0;
+      c.role = setu::Role::Hub;
+      uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+      w->add_node(c, hub_x, hub_y, hub_batt);
+
+      std::vector<uint16_t> backbone = {0};
+
+      const double d_step = std::max(15.0, std::min(d_viable * 0.80, zone * 0.5));
+      const double d_min_step = std::max(10.0, d_step * 0.40);
+
+      for (int i = 0; i < relays; i++) {
+        c.node_id = static_cast<uint16_t>(100 + i);
+        c.role = setu::Role::Relay;
+        uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+
+        bool placed = false;
+        for (int k = 0; k < 30; k++) {
+          size_t parent_idx = 0;
+          if (backbone.size() > 1 && (r() % 100 < 70)) {
+            parent_idx = backbone.size() - 1 - (r() % std::min<size_t>(3, backbone.size()));
+          } else {
+            parent_idx = r() % backbone.size();
+          }
+          uint16_t parent_id = backbone[parent_idx];
+          auto p_info = w->get_node_info(parent_id);
+
+          double base_angle = std::atan2(zone * 0.75 - p_info.y, zone * 0.75 - p_info.x);
+          std::uniform_real_distribution<double> angle_jitter(-M_PI * 0.35, M_PI * 0.35);
+          double angle = base_angle + angle_jitter(r);
+
+          std::uniform_real_distribution<double> dist_distr(d_min_step, d_step);
+          double dist = dist_distr(r);
+
+          double cx = std::clamp(p_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
+          double cy = std::clamp(p_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
+
+          if (k == 0) {
+            w->add_node(c, cx, cy, r_batt);
+          } else {
+            w->reposition_node(c.node_id, cx, cy);
+          }
+
+          if (w->mean_rssi(parent_id, c.node_id) >= sens + ch.connect_margin_db) {
+            placed = true;
+            backbone.push_back(c.node_id);
+            break;
+          }
+        }
+        if (!placed) {
+          uint16_t parent_id = backbone.back();
+          auto p_info = w->get_node_info(parent_id);
+          double close_dist = std::min(25.0, d_step * 0.3);
+          double cx = std::clamp(p_info.x + close_dist, 30.0, zone - 30.0);
+          double cy = std::clamp(p_info.y + close_dist, 30.0, zone - 30.0);
+          w->reposition_node(c.node_id, cx, cy);
+          backbone.push_back(c.node_id);
+        }
+      }
+
+      if (relays == 0) {
+        // Without relays, survivors are dispersed throughout the operational zone [100, zone]
+        // and cannot bridge to the Hub if the zone exceeds physical radio range.
+        std::uniform_real_distribution<double> pos(100, zone);
+        for (int i = 0; i < survivors; i++) {
+          c.node_id = static_cast<uint16_t>(i + 1);
+          c.role = setu::Role::Survivor;
+          uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+          const double py = pos(r);
+          const double px = pos(r);
+          w->add_node(c, px, py, s_batt);
+        }
+      } else {
+        // With relays extending into the zone, survivors are positioned within verified radio reach
+        // of the deployed mesh backbone.
+        for (int i = 0; i < survivors; i++) {
+          c.node_id = static_cast<uint16_t>(i + 1);
+          c.role = setu::Role::Survivor;
+          uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+
+          bool placed = false;
+          for (int k = 0; k < 30; k++) {
+            uint16_t host_id = backbone[r() % backbone.size()];
+            auto h_info = w->get_node_info(host_id);
+
+            std::uniform_real_distribution<double> angle_distr(0.0, 2.0 * M_PI);
+            std::uniform_real_distribution<double> dist_distr(std::min(15.0, d_step * 0.2), d_step);
+
+            double angle = angle_distr(r);
+            double dist = dist_distr(r);
+
+            double cx = std::clamp(h_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
+            double cy = std::clamp(h_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
+
+            if (k == 0) {
+              w->add_node(c, cx, cy, s_batt);
+            } else {
+              w->reposition_node(c.node_id, cx, cy);
+            }
+
+            if (w->mean_rssi(host_id, c.node_id) >= sens + ch.connect_margin_db) {
+              placed = true;
+              break;
+            }
+          }
+          if (!placed) {
+            uint16_t host_id = backbone[r() % backbone.size()];
+            auto h_info = w->get_node_info(host_id);
+            double close_dist = std::min(20.0, d_step * 0.3);
+            double cx = std::clamp(h_info.x + close_dist, 30.0, zone - 30.0);
+            double cy = std::clamp(h_info.y + close_dist, 30.0, zone - 30.0);
+            w->reposition_node(c.node_id, cx, cy);
+          }
+        }
+      }
     }
 
     auto report = w->planned_connectivity_report();

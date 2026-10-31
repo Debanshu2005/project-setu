@@ -136,13 +136,18 @@ TEST(make_demo_world_path_loss_3_0_and_3_5_feasible) {
   CHECK(w35->planned_connected());
 }
 
-TEST(make_demo_world_path_loss_4_0_succeeds_in_feasible_geometry) {
+TEST(make_demo_world_path_loss_4_0_deliberate_topology_succeeds) {
   sim::ChannelParams ch40;
   ch40.path_exp = 4.0;
-  // Under reduced zone (400m), node spacing matches physical radio range (~156.7m)
-  auto w40 = sim::make_demo_world(20, 5, 400, ch40, 42);
+  // In 1200m zone with path_exp=4.0 and 5 relays, deliberate progressive placement
+  // establishes a verified multi-hop backbone connecting all 26 nodes to the Hub.
+  auto w40 = sim::make_demo_world(20, 5, 1200, ch40, 42);
   CHECK(w40 != nullptr);
   CHECK(w40->planned_connected());
+  auto rep = w40->planned_connectivity_report();
+  CHECK_EQ(rep.connected_to_hub, 26u);
+  CHECK_EQ(rep.disconnected_count, 0u);
+  CHECK_EQ(rep.component_count, 1u);
 }
 
 TEST(make_demo_world_path_loss_4_0_infeasible_produces_actionable_diagnostic) {
@@ -151,8 +156,8 @@ TEST(make_demo_world_path_loss_4_0_infeasible_produces_actionable_diagnostic) {
 
   bool caught = false;
   try {
-    // 1200m zone with only 5 relays is physically infeasible at n=4.0
-    sim::make_demo_world(20, 5, 1200, ch40, 42);
+    // 1200m zone with 0 relays is physically infeasible at n=4.0 (radio range ~156.7m)
+    sim::make_demo_world(20, 0, 1200, ch40, 42);
   } catch (const std::runtime_error& e) {
     caught = true;
     std::string msg = e.what();
@@ -163,7 +168,7 @@ TEST(make_demo_world_path_loss_4_0_infeasible_produces_actionable_diagnostic) {
     CHECK(msg.find("path_exp=4.00") != std::string::npos);
     CHECK(msg.find("seed=42") != std::string::npos);
     CHECK(msg.find("zone=1200m") != std::string::npos);
-    CHECK(msg.find("survivors=20, relays=5") != std::string::npos);
+    CHECK(msg.find("survivors=20, relays=0") != std::string::npos);
     CHECK(msg.find("Max viable radio range is ~156.7m") != std::string::npos);
     CHECK(msg.find("disconnected from Hub") != std::string::npos);
     CHECK(msg.find("--allow-disconnected") != std::string::npos);
@@ -174,12 +179,14 @@ TEST(make_demo_world_path_loss_4_0_infeasible_produces_actionable_diagnostic) {
 TEST(make_demo_world_path_loss_4_0_with_allow_disconnected) {
   sim::ChannelParams ch40;
   ch40.path_exp = 4.0;
-  // With allow_disconnected=true, simulation does not abort; it returns best topology
-  auto w = sim::make_demo_world(20, 5, 1200, ch40, 42, setu::NodeConfig(), {}, true);
+  // With allow_disconnected=true on an infeasible network (0 relays in 1200m zone),
+  // simulation does not abort; it returns the best topology and reports reachability honestly.
+  auto w = sim::make_demo_world(20, 0, 1200, ch40, 42, setu::NodeConfig(), {}, true);
   CHECK(w != nullptr);
-  CHECK_EQ(w->node_ids().size(), 26u);
-  // Verify that report correctly detects the disconnected nodes without crashing
+  CHECK_EQ(w->node_ids().size(), 21u);
   auto rep = w->planned_connectivity_report();
-  CHECK_EQ(rep.total_nodes, 26u);
+  CHECK_EQ(rep.total_nodes, 21u);
   CHECK(rep.connected_to_hub > 0u);
+  CHECK(rep.disconnected_count > 0u);
+  CHECK(!rep.connected);
 }
