@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <atomic>
 #include "setu/node.hpp"
 #include "setu/hal.hpp"
 #include "esp32_adapters.hpp"
@@ -88,8 +89,8 @@ struct AppContext {
   setu::esp32::HapticLedDriver* haptics;
 };
 
-static uint32_t s_radio_rx_packets = 0;
-static uint32_t s_radio_rx_drops = 0;
+static std::atomic<uint32_t> s_radio_rx_packets{0};
+static std::atomic<uint32_t> s_radio_rx_drops{0};
 
 // Core Protocol Tick Task (100 Hz / 10ms cycle, Core 1 - Sole Owner of setu::Node)
 [[maybe_unused]] static void core_protocol_task(void* param) {
@@ -126,7 +127,7 @@ static uint32_t s_radio_rx_drops = 0;
       ESP_LOGI(TAG, "Heartbeat: Node seq=%u, battery=%u%%, state=%s, rx_pkts=%u, rx_drops=%u",
                ctx->node->seq(), ctx->battery->percent(),
                ctx->node->sos_active() ? "EMERGENCY_ACTIVE" : "STANDBY",
-               s_radio_rx_packets, s_radio_rx_drops);
+               s_radio_rx_packets.load(), s_radio_rx_drops.load());
     }
 
     vTaskDelay(pdMS_TO_TICKS(10));
@@ -164,7 +165,7 @@ static uint32_t s_radio_rx_drops = 0;
         } else {
           // Bounded queue saturated: record and document drop
           s_radio_rx_drops++;
-          ESP_LOGW(TAG, "s_radio_rx_queue saturated! Dropped packet. Total drops=%u", s_radio_rx_drops);
+          ESP_LOGW(TAG, "s_radio_rx_queue saturated! Dropped packet. Total drops=%u", s_radio_rx_drops.load());
         }
       }
     }
@@ -207,7 +208,7 @@ static uint32_t s_radio_rx_drops = 0;
     // Apply explicit GNSS anchoring policy if GPS fix is active
     int32_t lat = 0, lon = 0;
     if (ctx->gnss->get_fix(lat, lon)) {
-      ctx->dr->anchor_gnss_filtered(lat, lon, ctx->gnss->satellites());
+      ctx->dr->anchor_gnss_filtered(lat, lon, ctx->gnss->satellites(), ctx->gnss->fix_sequence());
     }
 
     vTaskDelay(pdMS_TO_TICKS(20));
@@ -275,7 +276,7 @@ extern "C" void app_main() {
 
   // 4. Initialize FreeRTOS Queues
   s_button_queue = xQueueCreate(16, sizeof(ButtonEvent));
-  s_radio_rx_queue = xQueueCreate(8, sizeof(RadioRxEvent));
+  s_radio_rx_queue = xQueueCreate(16, sizeof(RadioRxEvent));
   if (!s_button_queue || !s_radio_rx_queue) {
     ESP_LOGE(TAG, "FATAL: Failed to allocate FreeRTOS queues");
     return;
@@ -346,26 +347,56 @@ extern "C" void app_main() {
   s_ctx.clock = &s_clock;
   s_ctx.battery = &s_battery;
   s_ctx.radio = &s_radio;
+  s_ctx.gnss = &s_gnss;
+  s_ctx.dr = &s_dr;
+  s_ctx.haptics = &s_haptics;
 
   // 11. Spawn FreeRTOS Tasks with Core Affinity
-  // Radio Task on Core 0 (alongside network/PHY), Core Protocol Task on Core 1
-  xTaskCreatePinnedToCore(radio_rx_task, "setu_radio", 4096, &s_ctx, 6, &s_radio_task_handle, 0);
-  xTaskCreatePinnedToCore(core_protocol_task, "setu_core", 4096, &s_ctx, 5, nullptr, 1);
+  // Radio, GPS, Motion, and Haptic Tasks on Core 0; Protocol Core on Core 1 (Sole Owner of setu::Node)
+  BaseType_t t_radio = xTaskCreatePinnedToCore(radio_rx_task, "setu_radio", 4096, &s_ctx, 6, &s_radio_task_handle, 0);
+  BaseType_t t_gps = xTaskCreatePinnedToCore(gps_service_task, "setu_gps", 3072, &s_ctx, 3, nullptr, 0);
+  BaseType_t t_motion = xTaskCreatePinnedToCore(motion_service_task, "setu_motion", 3072, &s_ctx, 3, nullptr, 0);
+  BaseType_t t_haptic = xTaskCreatePinnedToCore(haptic_service_task, "setu_haptic", 2048, &s_ctx, 2, nullptr, 0);
+  BaseType_t t_core = xTaskCreatePinnedToCore(core_protocol_task, "setu_core", 4096, &s_ctx, 5, nullptr, 1);
+
+  if (t_radio != pdPASS || t_gps != pdPASS || t_motion != pdPASS || t_haptic != pdPASS || t_core != pdPASS) {
+    ESP_LOGE(TAG, "FATAL: Failed to spawn all FreeRTOS tasks (radio=%d, gps=%d, motion=%d, haptic=%d, core=%d)",
+             t_radio, t_gps, t_motion, t_haptic, t_core);
+  }
 
   ESP_LOGI(TAG, "Project Setu Wristband Firmware Online & Operational");
 #else
   static setu::esp32::Esp32Clock host_clock;
+  static setu::esp32::Esp32Random host_rng;
   static setu::esp32::BatteryMonitor host_batt;
   static setu::esp32::Sx1262Radio host_radio;
+  static setu::esp32::Neo6mGnss host_gnss;
+  static setu::esp32::Mpu6050DeadReckoning host_dr;
+  static setu::esp32::HapticLedDriver host_haptics;
   setu::Hal host_hal;
   host_hal.clock = &host_clock;
-  host_hal.battery = &host_batt;
+  host_hal.rng = &host_rng;
   host_hal.radio = &host_radio;
+  host_hal.gnss = &host_gnss;
+  host_hal.dr = &host_dr;
+  host_hal.battery = &host_batt;
+  host_hal.haptic = &host_haptics;
   setu::NodeConfig host_cfg;
   setu::Node host_node(host_cfg, host_hal);
-  AppContext host_ctx{&host_node, &host_clock, &host_batt, &host_radio};
+  AppContext host_ctx{
+    &host_node,
+    &host_clock,
+    &host_batt,
+    &host_radio,
+    &host_gnss,
+    &host_dr,
+    &host_haptics
+  };
   core_protocol_task(&host_ctx);
   radio_rx_task(&host_ctx);
+  gps_service_task(&host_ctx);
+  motion_service_task(&host_ctx);
+  haptic_service_task(&host_ctx);
   printf("[INFO] Host compilation mode: ESP32-S3 firmware target is ready for IDF build.\n");
 #endif
 }

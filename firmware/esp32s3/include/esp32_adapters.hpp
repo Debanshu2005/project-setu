@@ -292,15 +292,23 @@ class Sx1262Radio : public IRadio {
     tx_completed_ = false;
     tx_timeout_ = false;
     if (tx_done_sem_) {
-      xSemaphoreTake(tx_done_sem_, 0); // Drain any stale token
+      while (xSemaphoreTake(tx_done_sem_, 0) == pdTRUE); // Cleanly drain any stale tokens
     }
 
     // 1. Enter Standby RC
     uint8_t standby_param = 0x00; // STDBY_RC
-    write_cmd(CMD_SET_STANDBY, &standby_param, 1);
+    if (!write_cmd(CMD_SET_STANDBY, &standby_param, 1)) {
+      recover_fault();
+      xSemaphoreGive(spi_mutex_);
+      return false;
+    }
 
     // 2. Write payload into FIFO at offset 0
-    write_buffer(0x00, data, len);
+    if (!write_buffer(0x00, data, len)) {
+      recover_fault();
+      xSemaphoreGive(spi_mutex_);
+      return false;
+    }
 
     // 3. Set packet parameters
     uint8_t pkt_params[6] = {
@@ -310,26 +318,36 @@ class Sx1262Radio : public IRadio {
       0x01,       // CRC ON
       0x00        // Standard IQ
     };
-    write_cmd(CMD_SET_PACKET_PARAMS, pkt_params, 6);
+    if (!write_cmd(CMD_SET_PACKET_PARAMS, pkt_params, 6)) {
+      recover_fault();
+      xSemaphoreGive(spi_mutex_);
+      return false;
+    }
 
     // 4. Clear any stale TxDone or Timeout flags
     uint8_t clr_irq[2] = {0x02, 0x01}; // TxDone (0x01) | Timeout (0x0200)
     write_cmd(CMD_CLEAR_IRQ_STATUS, clr_irq, 2);
 
     // 5. Start transmission with 2-second timeout (timeout = 2000ms * 64kHz)
+    // Preserves support for SF7 (62ms) through SF12 (1320ms) airtimes.
     uint32_t timeout_val = 2000 * 64;
     uint8_t tx_timeout[3] = {
       static_cast<uint8_t>((timeout_val >> 16) & 0xFF),
       static_cast<uint8_t>((timeout_val >> 8) & 0xFF),
       static_cast<uint8_t>(timeout_val & 0xFF)
     };
-    write_cmd(CMD_SET_TX, tx_timeout, 3);
+    if (!write_cmd(CMD_SET_TX, tx_timeout, 3)) {
+      recover_fault();
+      xSemaphoreGive(spi_mutex_);
+      return false;
+    }
 
     // 6. Release SPI mutex so radio_rx_task can safely query IRQ status when DIO1 fires
     xSemaphoreGive(spi_mutex_);
 
     // 7. Bounded wait on tx_done_sem_ (unblocked by process_irqs on Core 0)
-    bool wait_ok = (xSemaphoreTake(tx_done_sem_, pdMS_TO_TICKS(1500)) == pdTRUE);
+    // Wait for 2500 ms (2000 ms hardware timeout + 500 ms scheduler/ISR margin)
+    bool wait_ok = (xSemaphoreTake(tx_done_sem_, pdMS_TO_TICKS(2500)) == pdTRUE);
 
     // 8. Re-acquire SPI mutex to finalize transceiver state
     if (xSemaphoreTake(spi_mutex_, pdMS_TO_TICKS(500)) != pdTRUE) {
@@ -350,8 +368,16 @@ class Sx1262Radio : public IRadio {
 #else
     std::lock_guard<std::mutex> lock(mock_mutex_);
     if (mock_force_send_failure_) return false;
+    if (mock_simulate_tx_timeout_) {
+      tx_timeout_ = true;
+      tx_completed_ = false;
+      mock_pending_irqs_ |= IRQ_TIMEOUT;
+      recover_fault_locked();
+      return false;
+    }
     tx_count_++;
     tx_completed_ = true;
+    tx_timeout_ = false;
     state_ = RadioState::Receiving;
     last_tx_payload_.assign(data, data + len);
     mock_pending_irqs_ |= IRQ_TX_DONE;
@@ -564,11 +590,65 @@ class Sx1262Radio : public IRadio {
   uint32_t rx_count() const { return rx_count_; }
   uint32_t crc_errors() const { return crc_errors_; }
   uint32_t busy_timeouts() const { return busy_timeouts_; }
+  bool tx_completed() const { return tx_completed_; }
+  bool tx_timeout() const { return tx_timeout_; }
+
+  /**
+   * Hardware fault recovery state machine.
+   * Performs physical hardware reset, reconfigures radio registers,
+   * re-arms continuous RX mode, and drains stale semaphore tokens and completion flags.
+   */
+  bool recover_fault() {
+#if defined(ESP_PLATFORM)
+    state_ = RadioState::Fault;
+    if (!reset_hardware()) {
+      radio_ready_ = false;
+      return false;
+    }
+    if (!configure_radio_parameters()) {
+      radio_ready_ = false;
+      return false;
+    }
+    if (!set_rx_mode()) {
+      radio_ready_ = false;
+      return false;
+    }
+    if (tx_done_sem_) {
+      while (xSemaphoreTake(tx_done_sem_, 0) == pdTRUE); // Cleanly drain stale semaphore tokens
+    }
+    tx_completed_ = false;
+    tx_timeout_ = false;
+    state_ = RadioState::Receiving;
+    radio_ready_ = true;
+    return true;
+#else
+    std::lock_guard<std::mutex> lock(mock_mutex_);
+    return recover_fault_locked();
+#endif
+  }
+
+#if !defined(ESP_PLATFORM)
+  bool recover_fault_locked() {
+    if (mock_force_recovery_failure_) {
+      state_ = RadioState::Fault;
+      radio_ready_ = false;
+      return false;
+    }
+    tx_completed_ = false;
+    tx_timeout_ = false;
+    mock_pending_irqs_ = 0;
+    state_ = RadioState::Receiving;
+    radio_ready_ = true;
+    return true;
+  }
+#endif
 
   // Host testing / simulation methods
   void set_mock_force_init_failure(bool fail) { mock_force_init_failure_ = fail; }
   void set_mock_force_send_failure(bool fail) { mock_force_send_failure_ = fail; }
   void set_mock_channel_busy(bool busy) { mock_channel_busy_ = busy; }
+  void set_mock_force_recovery_failure(bool fail) { mock_force_recovery_failure_ = fail; }
+  void set_mock_simulate_tx_timeout(bool timeout) { mock_simulate_tx_timeout_ = timeout; }
   void inject_mock_rx_packet(const uint8_t* data, size_t len, int16_t rssi = -80, int8_t snr = 7) {
     MockRxItem item;
     item.data.assign(data, data + len);
@@ -731,14 +811,6 @@ class Sx1262Radio : public IRadio {
     uint8_t rx_timeout[3] = {0xFF, 0xFF, 0xFF}; // Continuous RX mode
     return write_cmd(CMD_SET_RX, rx_timeout, 3);
   }
-
-  void recover_fault() {
-    state_ = RadioState::Fault;
-    reset_hardware();
-    configure_radio_parameters();
-    set_rx_mode();
-    state_ = RadioState::Receiving;
-  }
 #endif
 
   int cs_, irq_, rst_, busy_;
@@ -770,6 +842,8 @@ class Sx1262Radio : public IRadio {
   bool mock_force_init_failure_ = false;
   bool mock_force_send_failure_ = false;
   bool mock_channel_busy_ = false;
+  bool mock_force_recovery_failure_ = false;
+  bool mock_simulate_tx_timeout_ = false;
   std::vector<uint8_t> last_tx_payload_;
   struct MockRxItem {
     std::vector<uint8_t> data;
@@ -914,12 +988,18 @@ class Neo6mGnss : public IGnss {
     return true;
   }
 
-  void update_fix_data(bool valid_3d, int32_t lat, int32_t lon) {
+  void update_fix_data(bool valid_3d, int32_t lat, int32_t lon, uint32_t satellites = 0) {
     has_fix_ = valid_3d;
     lat_e6_ = lat;
     lon_e6_ = lon;
-    if (valid_3d) last_fix_ms_ = get_system_ms();
+    if (satellites > 0) satellites_ = satellites;
+    if (valid_3d) {
+      last_fix_ms_ = get_system_ms();
+      fix_sequence_++;
+    }
   }
+
+  uint32_t fix_sequence() const { return fix_sequence_; }
 
   /**
    * Feed a complete raw NMEA sentence.
@@ -1072,6 +1152,7 @@ class Neo6mGnss : public IGnss {
     lon_e6_ = static_cast<int32_t>(lon_dec * 1e6);
     has_fix_ = true;
     last_fix_ms_ = get_system_ms();
+    fix_sequence_++;
     sentences_parsed_++;
     return true;
   }
@@ -1104,6 +1185,8 @@ class Neo6mGnss : public IGnss {
       satellites_ = static_cast<uint32_t>(atoi(p + 1));
     }
 
+    last_fix_ms_ = get_system_ms();
+    fix_sequence_++;
     sentences_parsed_++;
     return true;
   }
@@ -1138,6 +1221,7 @@ class Neo6mGnss : public IGnss {
   uint32_t last_fix_ms_;
   uint32_t sentences_parsed_;
   uint32_t checksum_errors_;
+  uint32_t fix_sequence_ = 0;
   uint32_t mock_system_ms_ = 0;
 };
 
@@ -1264,16 +1348,25 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
     }
   }
 
+  uint32_t last_anchored_fix_seq() const { return last_anchored_fix_seq_; }
+
   /**
    * Explicit GNSS Anchoring Policy:
    * - Un-anchored estimator: accepts first valid GNSS fix immediately.
-   * - Already anchored: re-anchors ONLY if satellites >= 5 AND (time > 30s OR distance > 15m)
+   * - Stale fix protection: does NOT repeatedly re-anchor on the same cached fix (fix_seq == last_anchored_fix_seq).
+   * - New satellite fixes: re-anchors ONLY if satellites >= 5 AND (time > 30s OR distance > 15m)
    *   to prevent GPS multipath noise from continually thrashing relative dead-reckoning trajectory.
+   * - GPS outages: preserve dead-reckoning steps without snapping back to stale coordinates.
    */
-  bool anchor_gnss_filtered(int32_t lat_e6, int32_t lon_e6, uint32_t satellites) {
+  bool anchor_gnss_filtered(int32_t lat_e6, int32_t lon_e6, uint32_t satellites, uint32_t fix_seq = 0) {
     if (!has_estimate_) {
       anchor_last_gnss(lat_e6, lon_e6);
+      last_anchored_fix_seq_ = fix_seq;
       return true;
+    }
+    // Prevent repeatedly re-anchoring on cached stale data
+    if (fix_seq != 0 && fix_seq == last_anchored_fix_seq_) {
+      return false;
     }
     if (satellites < 5) return false;
 
@@ -1288,6 +1381,7 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
 
     if (time_elapsed || dist_m >= 15.0) {
       anchor_last_gnss(lat_e6, lon_e6);
+      last_anchored_fix_seq_ = fix_seq;
       return true;
     }
     return false;
@@ -1352,6 +1446,34 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
   bool has_valid_estimate() const { return has_estimate_; }
   uint32_t steps() const { return step_count_; }
   void set_mock_system_ms(uint32_t ms) { mock_system_ms_ = ms; }
+
+  // Public motion sensor polling interface
+  void poll_hardware(uint32_t dt_ms) {
+    int16_t ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
+    if (read_sensors(ax, ay, az, gx, gy, gz)) {
+      sample(ax, ay, az, gx, gy, gz, dt_ms);
+    }
+  }
+
+  void calibrate_gyro(size_t samples = 30) {
+#if defined(ESP_PLATFORM)
+    float sum_gz = 0.0f;
+    size_t count = 0;
+    for (size_t i = 0; i < samples; ++i) {
+      int16_t ax, ay, az, gx, gy, gz;
+      if (read_sensors(ax, ay, az, gx, gy, gz)) {
+        sum_gz += static_cast<float>(gz);
+        count++;
+      }
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
+    if (count > 0) {
+      gz_bias_ = sum_gz / static_cast<float>(count);
+    }
+#else
+    (void)samples;
+#endif
+  }
 
  private:
   uint32_t get_system_ms() const {
@@ -1420,33 +1542,6 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
 #endif
   }
 
-  void poll_hardware(uint32_t dt_ms) {
-    int16_t ax = 0, ay = 0, az = 0, gx = 0, gy = 0, gz = 0;
-    if (read_sensors(ax, ay, az, gx, gy, gz)) {
-      sample(ax, ay, az, gx, gy, gz, dt_ms);
-    }
-  }
-
-  void calibrate_gyro(size_t samples = 30) {
-#if defined(ESP_PLATFORM)
-    float sum_gz = 0.0f;
-    size_t count = 0;
-    for (size_t i = 0; i < samples; ++i) {
-      int16_t ax, ay, az, gx, gy, gz;
-      if (read_sensors(ax, ay, az, gx, gy, gz)) {
-        sum_gz += static_cast<float>(gz);
-        count++;
-      }
-      vTaskDelay(pdMS_TO_TICKS(10));
-    }
-    if (count > 0) {
-      gz_bias_ = sum_gz / static_cast<float>(count);
-    }
-#else
-    (void)samples;
-#endif
-  }
-
   int sda_, scl_;
   bool sensor_online_;
   bool has_estimate_;
@@ -1459,6 +1554,7 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
   float gz_bias_;
   StepState step_state_;
   uint32_t peak_time_ms_;
+  uint32_t last_anchored_fix_seq_ = 0;
   uint32_t mock_system_ms_ = 0;
 };
 

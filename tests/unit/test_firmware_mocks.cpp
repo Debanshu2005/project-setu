@@ -432,7 +432,7 @@ TEST(mpu6050_step_detector_cadence_and_gnss_anchoring_policy) {
 
   // 1. Initial fix: accepted unconditionally to seed un-anchored estimator
   dr.set_mock_system_ms(1000);
-  CHECK(dr.anchor_gnss_filtered(22500000, 88400000, 3));
+  CHECK(dr.anchor_gnss_filtered(22500000, 88400000, 3, 1));
 
   // 2. Step detection cadence test
   // Initial peak at t = 1000ms
@@ -462,19 +462,119 @@ TEST(mpu6050_step_detector_cadence_and_gnss_anchoring_policy) {
 
   // 3. GNSS Anchoring Policy test
   // Subsequent fix with low satellite count (< 5): rejected
-  CHECK(!dr.anchor_gnss_filtered(22500010, 88400010, 4));
+  CHECK(!dr.anchor_gnss_filtered(22500010, 88400010, 4, 2));
 
   // Subsequent fix with 8 satellites, but only 5 seconds elapsed and < 15m displacement: rejected
   dr.set_mock_system_ms(6000); // 5000ms after anchor at 1000ms
-  CHECK(!dr.anchor_gnss_filtered(22500010, 88400010, 8));
+  CHECK(!dr.anchor_gnss_filtered(22500010, 88400010, 8, 2));
 
-  // Subsequent fix after 30+ seconds (dt = 35000 - 1000 = 34s >= 30s): accepted
+  // Subsequent fix after 30+ seconds (dt = 35000 - 1000 = 34s >= 30s): accepted with new fix_seq = 2
   dr.set_mock_system_ms(35000);
-  CHECK(dr.anchor_gnss_filtered(22500010, 88400010, 8));
+  CHECK(dr.anchor_gnss_filtered(22500010, 88400010, 8, 2));
 
-  // Subsequent fix with large displacement (> 15m) within 2 seconds: accepted
-  dr.set_mock_system_ms(37000);
-  CHECK(dr.anchor_gnss_filtered(22501000, 88401000, 8)); // ~110m away
+  // Stale fix protection: repeating with the same fix_seq = 2 is rejected even if time or distance is large
+  dr.set_mock_system_ms(70000);
+  CHECK(!dr.anchor_gnss_filtered(22501000, 88401000, 8, 2));
+
+  // Subsequent fix with large displacement (> 15m) within 2 seconds and new fix_seq = 3: accepted
+  dr.set_mock_system_ms(72000);
+  CHECK(dr.anchor_gnss_filtered(22501000, 88401000, 8, 3)); // ~110m away
+}
+
+TEST(sx1262_late_irq_and_recovery_state_machine) {
+  Sx1262Radio radio;
+  CHECK(radio.init(868000000, 7, 125000, 14));
+  CHECK(radio.is_ready());
+  CHECK(radio.state() == Sx1262Radio::RadioState::Receiving);
+
+  // Simulate hardware TX timeout scenario
+  radio.set_mock_simulate_tx_timeout(true);
+  uint8_t payload[kPacketSize] = {0x11, 0x22};
+  CHECK(!radio.send(payload, sizeof(payload)));
+  // After recovery inside send(), recover_fault() has cleared completion/timeout flags and re-armed receiver
+  CHECK(!radio.tx_completed());
+  CHECK(!radio.tx_timeout());
+  CHECK(radio.is_ready());
+  CHECK(radio.state() == Sx1262Radio::RadioState::Receiving);
+  radio.set_mock_simulate_tx_timeout(false);
+
+  // Simulate complete hardware recovery failure
+  radio.set_mock_force_recovery_failure(true);
+  CHECK(!radio.recover_fault());
+  CHECK(!radio.is_ready());
+  CHECK(radio.state() == Sx1262Radio::RadioState::Fault);
+
+  // Re-enable recovery
+  radio.set_mock_force_recovery_failure(false);
+  CHECK(radio.recover_fault());
+  CHECK(radio.is_ready());
+  CHECK(radio.state() == Sx1262Radio::RadioState::Receiving);
+  CHECK(!radio.tx_completed());
+  CHECK(!radio.tx_timeout());
+}
+
+TEST(gnss_freshness_tracking_and_indoor_trajectory_preservation) {
+  Neo6mGnss gnss;
+  Mpu6050DeadReckoning dr;
+  gnss.set_mock_system_ms(1000);
+  dr.set_mock_system_ms(1000);
+
+  // 1. Outdoors: Valid GNSS fix acquired at building entrance
+  gnss.update_fix_data(true, 22572600, 88433800, 8);
+  uint32_t seq1 = gnss.fix_sequence();
+  CHECK(seq1 > 0);
+
+  int32_t lat = 0, lon = 0;
+  CHECK(gnss.get_fix(lat, lon));
+  CHECK(dr.anchor_gnss_filtered(lat, lon, gnss.satellites(), seq1));
+
+  int32_t est_lat = 0, est_lon = 0;
+  CHECK(dr.estimate(est_lat, est_lon));
+  CHECK_EQ(est_lat, 22572600);
+  CHECK_EQ(est_lon, 88433800);
+
+  // 2. Survivor walks indoors: GNSS satellite signal is lost (no new fixes, fix_sequence unchanged)
+  // Survivor walks 30 steps north (~22.5 meters) inside the building
+  for (int step = 0; step < 30; ++step) {
+    dr.set_mock_system_ms(1000 + 400 * (step + 1));
+    dr.update_step(0.75f, 0.0f); // 0.75m per step North
+  }
+  CHECK_EQ(dr.steps(), 30u);
+
+  // Current dead-reckoning position should be displaced north by ~22.5 meters
+  int32_t indoor_lat = 0, indoor_lon = 0;
+  CHECK(dr.estimate(indoor_lat, indoor_lon));
+  CHECK(indoor_lat > 22572600); // Displaced North
+  int32_t displacement_e6 = indoor_lat - 22572600;
+  CHECK(displacement_e6 >= 150); // ~180 e6 units north displacement (30 steps * 6 e6/step)
+
+  // 3. Stale GNSS anchor check: Motion loop calls anchor_gnss_filtered with cached GNSS fix
+  // Because fix_sequence has not changed (GNSS is stale/lost), anchor_gnss_filtered MUST reject re-anchoring
+  // and NOT snap the survivor back to the building entrance!
+  dr.set_mock_system_ms(35000); // 35 seconds elapsed indoors
+  bool re_anchored = dr.anchor_gnss_filtered(lat, lon, gnss.satellites(), gnss.fix_sequence());
+  CHECK(!re_anchored); // Stale fix rejected!
+
+  int32_t preserved_lat = 0, preserved_lon = 0;
+  CHECK(dr.estimate(preserved_lat, preserved_lon));
+  // Verify trajectory was preserved and did NOT snap back to entrance coordinates (22572600)
+  CHECK_EQ(preserved_lat, indoor_lat);
+  CHECK_EQ(preserved_lon, indoor_lon);
+
+  // 4. Survivor exits building: GNSS lock restored with new coordinates and new fix_sequence
+  gnss.set_mock_system_ms(36000);
+  gnss.update_fix_data(true, 22572850, 88433820, 9);
+  uint32_t seq2 = gnss.fix_sequence();
+  CHECK(seq2 > seq1);
+
+  CHECK(gnss.get_fix(lat, lon));
+  bool outdoor_anchored = dr.anchor_gnss_filtered(lat, lon, gnss.satellites(), seq2);
+  CHECK(outdoor_anchored); // Accepted!
+
+  int32_t updated_lat = 0, updated_lon = 0;
+  CHECK(dr.estimate(updated_lat, updated_lon));
+  CHECK_EQ(updated_lat, 22572850);
+  CHECK_EQ(updated_lon, 88433820);
 }
 
 TEST(single_owner_protocol_queue_saturation_and_ack) {
