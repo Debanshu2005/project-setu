@@ -289,15 +289,19 @@ struct World::SimNode {
 
 World::World(const ChannelParams& ch, uint32_t seed)
     : ch_(ch), seed_(seed), sens_(setu::lora_sensitivity_dbm(ch.sf)), rng_(seed) {
-  if (ch_.profile == RealismProfile::Idealized) {
-    ch_.path_exp = 2.0;
-    ch_.shadow_sigma_db = 0.0;
-    ch_.fading_sigma_db = 0.0;
-    ch_.extra_loss_db = 0.0;
-    ch_.random_loss = 0.0;
-  } else if (ch_.profile == RealismProfile::Field) {
+  if (ch_.profile == RealismProfile::Baseline) {
+    // Baseline is legacy profile (pinned to 300 mAh capacity and legacy percentage model)
+  } else {
+    // All non-baseline profiles default to 1000 mAh LiPo
     if (ch_.battery_capacity_mah == 300.0) {
       ch_.battery_capacity_mah = 1000.0;
+    }
+    if (ch_.profile == RealismProfile::Idealized) {
+      ch_.path_exp = 2.0;
+      ch_.shadow_sigma_db = 0.0;
+      ch_.fading_sigma_db = 0.0;
+      ch_.extra_loss_db = 0.0;
+      ch_.random_loss = 0.0;
     }
   }
 }
@@ -353,10 +357,23 @@ void World::dump_topology_trace() {
       double r = mean_rssi(it1->first, it2->first);
       if (r >= sens_) {
         double d = std::hypot(it1->second->x - it2->second->x, it1->second->y - it2->second->y);
-        *trace_ << "{\"t\":0,\"ev\":\"link_init\",\"a\":" << it1->first
-                << ",\"b\":" << it2->first
-                << ",\"rssi\":" << r
-                << ",\"dist\":" << d << "}\n";
+        if (ch_.profile == RealismProfile::Baseline) {
+          *trace_ << "{\"t\":0,\"ev\":\"link_init\",\"a\":" << it1->first
+                  << ",\"b\":" << it2->first
+                  << ",\"rssi\":" << r
+                  << ",\"dist\":" << d << "}\n";
+        } else {
+          LossBudget lb = get_loss_budget(it1->first, it2->first);
+          *trace_ << "{\"t\":0,\"ev\":\"link_init\",\"a\":" << it1->first
+                  << ",\"b\":" << it2->first
+                  << ",\"rssi\":" << r
+                  << ",\"dist\":" << d
+                  << ",\"path_loss\":" << lb.path_loss_db
+                  << ",\"shadow\":" << lb.shadow_loss_db
+                  << ",\"link_margin\":" << lb.link_margin_db
+                  << ",\"obstacle\":\"" << lb.obstacle_loss << "\""
+                  << ",\"body\":\"" << lb.body_loss << "\"}\n";
+        }
       }
     }
   }
@@ -483,6 +500,48 @@ double World::mean_rssi(uint16_t a, uint16_t b) const {
   return ch_.tx_dbm - pl;
 }
 
+LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
+  LossBudget lb;
+  lb.tx_power_dbm = ch_.tx_dbm;
+  lb.ref_loss_db = ch_.ref_loss_db;
+  lb.extra_loss_db = ch_.extra_loss_db;
+  lb.sensitivity_dbm = sens_;
+  lb.obstacle_loss = "not modeled yet";
+  lb.body_loss = "not modeled yet";
+
+  if (a == b || !nodes_.count(a) || !nodes_.count(b)) {
+    lb.rx_power_dbm = kNegInf;
+    lb.link_margin_db = kNegInf;
+    lb.viable = false;
+    return lb;
+  }
+
+  auto k = std::minmax(a, b);
+  if (blocked_.count({k.first, k.second})) {
+    lb.rx_power_dbm = kNegInf;
+    lb.link_margin_db = kNegInf;
+    lb.viable = false;
+    return lb;
+  }
+
+  const auto& na = *nodes_.at(a);
+  const auto& nb = *nodes_.at(b);
+  const double d = std::max(1.0, std::hypot(na.x - nb.x, na.y - nb.y));
+  lb.path_loss_db = 10.0 * ch_.path_exp * std::log10(d);
+
+  std::mt19937 lr(seed_ ^ (k.first * 65537u + k.second * 2246822519u));
+  lb.shadow_loss_db = (ch_.shadow_sigma_db > 0.0)
+                          ? std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr)
+                          : 0.0;
+  lb.fading_loss_db = 0.0;
+
+  const double total_pl = lb.ref_loss_db + lb.path_loss_db + lb.shadow_loss_db + lb.extra_loss_db;
+  lb.rx_power_dbm = lb.tx_power_dbm - total_pl;
+  lb.link_margin_db = lb.rx_power_dbm - lb.sensitivity_dbm;
+  lb.viable = (lb.link_margin_db >= 0.0);
+  return lb;
+}
+
 PlannedConnectivityReport World::planned_connectivity_report() const {
   PlannedConnectivityReport rep;
   rep.total_nodes = nodes_.size();
@@ -595,7 +654,10 @@ bool World::start_tx(uint16_t from, const uint8_t* d, size_t n) {
   counters_.tx++;
   if (ch_.profile == RealismProfile::Field) {
     double tx_ma = (ch_.tx_dbm >= 20.0) ? BatteryEnergyModel::kCurrentRadioTx22Ma : BatteryEnergyModel::kCurrentRadioTx14Ma;
-    node_it->second->consume_energy_ma(tx_ma, air, "tx");
+    // Standby idle already continuously charges 4.6 mA continuous LoRa RX.
+    // Transmit draws the net incremental current during airtime to avoid double counting.
+    double incremental_tx_ma = std::max(0.0, tx_ma - BatteryEnergyModel::kCurrentRadioRxMa);
+    node_it->second->consume_energy_ma(incremental_tx_ma, air, "tx");
   } else {
     node_it->second->consume_energy(ch_.tx_energy_pct, "tx");
   }
@@ -712,7 +774,7 @@ void World::run_until(uint32_t t_end) {
             double idle_ma = BatteryEnergyModel::kCurrentStandbyMa +
                              BatteryEnergyModel::kCurrentRadioRxMa +
                              BatteryEnergyModel::kCurrentImuMa;
-            if (kv.second->gnss_on) {
+            if (ch_.gnss_continuous && kv.second->gnss_on) {
               idle_ma += BatteryEnergyModel::kCurrentGnssMa;
             }
             if (ch_.wake_word_always_on) {
@@ -926,6 +988,7 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
     auto w = std::make_unique<World>(ch, s);
     std::mt19937 r(s);
     setu::NodeConfig c = base;
+    c.priority_ignores_duty = ch.priority_bypass_duty;
 
     if (s < seed + 25) {
       // Phase 1: Classic uniform grid placement to preserve exact deterministic vectors

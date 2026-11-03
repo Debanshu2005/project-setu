@@ -53,3 +53,4 @@ Adopt Option A (WebAssembly) as the core target for Phase 1:
 1. Build a CMake target for Emscripten (`setu_sim_wasm`).
 2. Provide a clean JSON-RPC interface through Emscripten bindings.
 3. Keep `simulation/js/simulator.js` with an explicit status label as an approximate fallback only.
+

@@ -162,27 +162,41 @@ void print_summary(const World& w, uint32_t seed, uint8_t sf, uint32_t duration)
     total_energy_mah += inf.energy_consumed_mah;
   }
   double cap = w.channel_params().battery_capacity_mah;
-  double cur_always_on = BatteryEnergyModel::kCurrentStandbyMa +
-                         BatteryEnergyModel::kCurrentRadioRxMa +
-                         BatteryEnergyModel::kCurrentImuMa +
-                         BatteryEnergyModel::kCurrentVoiceDspMa;
-  double cur_no_always_on = BatteryEnergyModel::kCurrentStandbyMa +
-                            BatteryEnergyModel::kCurrentRadioRxMa +
-                            BatteryEnergyModel::kCurrentImuMa;
-  double life_always_on_h = (cur_always_on > 0.0) ? (cap / cur_always_on) : 0.0;
-  double life_no_always_on_h = (cur_no_always_on > 0.0) ? (cap / cur_no_always_on) : 0.0;
+  // On-demand GNSS: Standby 11.1 mA (2.7 MCU/SX1262 standby + 4.6 continuous LoRa RX + 3.8 IMU)
+  double cur_ondemand_no_dsp = BatteryEnergyModel::kCurrentStandbyMa +
+                               BatteryEnergyModel::kCurrentRadioRxMa +
+                               BatteryEnergyModel::kCurrentImuMa; // 11.1 mA
+  double cur_ondemand_with_dsp = cur_ondemand_no_dsp + BatteryEnergyModel::kCurrentVoiceDspMa; // 76.1 mA
+
+  // Continuous GNSS (+45.0 mA for active NEO-6M tracking)
+  double cur_cont_no_dsp = cur_ondemand_no_dsp + BatteryEnergyModel::kCurrentGnssMa; // 56.1 mA
+  double cur_cont_with_dsp = cur_ondemand_with_dsp + BatteryEnergyModel::kCurrentGnssMa; // 121.1 mA
+
+  double life_ondemand_no_dsp_h = (cur_ondemand_no_dsp > 0.0) ? (cap / cur_ondemand_no_dsp) : 0.0;
+  double life_ondemand_with_dsp_h = (cur_ondemand_with_dsp > 0.0) ? (cap / cur_ondemand_with_dsp) : 0.0;
+  double life_cont_no_dsp_h = (cur_cont_no_dsp > 0.0) ? (cap / cur_cont_no_dsp) : 0.0;
+  double life_cont_with_dsp_h = (cur_cont_with_dsp > 0.0) ? (cap / cur_cont_with_dsp) : 0.0;
 
   std::cout << "{\"ok\":true,\"cmd\":\"summary\",\"summary\":{\"seed\":" << seed
             << ",\"nodes\":" << w.node_ids().size() << ",\"sf\":" << static_cast<int>(sf)
             << ",\"duration_ms\":" << w.now()
             << ",\"profile\":\"" << realism_profile_str(w.channel_params().profile) << "\""
+            << ",\"profile_label\":\"" << realism_profile_label(w.channel_params().profile) << "\""
             << ",\"battery_lifetime\":{\"status\":\"assumed\",\"capacity_mah\":" << cap
-            << ",\"with_always_on_wake_word\":{\"continuous_current_ma\":" << cur_always_on
-            << ",\"lifetime_hours\":" << life_always_on_h
-            << ",\"lifetime_days\":" << (life_always_on_h / 24.0) << "}"
-            << ",\"without_always_on_wake_word\":{\"continuous_current_ma\":" << cur_no_always_on
-            << ",\"lifetime_hours\":" << life_no_always_on_h
-            << ",\"lifetime_days\":" << (life_no_always_on_h / 24.0) << "}}"
+            << ",\"on_demand_gnss\":{"
+            << "\"without_wake_word\":{\"continuous_current_ma\":" << cur_ondemand_no_dsp
+            << ",\"lifetime_hours\":" << life_ondemand_no_dsp_h
+            << ",\"lifetime_days\":" << (life_ondemand_no_dsp_h / 24.0) << "}"
+            << ",\"with_always_on_wake_word\":{\"continuous_current_ma\":" << cur_ondemand_with_dsp
+            << ",\"lifetime_hours\":" << life_ondemand_with_dsp_h
+            << ",\"lifetime_days\":" << (life_ondemand_with_dsp_h / 24.0) << "}}"
+            << ",\"continuous_gnss\":{"
+            << "\"without_wake_word\":{\"continuous_current_ma\":" << cur_cont_no_dsp
+            << ",\"lifetime_hours\":" << life_cont_no_dsp_h
+            << ",\"lifetime_days\":" << (life_cont_no_dsp_h / 24.0) << "}"
+            << ",\"with_always_on_wake_word\":{\"continuous_current_ma\":" << cur_cont_with_dsp
+            << ",\"lifetime_hours\":" << life_cont_with_dsp_h
+            << ",\"lifetime_days\":" << (life_cont_with_dsp_h / 24.0) << "}}}"
             << ",\"totals\":{\"tx\":" << c.tx << ",\"relay_tx\":" << relay_tx
             << ",\"relays_suppressed\":" << suppressed << ",\"retries\":" << retries
             << ",\"deliveries\":" << c.delivered << ",\"collisions\":" << c.collisions
@@ -445,6 +459,23 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       std::cout << "{\"ok\":true,\"cmd\":\"block_link\",\"a\":" << a << ",\"b\":" << b << ",\"blocked\":" << (blocked ? "true" : "false") << "}\n" << std::flush;
     } else if (cmd == "get_state") {
       print_node_state(*w);
+    } else if (cmd == "get_loss_budget") {
+      uint16_t a = static_cast<uint16_t>(json_get_int(line, "from", 0));
+      uint16_t b = static_cast<uint16_t>(json_get_int(line, "to", 1));
+      LossBudget lb = w->get_loss_budget(a, b);
+      std::cout << "{\"ok\":true,\"cmd\":\"get_loss_budget\",\"from\":" << a << ",\"to\":" << b
+                << ",\"tx_power_dbm\":" << lb.tx_power_dbm
+                << ",\"ref_loss_db\":" << lb.ref_loss_db
+                << ",\"path_loss_db\":" << lb.path_loss_db
+                << ",\"shadow_loss_db\":" << lb.shadow_loss_db
+                << ",\"extra_loss_db\":" << lb.extra_loss_db
+                << ",\"fading_loss_db\":" << lb.fading_loss_db
+                << ",\"obstacle_loss\":\"" << lb.obstacle_loss << "\""
+                << ",\"body_loss\":\"" << lb.body_loss << "\""
+                << ",\"rx_power_dbm\":" << lb.rx_power_dbm
+                << ",\"sensitivity_dbm\":" << lb.sensitivity_dbm
+                << ",\"link_margin_db\":" << lb.link_margin_db
+                << ",\"viable\":" << (lb.viable ? "true" : "false") << "}\n" << std::flush;
     } else if (cmd == "summary") {
       print_summary(*w, seed, ch.sf, w->now());
     } else if (cmd == "reset") {
@@ -472,9 +503,15 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       if (line.find("\"allow_disconnected\":") != std::string::npos) allow_disconnected = json_get_bool(line, "allow_disconnected", allow_disconnected);
       if (line.find("\"profile\":") != std::string::npos) {
         ch.profile = parse_realism_profile(json_get_str(line, "profile"));
-        if (ch.profile == RealismProfile::Field && ch.battery_capacity_mah == 300.0) {
+        if (ch.profile != RealismProfile::Baseline && ch.battery_capacity_mah == 300.0) {
           ch.battery_capacity_mah = 1000.0;
         }
+      }
+      if (line.find("\"priority_bypass_duty\":") != std::string::npos) {
+        ch.priority_bypass_duty = json_get_bool(line, "priority_bypass_duty", ch.priority_bypass_duty);
+      }
+      if (line.find("\"gnss_continuous\":") != std::string::npos) {
+        ch.gnss_continuous = json_get_bool(line, "gnss_continuous", ch.gnss_continuous);
       }
       if (line.find("\"capacity\":") != std::string::npos) {
         ch.battery_capacity_mah = json_get_double(line, "capacity", ch.battery_capacity_mah);
@@ -552,13 +589,18 @@ int main(int argc, char** argv) {
       allow_disconnected = true;
     } else if (a == "--profile") {
       ch.profile = parse_realism_profile(next());
-      if (ch.profile == RealismProfile::Field && ch.battery_capacity_mah == 300.0) {
+      if (ch.profile != RealismProfile::Baseline && ch.battery_capacity_mah == 300.0) {
         ch.battery_capacity_mah = 1000.0;
       }
     } else if (a == "--capacity") {
       ch.battery_capacity_mah = std::stod(next());
     } else if (a == "--no-wake-word") {
       ch.wake_word_always_on = false;
+    } else if (a == "--priority-bypass-duty") {
+      std::string val = next();
+      ch.priority_bypass_duty = (val == "1" || val == "true");
+    } else if (a == "--gnss-continuous") {
+      ch.gnss_continuous = true;
     } else {
       die("unknown option " + a);
     }

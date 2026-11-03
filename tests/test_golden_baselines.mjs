@@ -1,5 +1,6 @@
-// Project Setu: Golden Baseline Regression Test Suite
-// Verifies byte-identical determinism for all scenarios under the baseline realism profile.
+// Project Setu: Platform-Tolerant Golden Baseline Regression Test Suite
+// Verifies exact event sequence and deterministic simulation behavior across platforms.
+// Allows floating-point rounding tolerance (NUMERIC_EPSILON) for cross-compiler consistency (MSVC vs GCC/Clang).
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -12,6 +13,8 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 const SCENARIOS_DIR = path.join(ROOT_DIR, 'scenarios');
 const GOLDEN_DIR = path.join(ROOT_DIR, 'tests', 'golden');
+
+const NUMERIC_EPSILON = 0.05;
 
 const simPath = findSimulator(ROOT_DIR);
 if (!simPath) {
@@ -78,9 +81,56 @@ function buildScenarioArgs(sc, outPath) {
   return args;
 }
 
+const FLOAT_FIELDS = new Set([
+  'rssi', 'dist', 'snr', 'x', 'y', 'path_exp', 'mah', 'energy_mah',
+  'pos_error_m', 'pos_mae_m', 'pos_rmse_m', 'pos_max_err_m'
+]);
+
+function compareEvents(actual, expected, lineNum) {
+  if (actual.ev !== expected.ev) {
+    return `Line ${lineNum}: event mismatch (expected "${expected.ev}", got "${actual.ev}")`;
+  }
+  if (actual.t !== expected.t) {
+    return `Line ${lineNum} [${expected.ev}]: timestamp mismatch (expected ${expected.t}, got ${actual.t})`;
+  }
+
+  const allKeys = new Set([...Object.keys(expected), ...Object.keys(actual)]);
+  for (const k of allKeys) {
+    if (k === 'ev' || k === 't') continue;
+    const expVal = expected[k];
+    const actVal = actual[k];
+
+    if (expVal === undefined) {
+      return `Line ${lineNum} [${expected.ev}]: unexpected field "${k}" in actual output`;
+    }
+    if (actVal === undefined) {
+      return `Line ${lineNum} [${expected.ev}]: missing field "${k}" in actual output`;
+    }
+
+    if (typeof expVal === 'number' && typeof actVal === 'number') {
+      if (FLOAT_FIELDS.has(k)) {
+        const diff = Math.abs(actVal - expVal);
+        if (diff > NUMERIC_EPSILON) {
+          return `Line ${lineNum} [${expected.ev}]: field "${k}" exceeds epsilon (expected ${expVal}, got ${actVal}, diff ${diff.toFixed(4)} > ${NUMERIC_EPSILON})`;
+        }
+      } else {
+        if (actVal !== expVal) {
+          return `Line ${lineNum} [${expected.ev}]: integer field "${k}" mismatch (expected ${expVal}, got ${actVal})`;
+        }
+      }
+    } else {
+      if (actVal !== expVal) {
+        return `Line ${lineNum} [${expected.ev}]: field "${k}" mismatch (expected ${JSON.stringify(expVal)}, got ${JSON.stringify(actVal)})`;
+      }
+    }
+  }
+  return null;
+}
+
 async function runSuite() {
-  console.log('Project Setu: Golden Baseline Verification Suite');
+  console.log('Project Setu: Platform-Tolerant Golden Baseline Verification Suite');
   console.log(`Using binary: ${simPath}`);
+  console.log(`Tolerance epsilon for floating point values: ${NUMERIC_EPSILON}`);
 
   if (!fs.existsSync(GOLDEN_DIR)) {
     throw new Error(`Golden baselines directory not found at ${GOLDEN_DIR}`);
@@ -119,27 +169,54 @@ async function runSuite() {
         continue;
       }
 
-      const actualBytes = fs.readFileSync(tempOutPath);
-      const expectedBytes = fs.readFileSync(goldenPath);
+      const actualRaw = fs.readFileSync(tempOutPath, 'utf8');
+      const expectedRaw = fs.readFileSync(goldenPath, 'utf8');
 
-      if (Buffer.compare(actualBytes, expectedBytes) === 0) {
-        console.log(`  [ PASS ] ${baseName}: Byte-identical to golden baseline (${actualBytes.length} bytes)`);
+      // Fast path: exact byte match
+      if (actualRaw === expectedRaw) {
+        console.log(`  [ PASS ] ${baseName}: Exact byte match (${actualRaw.length} chars)`);
         passedCount++;
-      } else {
-        console.error(`  [ FAIL ] ${baseName}: Byte mismatch! Expected ${expectedBytes.length} bytes, got ${actualBytes.length} bytes`);
-        // Provide line level diagnostic
-        const actualLines = actualBytes.toString('utf8').split('\n');
-        const expectedLines = expectedBytes.toString('utf8').split('\n');
-        const maxLines = Math.max(actualLines.length, expectedLines.length);
-        for (let i = 0; i < maxLines; i++) {
-          if (actualLines[i] !== expectedLines[i]) {
-            console.error(`    First difference at line ${i + 1}:`);
-            console.error(`    Expected: ${expectedLines[i] || '<EOF>'}`);
-            console.error(`    Actual:   ${actualLines[i] || '<EOF>'}`);
-            break;
-          }
-        }
+        continue;
+      }
+
+      // Platform-tolerant line by line JSON event validation
+      const actualLines = actualRaw.split(/\r?\n/).filter(line => line.trim().length > 0);
+      const expectedLines = expectedRaw.split(/\r?\n/).filter(line => line.trim().length > 0);
+
+      if (actualLines.length !== expectedLines.length) {
+        console.error(`  [ FAIL ] ${baseName}: Event count mismatch (expected ${expectedLines.length} events, got ${actualLines.length} events)`);
         failedCount++;
+        continue;
+      }
+
+      let scenarioFailed = false;
+      for (let i = 0; i < expectedLines.length; i++) {
+        if (actualLines[i] === expectedLines[i]) continue;
+
+        let actObj = null;
+        let expObj = null;
+        try {
+          actObj = JSON.parse(actualLines[i]);
+          expObj = JSON.parse(expectedLines[i]);
+        } catch (e) {
+          console.error(`  [ FAIL ] ${baseName}: Malformed JSON on line ${i + 1}: ${e.message}`);
+          scenarioFailed = true;
+          break;
+        }
+
+        const mismatch = compareEvents(actObj, expObj, i + 1);
+        if (mismatch) {
+          console.error(`  [ FAIL ] ${baseName}: ${mismatch}`);
+          scenarioFailed = true;
+          break;
+        }
+      }
+
+      if (scenarioFailed) {
+        failedCount++;
+      } else {
+        console.log(`  [ PASS ] ${baseName}: Sequence and values verified within epsilon tolerance (${actualLines.length} events)`);
+        passedCount++;
       }
     }
   } finally {

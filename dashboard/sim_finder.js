@@ -27,3 +27,4 @@ export function findSimulator(customRootDir) {
   }
   return null;
 }
+

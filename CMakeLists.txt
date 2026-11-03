@@ -34,6 +34,16 @@ target_link_libraries(setu_world PUBLIC setu_core)
 add_executable(setu_sim simulation/native/main.cpp)
 target_link_libraries(setu_sim PRIVATE setu_world)
 
+# WebAssembly target for browser and serverless environments (Emscripten)
+if(EMSCRIPTEN)
+  add_executable(setu_sim_wasm simulation/wasm/setu_wasm_bindings.cpp)
+  target_link_libraries(setu_sim_wasm PRIVATE setu_world)
+  set_target_properties(setu_sim_wasm PROPERTIES
+    SUFFIX ".js"
+    LINK_FLAGS "-s WASM=1 -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap'] -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createSetuSim' --bind"
+  )
+endif()
+
 # Firmware entry point host verification target (ensures app_main.cpp and esp32_adapters.hpp compile cleanly)
 add_library(setu_firmware_host STATIC firmware/main/app_main.cpp)
 target_include_directories(setu_firmware_host PUBLIC shared/include firmware/esp32s3/include)

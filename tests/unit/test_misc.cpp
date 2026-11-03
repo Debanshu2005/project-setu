@@ -265,3 +265,21 @@ TEST(reproducible_hash_randomness_independent_of_receiver_order) {
   CHECK_EQ(w1.counters().delivered, w2.counters().delivered);
   CHECK_EQ(w1.counters().weak, w2.counters().weak);
 }
+
+TEST(loss_budget_waterfall_calculation) {
+  sim::ChannelParams ch;
+  ch.profile = sim::RealismProfile::Field;
+  sim::World w(ch, 42);
+
+  setu::NodeConfig c;
+  c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
+  c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 250, 0);
+
+  sim::LossBudget lb = w.get_loss_budget(1, 0);
+  CHECK_EQ(static_cast<int>(lb.tx_power_dbm), 14);
+  CHECK(lb.path_loss_db > 0.0);
+  CHECK(lb.rx_power_dbm < lb.tx_power_dbm);
+  CHECK(lb.obstacle_loss == "not modeled yet");
+  CHECK(lb.body_loss == "not modeled yet");
+  CHECK(lb.link_margin_db > -50.0);
+}

@@ -31,15 +31,41 @@ inline const char* realism_profile_str(RealismProfile p) {
   }
 }
 
+inline const char* realism_profile_label(RealismProfile p) {
+  switch (p) {
+    case RealismProfile::Baseline: return "baseline (legacy)";
+    case RealismProfile::Idealized: return "idealized";
+    case RealismProfile::Field: return "field";
+    default: return "baseline (legacy)";
+  }
+}
+
 inline RealismProfile parse_realism_profile(const std::string& s) {
   if (s == "idealized") return RealismProfile::Idealized;
   if (s == "field") return RealismProfile::Field;
   return RealismProfile::Baseline;
 }
 
+struct LossBudget {
+  double tx_power_dbm = 14.0;
+  double ref_loss_db = 31.2;
+  double path_loss_db = 0.0;
+  double shadow_loss_db = 0.0;
+  double extra_loss_db = 15.0;
+  double fading_loss_db = 0.0;
+  std::string obstacle_loss = "not modeled yet";
+  std::string body_loss = "not modeled yet";
+  double rx_power_dbm = 0.0;
+  double sensitivity_dbm = -123.0;
+  double link_margin_db = 0.0;
+  bool viable = false;
+};
+
 struct ChannelParams {
   RealismProfile profile = RealismProfile::Baseline;
   bool wake_word_always_on = true;
+  bool gnss_continuous = false;        // true = continuous 45mA NEO-6M drain; false = on-demand
+  bool priority_bypass_duty = true;    // scenario option: whether originating SOS and ACKs bypass duty limits
   uint8_t sf = 7;
   uint32_t bw_hz = 125000;
   double tx_dbm = 14.0;
@@ -55,7 +81,7 @@ struct ChannelParams {
   double tx_energy_pct = 0.5;          // energy consumed per LoRa transmission (%)
   double rx_energy_pct = 0.1;          // energy consumed per packet reception (%)
   double idle_energy_pct_per_s = 0.01; // energy consumed per second idle standby (%)
-  double battery_capacity_mah = 300.0; // nominal 1S LiPo capacity
+  double battery_capacity_mah = 300.0; // nominal 1S LiPo capacity (overridden to 1000 for non-baseline)
 };
 
 struct AlertRecord {
@@ -170,6 +196,7 @@ class World {
   const Counters& counters() const { return counters_; }
   std::vector<uint16_t> node_ids() const;
   double mean_rssi(uint16_t a, uint16_t b) const;   // dBm, -inf if blocked
+  LossBudget get_loss_budget(uint16_t from, uint16_t to) const;
   double sensitivity() const { return sens_; }
   PlannedConnectivityReport planned_connectivity_report() const;
   bool planned_connected() const;                   // every node can reach a hub at connect_margin
