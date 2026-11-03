@@ -28,3 +28,4 @@ Project Setu maintains a strict dependency hygiene policy:
 * The operations dashboard server (`dashboard/server.js`) utilizes only built-in Node.js standard modules (`node:http`, `node:fs`, `node:path`, `node:url`, `node:child_process`, `node:crypto`).
 * Zero external packages are installed in `node_modules` for production server execution.
 * The frontend uses modern browser-native ECMAScript modules (`import` / `export`) and standard Web APIs (`CanvasRenderingContext2D`, `fetch`, `EventSource`).
+

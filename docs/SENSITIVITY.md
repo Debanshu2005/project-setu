@@ -61,3 +61,4 @@ Based on variance contribution to operational mission success, the following par
 1. **Concrete rubble path loss exponent ($n$):** Conduct empirical RSSI distance sweeps inside a reinforced concrete demolition site to fit $n$ accurately.
 2. **ESP32-S3 Voice DSP power optimization:** Measure actual power consumption of WakeNet under duty-cycled acoustic interrupt modes.
 3. **Wristband antenna detuning against human wrist:** Measure SX1262 radiated efficiency (TRP) while worn on human arm versus free space.
+

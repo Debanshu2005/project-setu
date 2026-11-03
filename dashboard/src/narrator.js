@@ -140,3 +140,4 @@ export function narrateIncidentStory(events, originNodeId, sf = 7) {
     event: e
   })).filter(item => item.text.length > 0);
 }
+

@@ -97,3 +97,4 @@ This document catalogs every simulated physical parameter in Project Setu. In ac
 | Maximum Hop Limit | 7 hops | Cited | Setu mesh TTL limit preventing broadcast loops | `shared/src/node.cpp` |
 | Listen-Before-Talk Max Retries | 6 deferrals | Cited | Setu CSMA-CA channel backoff limit | `shared/src/node.cpp` |
 | Retry Episode Timeout Window | 3500 ms | Cited | Mesh ACK wait window before retransmission | `shared/src/node.cpp` |
+
