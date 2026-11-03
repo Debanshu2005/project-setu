@@ -1,5 +1,5 @@
-// Project Setu - Portable JavaScript Channel & Node Simulation Engine
-// Equivalent to simulation/native/world.cpp and shared/src/node.cpp for Vercel Serverless & Browser execution.
+// Project Setu: Portable JavaScript Simulation Preview Engine.
+// Approximate client preview engine for browser execution. Authoritative physics run in native C++ engine (simulation/native/setu_sim).
 
 export function loraAirtimeMs(payloadBytes = 25, sf = 7, bwHz = 125000, preambleSymbols = 8) {
   const ts = (1 << sf) / (bwHz / 1000.0); // ms per symbol
