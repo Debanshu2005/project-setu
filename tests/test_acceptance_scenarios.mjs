@@ -82,6 +82,7 @@ async function runScenario(scenarioFile) {
     '--loss', String(p.loss || 0.0),
     '--path-exp', String(p.path_exp || 3.0),
     '--profile', String(p.profile || 'field'),
+    '--allow-disconnected',
     '--trace', '-'
   ];
 
