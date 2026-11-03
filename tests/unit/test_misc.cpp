@@ -190,3 +190,78 @@ TEST(make_demo_world_path_loss_4_0_with_allow_disconnected) {
   CHECK(rep.disconnected_count > 0u);
   CHECK(!rep.connected);
 }
+
+
+TEST(realism_profiles_configuration) {
+  CHECK(sim::parse_realism_profile("baseline") == sim::RealismProfile::Baseline);
+  CHECK(sim::parse_realism_profile("idealized") == sim::RealismProfile::Idealized);
+  CHECK(sim::parse_realism_profile("field") == sim::RealismProfile::Field);
+
+  sim::ChannelParams ch_ideal;
+  ch_ideal.profile = sim::RealismProfile::Idealized;
+  sim::World w_ideal(ch_ideal, 42);
+  const auto& p_ideal = w_ideal.channel_params();
+  CHECK_EQ(static_cast<int>(p_ideal.path_exp * 10), 20);
+  CHECK_EQ(static_cast<int>(p_ideal.shadow_sigma_db * 10), 0);
+  CHECK_EQ(static_cast<int>(p_ideal.fading_sigma_db * 10), 0);
+  CHECK_EQ(static_cast<int>(p_ideal.extra_loss_db * 10), 0);
+  CHECK_EQ(static_cast<int>(p_ideal.random_loss * 10), 0);
+
+  sim::ChannelParams ch_field;
+  ch_field.profile = sim::RealismProfile::Field;
+  sim::World w_field(ch_field, 42);
+  const auto& p_field = w_field.channel_params();
+  CHECK_EQ(static_cast<int>(p_field.battery_capacity_mah), 1000);
+}
+
+TEST(field_energy_model_accounting) {
+  sim::ChannelParams ch;
+  ch.profile = sim::RealismProfile::Field;
+  sim::World w(ch, 42);
+
+  setu::NodeConfig c;
+  c.node_id = 0;
+  c.role = setu::Role::Hub;
+  w.add_node(c, 0, 0);
+
+  c.node_id = 1;
+  c.role = setu::Role::Survivor;
+  w.add_node(c, 100, 0);
+
+  auto pre1 = w.get_node_info(1);
+  CHECK_EQ(pre1.battery, 100);
+  CHECK_EQ(static_cast<int>(pre1.energy_consumed_mah), 0);
+
+  w.button_press(1, 100, 150);
+  w.run_until(2000);
+
+  auto post1 = w.get_node_info(1);
+  CHECK(post1.energy_consumed_mah > 0.0);
+  CHECK(post1.incident_id > 0);
+  CHECK(post1.profile == "field");
+}
+
+TEST(reproducible_hash_randomness_independent_of_receiver_order) {
+  sim::ChannelParams ch;
+  ch.profile = sim::RealismProfile::Field;
+  ch.fading_sigma_db = 2.0;
+
+  sim::World w1(ch, 77);
+  setu::NodeConfig c;
+  c.node_id = 0; c.role = setu::Role::Hub; w1.add_node(c, 0, 0);
+  c.node_id = 1; c.role = setu::Role::Survivor; w1.add_node(c, 100, 0);
+  c.node_id = 2; c.role = setu::Role::Survivor; w1.add_node(c, 200, 0);
+  w1.button_press(1, 100, 150);
+  w1.run_until(1500);
+
+  sim::World w2(ch, 77);
+  c.node_id = 0; c.role = setu::Role::Hub; w2.add_node(c, 0, 0);
+  c.node_id = 1; c.role = setu::Role::Survivor; w2.add_node(c, 100, 0);
+  c.node_id = 2; c.role = setu::Role::Survivor; w2.add_node(c, 200, 0);
+  w2.button_press(1, 100, 150);
+  w2.run_until(1500);
+
+  CHECK_EQ(w1.counters().tx, w2.counters().tx);
+  CHECK_EQ(w1.counters().delivered, w2.counters().delivered);
+  CHECK_EQ(w1.counters().weak, w2.counters().weak);
+}

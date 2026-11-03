@@ -18,6 +18,31 @@
 namespace sim {
 namespace {
 constexpr double kNegInf = -std::numeric_limits<double>::infinity();
+
+inline uint64_t hash64(uint64_t a, uint64_t b, uint64_t c, uint64_t d) {
+  uint64_t x = a ^ (b * 0xBF58476D1CE4E5B9ULL);
+  x ^= (c * 0x94D049BB133111EBULL);
+  x ^= (d * 0x45D9F3B3335A3619ULL);
+  x = (x ^ (x >> 30)) * 0xBF58476D1CE4E5B9ULL;
+  x = (x ^ (x >> 27)) * 0x94D049BB133111EBULL;
+  x = x ^ (x >> 31);
+  return x;
+}
+
+inline double hash_gaussian(uint32_t seed, uint32_t tx_id, uint16_t rx_id, uint32_t salt, double sigma) {
+  if (sigma <= 0.0) return 0.0;
+  uint64_t h1 = hash64(seed, tx_id, rx_id, salt);
+  uint64_t h2 = hash64(seed, tx_id, rx_id, salt ^ 0x5555555555555555ULL);
+  double u1 = std::max(1e-12, (h1 & 0xFFFFFFFFFFFFULL) / static_cast<double>(0x1000000000000ULL));
+  double u2 = (h2 & 0xFFFFFFFFFFFFULL) / static_cast<double>(0x1000000000000ULL);
+  double z = std::sqrt(-2.0 * std::log(u1)) * std::cos(2.0 * M_PI * u2);
+  return z * sigma;
+}
+
+inline double hash_uniform(uint32_t seed, uint32_t tx_id, uint16_t rx_id, uint32_t salt) {
+  uint64_t h = hash64(seed, tx_id, rx_id, salt);
+  return (h & 0xFFFFFFFFFFFFULL) / static_cast<double>(0x1000000000000ULL);
+}
 }  // namespace
 
 void xy_to_e6(double x, double y, int32_t& lat, int32_t& lon) {
@@ -107,6 +132,27 @@ struct World::SimNode {
   PositionMetricsTracker pos_tracker;
   BatteryEnergyModel energy_model;
 
+  void consume_energy_ma(double current_ma, double duration_ms, const char* reason) {
+    if (!online || battery == 0 || duration_ms <= 0.0) return;
+    double hours = duration_ms / 3600000.0;
+    double mah = current_ma * hours;
+    energy_consumed_mah += mah;
+    energy_model.consume_energy(current_ma, duration_ms);
+    uint8_t new_batt = energy_model.percent();
+    battery_fraction = static_cast<double>(new_batt);
+    if (new_batt != battery) {
+      battery = new_batt;
+      char b[96];
+      std::snprintf(b, sizeof b, ",\"battery\":%u,\"why\":\"%s\",\"mah\":%.3f",
+                    static_cast<unsigned int>(battery), reason, energy_consumed_mah);
+      w.trace_event("battery", id, b);
+      if (battery == 0) {
+        online = false;
+        w.trace_event("battery_depleted", id, ",\"why\":\"battery_exhausted\"");
+      }
+    }
+  }
+
   struct Clock : setu::IClock {
     SimNode& n;
     explicit Clock(SimNode& s) : n(s) {}
@@ -165,6 +211,9 @@ struct World::SimNode {
     explicit Haptic(SimNode& s) : n(s) {}
     void play(setu::HapticPattern p) override {
       if (p == setu::HapticPattern::AckReceived) n.w.acks_.push_back({n.id, n.w.now_});
+      if (n.w.ch_.profile == RealismProfile::Field) {
+        n.consume_energy_ma(BatteryEnergyModel::kCurrentHapticMa, 200.0, "haptic");
+      }
       if (n.w.trace_) {
         char b[48];
         std::snprintf(b, sizeof b, ",\"pattern\":%d", static_cast<int>(p));
@@ -239,7 +288,19 @@ struct World::SimNode {
 // ------------------------------------------------------------------ world
 
 World::World(const ChannelParams& ch, uint32_t seed)
-    : ch_(ch), seed_(seed), sens_(setu::lora_sensitivity_dbm(ch.sf)), rng_(seed) {}
+    : ch_(ch), seed_(seed), sens_(setu::lora_sensitivity_dbm(ch.sf)), rng_(seed) {
+  if (ch_.profile == RealismProfile::Idealized) {
+    ch_.path_exp = 2.0;
+    ch_.shadow_sigma_db = 0.0;
+    ch_.fading_sigma_db = 0.0;
+    ch_.extra_loss_db = 0.0;
+    ch_.random_loss = 0.0;
+  } else if (ch_.profile == RealismProfile::Field) {
+    if (ch_.battery_capacity_mah == 300.0) {
+      ch_.battery_capacity_mah = 1000.0;
+    }
+  }
+}
 World::~World() = default;
 
 uint16_t World::add_node(const setu::NodeConfig& cfg, double x, double y, uint8_t initial_battery) {
@@ -323,6 +384,7 @@ void World::set_battery(uint16_t id, uint8_t pct) {
   n.battery = pct;
   n.initial_battery = pct;
   n.battery_fraction = pct;
+  n.energy_model.set_percent(pct);
   n.energy_consumed_mah = ((100.0 - pct) / 100.0) * ch_.battery_capacity_mah;
   if (pct > 0 && !n.online && n.battery == 0) {
     n.online = true;
@@ -528,9 +590,15 @@ bool World::start_tx(uint16_t from, const uint8_t* d, size_t n) {
   for (auto& t : txs_)
     if (t.from == from && now_ < t.end) return false;  // already transmitting
   const uint32_t air = setu::lora_airtime_ms(n, ch_.sf, ch_.bw_hz);
-  txs_.push_back({from, now_, now_ + air, std::vector<uint8_t>(d, d + n)});
+  uint32_t tx_id = ++next_tx_id_;
+  txs_.push_back({tx_id, from, now_, now_ + air, std::vector<uint8_t>(d, d + n)});
   counters_.tx++;
-  node_it->second->consume_energy(ch_.tx_energy_pct, "tx");
+  if (ch_.profile == RealismProfile::Field) {
+    double tx_ma = (ch_.tx_dbm >= 20.0) ? BatteryEnergyModel::kCurrentRadioTx22Ma : BatteryEnergyModel::kCurrentRadioTx14Ma;
+    node_it->second->consume_energy_ma(tx_ma, air, "tx");
+  } else {
+    node_it->second->consume_energy(ch_.tx_energy_pct, "tx");
+  }
   if (trace_) {
     setu::Packet p;
     setu::parse(d, n, p);
@@ -637,10 +705,23 @@ void World::run_until(uint32_t t_end) {
       fn();
     }
     // Idle energy consumption every 1000ms
-    if (now_ > 0 && now_ % 1000 == 0 && ch_.idle_energy_pct_per_s > 0) {
+    if (now_ > 0 && now_ % 1000 == 0) {
       for (auto& kv : nodes_) {
         if (kv.second->online && kv.second->battery > 0) {
-          kv.second->consume_energy(ch_.idle_energy_pct_per_s, "idle");
+          if (ch_.profile == RealismProfile::Field) {
+            double idle_ma = BatteryEnergyModel::kCurrentStandbyMa +
+                             BatteryEnergyModel::kCurrentRadioRxMa +
+                             BatteryEnergyModel::kCurrentImuMa;
+            if (kv.second->gnss_on) {
+              idle_ma += BatteryEnergyModel::kCurrentGnssMa;
+            }
+            if (ch_.wake_word_always_on) {
+              idle_ma += BatteryEnergyModel::kCurrentVoiceDspMa;
+            }
+            kv.second->consume_energy_ma(idle_ma, 1000.0, "idle");
+          } else if (ch_.idle_energy_pct_per_s > 0) {
+            kv.second->consume_energy(ch_.idle_energy_pct_per_s, "idle");
+          }
         }
       }
     }
@@ -810,6 +891,8 @@ SimNodeInfo World::get_node_info(uint16_t id) const {
   info.radio_queue_depth = n.radio_queue.size();
   info.button_queue_overflows = n.button_queue.overflow_count();
   info.radio_queue_overflows = n.radio_queue.overflow_count();
+  info.incident_id = n.node->incident_id();
+  info.profile = realism_profile_str(ch_.profile);
   return info;
 }
 

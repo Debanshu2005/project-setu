@@ -151,6 +151,7 @@ void print_summary(const World& w, uint32_t seed, uint8_t sf, uint32_t duration)
   const auto& c = w.counters();
   uint64_t relay_tx = 0, suppressed = 0, duty_blocked = 0, retries = 0;
   uint32_t max_duty = 0;
+  double total_energy_mah = 0.0;
   auto infos = w.get_all_nodes_info();
   for (const auto& inf : infos) {
     relay_tx += inf.stats.tx_relay;
@@ -158,15 +159,36 @@ void print_summary(const World& w, uint32_t seed, uint8_t sf, uint32_t duration)
     duty_blocked += inf.stats.duty_blocked;
     retries += inf.stats.retries;
     max_duty = std::max(max_duty, inf.duty_used_ms);
+    total_energy_mah += inf.energy_consumed_mah;
   }
+  double cap = w.channel_params().battery_capacity_mah;
+  double cur_always_on = BatteryEnergyModel::kCurrentStandbyMa +
+                         BatteryEnergyModel::kCurrentRadioRxMa +
+                         BatteryEnergyModel::kCurrentImuMa +
+                         BatteryEnergyModel::kCurrentVoiceDspMa;
+  double cur_no_always_on = BatteryEnergyModel::kCurrentStandbyMa +
+                            BatteryEnergyModel::kCurrentRadioRxMa +
+                            BatteryEnergyModel::kCurrentImuMa;
+  double life_always_on_h = (cur_always_on > 0.0) ? (cap / cur_always_on) : 0.0;
+  double life_no_always_on_h = (cur_no_always_on > 0.0) ? (cap / cur_no_always_on) : 0.0;
+
   std::cout << "{\"ok\":true,\"cmd\":\"summary\",\"summary\":{\"seed\":" << seed
             << ",\"nodes\":" << w.node_ids().size() << ",\"sf\":" << static_cast<int>(sf)
             << ",\"duration_ms\":" << w.now()
+            << ",\"profile\":\"" << realism_profile_str(w.channel_params().profile) << "\""
+            << ",\"battery_lifetime\":{\"status\":\"assumed\",\"capacity_mah\":" << cap
+            << ",\"with_always_on_wake_word\":{\"continuous_current_ma\":" << cur_always_on
+            << ",\"lifetime_hours\":" << life_always_on_h
+            << ",\"lifetime_days\":" << (life_always_on_h / 24.0) << "}"
+            << ",\"without_always_on_wake_word\":{\"continuous_current_ma\":" << cur_no_always_on
+            << ",\"lifetime_hours\":" << life_no_always_on_h
+            << ",\"lifetime_days\":" << (life_no_always_on_h / 24.0) << "}}"
             << ",\"totals\":{\"tx\":" << c.tx << ",\"relay_tx\":" << relay_tx
             << ",\"relays_suppressed\":" << suppressed << ",\"retries\":" << retries
             << ",\"deliveries\":" << c.delivered << ",\"collisions\":" << c.collisions
             << ",\"weak\":" << c.weak << ",\"lost\":" << c.lost
             << ",\"duty_blocked\":" << duty_blocked << ",\"max_airtime_ms_per_node\":" << max_duty
+            << ",\"total_energy_mah\":" << total_energy_mah
             << "}}}\n" << std::flush;
 }
 
@@ -448,6 +470,18 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       if (line.find("\"loss\":") != std::string::npos) ch.random_loss = json_get_double(line, "loss", ch.random_loss);
       if (line.find("\"path_exp\":") != std::string::npos) ch.path_exp = json_get_double(line, "path_exp", ch.path_exp);
       if (line.find("\"allow_disconnected\":") != std::string::npos) allow_disconnected = json_get_bool(line, "allow_disconnected", allow_disconnected);
+      if (line.find("\"profile\":") != std::string::npos) {
+        ch.profile = parse_realism_profile(json_get_str(line, "profile"));
+        if (ch.profile == RealismProfile::Field && ch.battery_capacity_mah == 300.0) {
+          ch.battery_capacity_mah = 1000.0;
+        }
+      }
+      if (line.find("\"capacity\":") != std::string::npos) {
+        ch.battery_capacity_mah = json_get_double(line, "capacity", ch.battery_capacity_mah);
+      }
+      if (line.find("\"wake_word_always_on\":") != std::string::npos) {
+        ch.wake_word_always_on = json_get_bool(line, "wake_word_always_on", ch.wake_word_always_on);
+      }
       if (line.find("\"reset_all\":true") != std::string::npos) {
         initial_batteries.clear();
         initial_motion_profiles.clear();
@@ -516,6 +550,15 @@ int main(int argc, char** argv) {
       misc.push_back({a, next()});
     } else if (a == "--allow-disconnected") {
       allow_disconnected = true;
+    } else if (a == "--profile") {
+      ch.profile = parse_realism_profile(next());
+      if (ch.profile == RealismProfile::Field && ch.battery_capacity_mah == 300.0) {
+        ch.battery_capacity_mah = 1000.0;
+      }
+    } else if (a == "--capacity") {
+      ch.battery_capacity_mah = std::stod(next());
+    } else if (a == "--no-wake-word") {
+      ch.wake_word_always_on = false;
     } else {
       die("unknown option " + a);
     }
@@ -641,12 +684,33 @@ int main(int argc, char** argv) {
     max_duty = std::max(max_duty, w->node(id).duty_used_ms());
   }
   const auto& c = w->counters();
-  std::printf("  ],\n  \"totals\": {\"tx\": %llu, \"relay_tx\": %llu, \"relays_suppressed\": %llu, "
+  double total_energy_mah = 0.0;
+  for (auto id : w->node_ids()) {
+    total_energy_mah += w->get_node_info(id).energy_consumed_mah;
+  }
+  double cap = ch.battery_capacity_mah;
+  double cur_always_on = BatteryEnergyModel::kCurrentStandbyMa +
+                         BatteryEnergyModel::kCurrentRadioRxMa +
+                         BatteryEnergyModel::kCurrentImuMa +
+                         BatteryEnergyModel::kCurrentVoiceDspMa;
+  double cur_no_always_on = BatteryEnergyModel::kCurrentStandbyMa +
+                            BatteryEnergyModel::kCurrentRadioRxMa +
+                            BatteryEnergyModel::kCurrentImuMa;
+  double life_always_on_h = (cur_always_on > 0.0) ? (cap / cur_always_on) : 0.0;
+  double life_no_always_on_h = (cur_no_always_on > 0.0) ? (cap / cur_no_always_on) : 0.0;
+
+  std::printf("  ],\n  \"profile\": \"%s\",\n  \"battery_lifetime\": {\"status\": \"assumed\", \"capacity_mah\": %.1f, "
+              "\"with_always_on_wake_word\": {\"continuous_current_ma\": %.1f, \"lifetime_hours\": %.2f, \"lifetime_days\": %.2f}, "
+              "\"without_always_on_wake_word\": {\"continuous_current_ma\": %.1f, \"lifetime_hours\": %.2f, \"lifetime_days\": %.2f}},\n"
+              "  \"totals\": {\"tx\": %llu, \"relay_tx\": %llu, \"relays_suppressed\": %llu, "
               "\"retries\": %llu, \"deliveries\": %llu, \"collisions\": %llu, \"weak\": %llu, "
-              "\"lost\": %llu, \"duty_blocked\": %llu, \"max_airtime_ms_per_node\": %u}\n}\n",
+              "\"lost\": %llu, \"duty_blocked\": %llu, \"max_airtime_ms_per_node\": %u, \"total_energy_mah\": %.3f}\n}\n",
+              realism_profile_str(ch.profile), cap,
+              cur_always_on, life_always_on_h, life_always_on_h / 24.0,
+              cur_no_always_on, life_no_always_on_h, life_no_always_on_h / 24.0,
               (unsigned long long)c.tx, (unsigned long long)relay_tx, (unsigned long long)suppressed,
               (unsigned long long)retries, (unsigned long long)c.delivered,
               (unsigned long long)c.collisions, (unsigned long long)c.weak,
-              (unsigned long long)c.lost, (unsigned long long)duty_blocked, max_duty);
+              (unsigned long long)c.lost, (unsigned long long)duty_blocked, max_duty, total_energy_mah);
   return 0;
 }

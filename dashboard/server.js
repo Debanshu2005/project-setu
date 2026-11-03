@@ -47,6 +47,13 @@ function validateSimulationParams(params = {}) {
   };
 
   const normalized = { ...params };
+  if (params.profile !== undefined) {
+    const prof = String(params.profile).toLowerCase();
+    if (!['baseline', 'idealized', 'field'].includes(prof)) {
+      throw new RequestError(400, 'Invalid simulation parameter "profile": expected "baseline", "idealized", or "field"');
+    }
+    normalized.profile = prof;
+  }
   for (const [name, rule] of Object.entries(schema)) {
     if (params[name] === undefined) continue;
     const value = params[name];
@@ -346,7 +353,9 @@ class SimulationJobManager {
     const pathExp = Math.min(6.0, Math.max(2.0, parseFloat(p.path_exp) || 3.5));
     const allowDisconnected = Boolean(p.allow_disconnected || p.allowDisconnected || job.allow_disconnected);
 
+    const profile = String(p.profile || job.profile || 'baseline').toLowerCase();
     const args = [
+      '--profile', profile,
       '--survivors', String(survivors),
       '--relays', String(relays),
       '--zone', String(zone),
@@ -639,7 +648,8 @@ class InteractiveSimulatorManager {
       '--seed', String(this.config.seed),
       '--sf', String(this.config.sf),
       '--loss', String(this.config.loss),
-      '--path-exp', String(this.config.path_exp)
+      '--path-exp', String(this.config.path_exp),
+      '--profile', String(this.config.profile || 'baseline')
     ];
 
     console.log(`[Setu API] Spawning interactive simulator: ${simPath} ${args.join(' ')}`);

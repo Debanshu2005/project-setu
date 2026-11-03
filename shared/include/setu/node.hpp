@@ -78,6 +78,7 @@ class Node {
   bool sos_acked() const { return acked_; }
   bool sos_gave_up() const { return gave_up_; }
   uint16_t seq() const { return seq_; }
+  uint16_t incident_id() const { return episode_first_seq_; }
   uint32_t duty_used_ms() const;
 
  private:

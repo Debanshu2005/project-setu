@@ -16,7 +16,30 @@
 
 namespace sim {
 
+enum class RealismProfile : uint8_t {
+  Baseline = 0,
+  Idealized = 1,
+  Field = 2
+};
+
+inline const char* realism_profile_str(RealismProfile p) {
+  switch (p) {
+    case RealismProfile::Baseline: return "baseline";
+    case RealismProfile::Idealized: return "idealized";
+    case RealismProfile::Field: return "field";
+    default: return "baseline";
+  }
+}
+
+inline RealismProfile parse_realism_profile(const std::string& s) {
+  if (s == "idealized") return RealismProfile::Idealized;
+  if (s == "field") return RealismProfile::Field;
+  return RealismProfile::Baseline;
+}
+
 struct ChannelParams {
+  RealismProfile profile = RealismProfile::Baseline;
+  bool wake_word_always_on = true;
   uint8_t sf = 7;
   uint32_t bw_hz = 125000;
   double tx_dbm = 14.0;
@@ -87,6 +110,8 @@ struct SimNodeInfo {
   size_t radio_queue_depth = 0;
   uint32_t button_queue_overflows = 0;
   uint32_t radio_queue_overflows = 0;
+  uint16_t incident_id = 0;
+  std::string profile = "baseline";
   setu::NodeStats stats;
 };
 
@@ -155,8 +180,9 @@ class World {
  private:
   struct SimNode;
   struct Tx {
-    uint16_t from;
-    uint32_t start, end;
+    uint32_t tx_id = 0;
+    uint16_t from = 0;
+    uint32_t start = 0, end = 0;
     std::vector<uint8_t> data;
   };
   friend struct SimNode;
@@ -168,6 +194,7 @@ class World {
 
   ChannelParams ch_;
   uint32_t seed_;
+  uint32_t next_tx_id_ = 0;
   double sens_;
   uint32_t now_ = 0;
   std::mt19937 rng_;
