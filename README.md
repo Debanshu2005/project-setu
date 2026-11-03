@@ -7,7 +7,7 @@
 [![Target MCU](https://img.shields.io/badge/ESP--IDF-v5.1%20(ESP32--S3)-red.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Project Setu is an infrastructure-independent, phone-free disaster rescue mesh communication system and research-grade simulation suite. In catastrophic events (such as earthquakes, catastrophic floods, or structural collapses), terrestrial cellular towers and municipal power grids fail simultaneously. Project Setu enables trapped survivors to transmit life-critical SOS alerts from low-power wearable wristbands across an ad-hoc, multi-hop LoRa radio mesh directly to rescue command hubs—without cellular, internet, or satellite connectivity.
+Project Setu is an infrastructure-independent, phone-free disaster rescue mesh communication system and research-grade simulation suite. In catastrophic events (such as earthquakes, catastrophic floods, or structural collapses), terrestrial cellular towers and municipal power grids fail simultaneously. Project Setu enables trapped survivors to transmit life-critical SOS alerts from low-power wearable wristbands across an ad-hoc, multi-hop LoRa radio mesh directly to rescue command hubs without cellular, internet, or satellite connectivity.
 
 The platform unites an authoritative, hardware-agnostic ISO C++17 protocol core, an embedded FreeRTOS firmware implementation for the Espressif ESP32-S3, a discrete-event physical RF channel simulator, a cloud-ready Node.js operations API daemon, and an interactive Disaster Response Operations Center web dashboard.
 
@@ -307,6 +307,10 @@ If no ACK is received from the Hub:
 
 The frontend is an operational command-center web application built with pure vanilla Web Components and HTML5 Canvas (zero external frontend framework bloat):
 
+- **Setu Twin 3D Navigable World Visualizer (`dashboard/components/setu_twin.js`)**: AirSim-style navigable 3D environment for disaster simulation inspection. Procedural 3D disaster terrain (collapsed floor slabs, rubble piles, flood water), survivor wristbands, elevated relays, rescue hub, and LoRa packet propagation waves. Includes orbit, top-down, and follow-node cameras.
+- **Wristband Digital Twin Inspector (`dashboard/components/wristband_twin.js`)**: Inspectable 3D vehicle panel representing the hardware wristband enclosure, panic button, ERM haptic motor vibration status, battery consumption, and live sensor telemetry.
+- **Plain English Event Narrator (`dashboard/src/narrator.js`)**: Translates raw simulator trace events into natural, plain English sentences for emergency coordinators and disaster response personnel.
+- **RF Link Margin & Loss Budget Waterfall (`dashboard/components/loss_waterfall.js`)**: Real-time decomposition of link margin (TX power, distance path loss, obstacle penetration, human body shadowing, and fading margin) with honest fidelity labels (Measured, Cited, Assumed).
 - **Interactive Topology Visualizer (`dashboard/components/topology.js`)**: Real-time canvas rendering supporting multi-touch pan/zoom, link RSSI gradient shading, dead-reckoning positional error circles, and animated LoRa packet pulses.
 - **Chronological Trace Scrubber (`dashboard/src/simulation.js`)**: Playback speed controls from $0.5\times$ to $10\times$, pause, restart, step forward, and jump to specific timestamps.
 - **25-Byte Wire Inspector (`dashboard/components/inspector.js`)**: Real-time hex dump viewer with interactive field boundaries. Clicking any field highlights the corresponding bits and decodes raw values into human-readable engineering units.

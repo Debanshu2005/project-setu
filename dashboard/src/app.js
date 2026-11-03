@@ -12,6 +12,10 @@ import { NodeHealthComponent } from '../components/node_health.js';
 import { AnalyticsWorkspaceComponent } from '../components/analytics_workspace.js';
 import { ScientificScatterPlot, ScientificCdfPlot } from '../components/scientific_charts.js';
 import { calculateTheoreticalRssi, calculateEcdf } from './scientific_metrics.js';
+import { WristbandTwinComponent } from '../components/wristband_twin.js';
+import { LossWaterfallComponent } from '../components/loss_waterfall.js';
+import { SetuTwin3DViewer } from '../components/setu_twin.js';
+import { narrateEvent } from './narrator.js';
 
 class SetuDashboardApp {
   constructor() {
@@ -48,11 +52,15 @@ class SetuDashboardApp {
 
     // Primary View Mode & Overlay Selectors
     this.btnModeTopology = document.getElementById('btnModeTopology');
+    this.btnModeTwin = document.getElementById('btnModeTwin');
     this.btnModeAnalytics = document.getElementById('btnModeAnalytics');
     this.btnExpandAnalytics = document.getElementById('btnExpandAnalytics');
     this.containerTopologyView = document.getElementById('containerTopologyView');
+    this.containerSetuTwinView = document.getElementById('containerSetuTwinView');
     this.containerAnalyticsView = document.getElementById('containerAnalyticsView');
     this.selTopologyOverlay = document.getElementById('selTopologyOverlay');
+    this.tabBtnTwin = document.getElementById('tabBtnTwin');
+    this.tabTwin = document.getElementById('tab-twin');
 
     // Sidebar Scientific Workspace Elements
     this.tabBtnScientific = document.getElementById('tabBtnScientific');
@@ -201,6 +209,7 @@ class SetuDashboardApp {
         if (this.topo) {
           this.topo.onNodeSelect = node => {
             this.inspector.inspectNode(node);
+            this.updateTwinSelection(node);
             this.switchTab('tab-inspector');
           };
         }
@@ -332,6 +341,42 @@ class SetuDashboardApp {
     } catch (wsErr) {
       console.error('AnalyticsWorkspace initialization error:', wsErr);
     }
+
+    // 8. Setu Twin: Procedural Wristband Twin Component
+    try {
+      const twinContainer = document.getElementById('containerWristbandTwin');
+      if (twinContainer) {
+        this.wristbandTwin = new WristbandTwinComponent(twinContainer, {
+          onTrigger: async (nodeId, kind) => {
+            if (this.mode === 'live') {
+              await this.executeNodeTrigger(nodeId, kind);
+            }
+          }
+        });
+      }
+    } catch (twinErr) {
+      console.error('WristbandTwin initialization error:', twinErr);
+    }
+
+    // 9. Setu Twin: Loss Budget Waterfall Component
+    try {
+      const waterfallContainer = document.getElementById('containerLossWaterfall');
+      if (waterfallContainer) {
+        this.lossWaterfall = new LossWaterfallComponent(waterfallContainer);
+      }
+    } catch (wfErr) {
+      console.error('LossWaterfall initialization error:', wfErr);
+    }
+
+    // 10. Setu Twin: 3D Navigable World Visualizer
+    try {
+      const twin3dContainer = document.getElementById('containerSetuTwinView');
+      if (twin3dContainer) {
+        this.setuTwin = new SetuTwin3DViewer(twin3dContainer);
+      }
+    } catch (t3dErr) {
+      console.error('SetuTwin3DViewer initialization error:', t3dErr);
+    }
   }
 
   initEvents() {
@@ -460,6 +505,23 @@ class SetuDashboardApp {
       if (this.analyticsWorkspace && this.containerAnalyticsView && this.containerAnalyticsView.style.display !== 'none') {
         this.analyticsWorkspace.refresh();
       }
+      if (this.setuTwin) {
+        this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+        if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
+        const recentEv = (this.sim.events && this.sim.events.length > 0)
+          ? this.sim.events.slice().reverse().find(e => e.t <= this.sim.currentTime)
+          : null;
+        if (recentEv) {
+          const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
+          if (narration) this.setuTwin.setNarratorText(narration);
+          if (recentEv.ev === 'tx') {
+            this.setuTwin.triggerPacketPulse(recentEv.node, recentEv.hazard, recentEv.hop);
+          }
+          if (recentEv.ev === 'haptic' && this.wristbandTwin) {
+            this.wristbandTwin.triggerHaptic();
+          }
+        }
+      }
       const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab;
       if (activeTab === 'tab-scientific') {
         this.renderSidebarQuickChart();
@@ -540,9 +602,12 @@ class SetuDashboardApp {
     // Ensure Backend Modal registration
     this.initBackendModal();
 
-    // View mode switching: Topology vs Scientific Analytics
+    // View mode switching: Topology vs Setu Twin 3D vs Scientific Analytics
     if (this.btnModeTopology) {
       this.btnModeTopology.addEventListener('click', () => this.setViewMode('topology'));
+    }
+    if (this.btnModeTwin) {
+      this.btnModeTwin.addEventListener('click', () => this.setViewMode('twin'));
     }
     if (this.btnModeAnalytics) {
       this.btnModeAnalytics.addEventListener('click', () => this.setViewMode('analytics'));
@@ -717,7 +782,7 @@ class SetuDashboardApp {
             const service = data.service || 'Backend Service';
             const engine = data.engine || 'FITL Simulator Core';
             const uptime = data.uptimeSeconds ? ` (uptime: ${data.uptimeSeconds}s)` : '';
-            lblEngineStatus.textContent = `● Online: ${service} / ${engine}${uptime} — HTTP 200`;
+            lblEngineStatus.textContent = `● Online: ${service} / ${engine}${uptime} | HTTP 200`;
             lblEngineStatus.style.color = '#10b981';
           } else {
             lblEngineStatus.textContent = `× Connection failed: ${result.error || `HTTP ${result.status}`}`;
@@ -794,26 +859,83 @@ class SetuDashboardApp {
 
   setViewMode(mode) {
     const isTopo = (mode === 'topology');
+    const isTwin = (mode === 'twin');
+    const isAnalytics = (mode === 'analytics');
+
     if (this.btnModeTopology) {
       this.btnModeTopology.classList.toggle('active', isTopo);
       this.btnModeTopology.style.background = isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
       this.btnModeTopology.style.color = isTopo ? '#38bdf8' : 'var(--text-muted)';
     }
-    if (this.btnModeAnalytics) {
-      this.btnModeAnalytics.classList.toggle('active', !isTopo);
-      this.btnModeAnalytics.style.background = !isTopo ? 'var(--bg-surface-elevated)' : 'transparent';
-      this.btnModeAnalytics.style.color = !isTopo ? '#38bdf8' : 'var(--text-muted)';
+    if (this.btnModeTwin) {
+      this.btnModeTwin.classList.toggle('active', isTwin);
+      this.btnModeTwin.style.background = isTwin ? 'var(--bg-surface-elevated)' : 'transparent';
+      this.btnModeTwin.style.color = isTwin ? '#38bdf8' : 'var(--text-muted)';
     }
+    if (this.btnModeAnalytics) {
+      this.btnModeAnalytics.classList.toggle('active', isAnalytics);
+      this.btnModeAnalytics.style.background = isAnalytics ? 'var(--bg-surface-elevated)' : 'transparent';
+      this.btnModeAnalytics.style.color = isAnalytics ? '#38bdf8' : 'var(--text-muted)';
+    }
+
     if (this.containerTopologyView) this.containerTopologyView.style.display = isTopo ? 'block' : 'none';
+    if (this.containerSetuTwinView) this.containerSetuTwinView.style.display = isTwin ? 'block' : 'none';
     if (this.containerAnalyticsView) {
-      this.containerAnalyticsView.style.display = !isTopo ? 'block' : 'none';
-      if (!isTopo && this.analyticsWorkspace) {
+      this.containerAnalyticsView.style.display = isAnalytics ? 'block' : 'none';
+      if (isAnalytics && this.analyticsWorkspace) {
         this.analyticsWorkspace.refresh();
       }
     }
+
+    if (isTwin && this.setuTwin) {
+      this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+      this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
+      this.setuTwin.setLinks(this.sim.links || []);
+      this.setuTwin.resizeCanvas();
+    }
+
     if (isTopo && this.topo) {
       this.topo.resize();
       this.topo.render();
+    }
+  }
+
+  updateTwinSelection(node) {
+    if (!node) return;
+    if (this.setuTwin) {
+      this.setuTwin.selectedNodeId = node.id;
+    }
+    let lb = null;
+    if (node.id !== 0) {
+      const hub = this.sim.nodes.get(0);
+      if (hub) {
+        const dist = Math.hypot((node.x || 0) - (hub.x || 60), (node.y || 0) - (hub.y || 60));
+        const pathLoss = 31.2 + 30.0 * Math.log10(Math.max(1.0, dist));
+        const shadowLoss = 4.0;
+        const totalLoss = pathLoss + shadowLoss;
+        const rxDbm = 14.0 - totalLoss;
+        const sens = -123.0;
+        lb = {
+          from: node.id,
+          to: 0,
+          dist,
+          distance_m: dist,
+          tx_power_dbm: 14.0,
+          path_loss_db: pathLoss,
+          obstacle_loss_db: 0.0,
+          body_loss_db: 0.0,
+          shadow_loss_db: shadowLoss,
+          rx_power_dbm: rxDbm,
+          sensitivity_dbm: sens,
+          link_margin_db: rxDbm - sens
+        };
+      }
+    }
+    if (this.wristbandTwin) {
+      this.wristbandTwin.updateNode(node, lb);
+    }
+    if (this.lossWaterfall && lb) {
+      this.lossWaterfall.update(lb);
     }
   }
 
@@ -1216,8 +1338,8 @@ class SetuDashboardApp {
       this.elStatusDot.classList.remove('simulating');
       const isSosConfirmed = fresh && (fresh.active_sos || fresh.active);
       this.elStatusText.textContent = isSosConfirmed
-        ? `NODE ${nodeId} SOS TRANSMITTING (${safeKind}) — CONFIRMED BY NATIVE ENGINE`
-        : `NODE ${nodeId} TRIGGER PROCESSED (${safeKind}) — NATIVE QUEUES DRAINED`;
+        ? `NODE ${nodeId} SOS TRANSMITTING (${safeKind}): CONFIRMED BY NATIVE ENGINE`
+        : `NODE ${nodeId} TRIGGER PROCESSED (${safeKind}): NATIVE QUEUES DRAINED`;
       return { ok: true, node: nodeId, kind };
     } catch (err) {
       this.elStatusDot.classList.remove('simulating');
@@ -1587,7 +1709,7 @@ class SetuDashboardApp {
             base,
             (attempt, maxAttempts, elapsedSec) => {
               if (this.elStatusText) {
-                this.elStatusText.textContent = `WAKING UP FREE BACKEND... (Attempt ${attempt}/${maxAttempts}, ${elapsedSec}s elapsed — cold starts take ~45-70s)`;
+                this.elStatusText.textContent = `WAKING UP FREE BACKEND... (Attempt ${attempt}/${maxAttempts}, ${elapsedSec}s elapsed; cold starts take ~45-70s)`;
               }
             },
             16,
@@ -1650,9 +1772,9 @@ class SetuDashboardApp {
 
           if (this.elStatusText) {
             if (this.sim.nodes.size > 0) {
-              this.elStatusText.textContent = `CORE C++ ENGINE ONLINE — ${this.sim.nodes.size} NODES ACTIVE (READY)`;
+              this.elStatusText.textContent = `CORE C++ ENGINE ONLINE: ${this.sim.nodes.size} NODES ACTIVE (READY)`;
             } else {
-              this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE — 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
+              this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE: 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
             }
           }
         } else {

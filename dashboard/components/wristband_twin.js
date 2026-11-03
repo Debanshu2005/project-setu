@@ -57,8 +57,8 @@ export class WristbandTwinComponent {
             <div>Ref Loss (1m): <span id="wtRefLoss" style="color:#f8fafc;">31.2 dB</span></div>
             <div>Path Loss: <span id="wtPathLoss" style="color:#f8fafc;">0.0 dB</span></div>
             <div>Shadow Loss: <span id="wtShadowLoss" style="color:#f8fafc;">0.0 dB</span></div>
-            <div>Obstacle Loss: <span style="color:#f59e0b; font-style:italic;">not modeled yet</span></div>
-            <div>Body Shadowing: <span style="color:#f59e0b; font-style:italic;">not modeled yet</span></div>
+            <div>Obstacle Loss: <span id="wtObstacleLoss" style="color:#f8fafc;">0.0 dB</span></div>
+            <div>Body Shadowing: <span id="wtBodyLoss" style="color:#f8fafc;">0.0 dB</span></div>
             <div>Receiver Sens: <span id="wtSens" style="color:#f8fafc;">-123.0 dBm</span></div>
             <div>Link Margin: <span id="wtLinkMargin" style="font-weight:bold; color:#10b981;">+0.0 dB</span></div>
           </div>
@@ -145,9 +145,13 @@ export class WristbandTwinComponent {
     if (lossBudget) {
       const elTx = document.getElementById('wtTxPower');
       const elPath = document.getElementById('wtPathLoss');
+      const elObs = document.getElementById('wtObstacleLoss');
+      const elBody = document.getElementById('wtBodyLoss');
       const elMargin = document.getElementById('wtLinkMargin');
       if (elTx) elTx.textContent = `${lossBudget.tx_power_dbm.toFixed(1)} dBm`;
       if (elPath) elPath.textContent = `${lossBudget.path_loss_db.toFixed(1)} dB`;
+      if (elObs) elObs.textContent = typeof lossBudget.obstacle === 'string' ? lossBudget.obstacle : `${(lossBudget.obstacle_loss_db || 0).toFixed(1)} dB`;
+      if (elBody) elBody.textContent = typeof lossBudget.body === 'string' ? lossBudget.body : `${(lossBudget.body_loss_db || 0).toFixed(1)} dB`;
       if (elMargin) {
         elMargin.textContent = `${lossBudget.link_margin_db >= 0 ? '+' : ''}${lossBudget.link_margin_db.toFixed(1)} dB`;
         elMargin.style.color = lossBudget.link_margin_db >= 0 ? '#10b981' : '#ef4444';

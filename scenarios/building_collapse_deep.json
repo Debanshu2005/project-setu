@@ -14,8 +14,8 @@
     "profile": "field"
   },
   "obstacles": [
-    { "id": 1, "label": "slab_floor_1", "material": "concrete", "x1": -200, "y1": 150, "x2": 400, "y2": 150, "thickness_m": 0.3, "attenuation_db": 22.0 },
-    { "id": 2, "label": "slab_floor_2", "material": "concrete", "x1": -200, "y1": 350, "x2": 400, "y2": 350, "thickness_m": 0.3, "attenuation_db": 22.0 }
+    { "id": 1, "label": "slab_floor_1", "material": "concrete", "x1": 150, "y1": 200, "x2": 700, "y2": 200, "thickness_m": 0.3, "attenuation_db": 22.0 },
+    { "id": 2, "label": "slab_floor_2", "material": "concrete", "x1": 50, "y1": 350, "x2": 700, "y2": 350, "thickness_m": 0.3, "attenuation_db": 22.0 }
   ],
   "triggers": [
     { "node": 3, "kind": "long", "t": 1500, "label": "Survivor 3: Trapped Under Slab (Long Press)" },
@@ -28,4 +28,3 @@
     { "kind": "motion", "target": "3", "profile": "fall_impact", "t": 100, "label": "Survivor 3: Fall Shock and Immobility" }
   ]
 }
-
