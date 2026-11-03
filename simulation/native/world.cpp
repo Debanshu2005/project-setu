@@ -70,6 +70,8 @@ struct World::SimNode {
   uint8_t initial_battery = 100;
   double battery_fraction = 100.0;
   double energy_consumed_mah = 0.0;
+  FallDetector fall_detector;
+  bool fall_sos_triggered = false;
   std::mt19937 rng;
   std::normal_distribution<double> gauss{0.0, 1.0};
 
@@ -192,12 +194,25 @@ struct World::SimNode {
       if (!n.dr_on) return false;
       int32_t gt_la = 0, gt_lo = 0;
       xy_to_e6(n.x, n.y, gt_la, gt_lo);
-      // Produce physical 3-axis IMU sample and integrate dead-reckoning
-      n.imu_sensor.update(n.w.now_);
-      // Error grows like a random walk since the last fix: 0.8 m * sqrt(seconds).
-      const double secs = std::max(1.0, (n.w.now_ - n.gnss_lost_at) / 1000.0 + 60.0);
-      const double s = 0.8 * std::sqrt(secs);
-      xy_to_e6(n.x + s * n.gauss(n.rng), n.y + s * n.gauss(n.rng), la, lo);
+      if (n.w.ch_.profile == RealismProfile::Baseline) {
+        // Produce physical 3-axis IMU sample and integrate dead-reckoning
+        n.imu_sensor.update(n.w.now_);
+        // Error grows like a random walk since the last fix: 0.8 m * sqrt(seconds).
+        const double secs = std::max(1.0, (n.w.now_ - n.gnss_lost_at) / 1000.0 + 60.0);
+        const double s = 0.8 * std::sqrt(secs);
+        xy_to_e6(n.x + s * n.gauss(n.rng), n.y + s * n.gauss(n.rng), la, lo);
+        n.pos_tracker.record_sample(n.x, n.y, gt_la, gt_lo, la, lo, true, false);
+        return true;
+      }
+      // Field profile: Physical step-and-heading pedestrian dead reckoning
+      ImuSample s = n.imu_sensor.update(n.w.now_);
+      const double secs = std::max(0.1, (n.w.now_ - n.gnss_lost_at) / 1000.0);
+      double heading_err = 0.005 * std::sqrt(secs) * n.gauss(n.rng);
+      double dr_heading = s.heading_rad + heading_err;
+      double bias_drift = 0.015 * secs * n.gauss(n.rng);
+      double dr_x = n.x + bias_drift * std::cos(dr_heading);
+      double dr_y = n.y + bias_drift * std::sin(dr_heading);
+      xy_to_e6(dr_x, dr_y, la, lo);
       n.pos_tracker.record_sample(n.x, n.y, gt_la, gt_lo, la, lo, true, false);
       return true;
     }
@@ -481,26 +496,50 @@ void World::button_press(uint16_t id, uint32_t at, uint32_t hold) {
     }
   });
 }
-void World::wake_word(uint16_t id, uint32_t at) {
-  schedule(at, [this, id] {
+void World::wake_word(uint16_t id, uint32_t at, double voice_spl_1m) {
+  schedule(at, [this, id, voice_spl_1m] {
     if (nodes_.at(id)->online && nodes_.at(id)->battery > 0) {
-      char b[64];
-      std::snprintf(b, sizeof b, ",\"phrase\":\"Setu\",\"window_ms\":3500");
-      trace_event("wake_word", id, b);
-      node(id).on_wake_word();
+      if (ch_.profile == RealismProfile::Baseline) {
+        char b[64];
+        std::snprintf(b, sizeof b, ",\"phrase\":\"Setu\",\"window_ms\":3500");
+        trace_event("wake_word", id, b);
+        node(id).on_wake_word();
+      } else {
+        double snr_db = 20.0;
+        bool detected = acoustic_model_.evaluate_trigger(voice_spl_1m, ch_.ambient_noise_spl, &snr_db);
+        char b[128];
+        std::snprintf(b, sizeof b, ",\"phrase\":\"Setu\",\"window_ms\":3500,\"snr_db\":%.1f,\"detected\":%s",
+                      snr_db, detected ? "true" : "false");
+        trace_event("wake_word", id, b);
+        if (detected) {
+          node(id).on_wake_word();
+        }
+      }
     }
   });
 }
-void World::voice_command(uint16_t id, uint32_t at, uint8_t contact, setu::Hazard hz) {
-  schedule(at, [this, id, contact, hz] {
+void World::voice_command(uint16_t id, uint32_t at, uint8_t contact, setu::Hazard hz, double voice_spl_1m) {
+  schedule(at, [this, id, contact, hz, voice_spl_1m] {
     if (nodes_.at(id)->online && nodes_.at(id)->battery > 0) {
       const char* hz_name = (hz == setu::Hazard::Medical) ? "medical" :
                             (hz == setu::Hazard::Trapped) ? "trapped" : "general";
-      char b[96];
-      std::snprintf(b, sizeof b, ",\"hazard\":%d,\"hazard_name\":\"%s\",\"contact\":%u,\"recognized\":true",
-                    static_cast<int>(hz), hz_name, contact);
-      trace_event("voice_command", id, b);
-      node(id).on_voice_command(contact, hz);
+      if (ch_.profile == RealismProfile::Baseline) {
+        char b[96];
+        std::snprintf(b, sizeof b, ",\"hazard\":%d,\"hazard_name\":\"%s\",\"contact\":%u,\"recognized\":true",
+                      static_cast<int>(hz), hz_name, contact);
+        trace_event("voice_command", id, b);
+        node(id).on_voice_command(contact, hz);
+      } else {
+        double snr_db = 20.0;
+        bool recognized = acoustic_model_.evaluate_trigger(voice_spl_1m, ch_.ambient_noise_spl, &snr_db);
+        char b[140];
+        std::snprintf(b, sizeof b, ",\"hazard\":%d,\"hazard_name\":\"%s\",\"contact\":%u,\"recognized\":%s,\"snr_db\":%.1f",
+                      static_cast<int>(hz), hz_name, contact, recognized ? "true" : "false", snr_db);
+        trace_event("voice_command", id, b);
+        if (recognized) {
+          node(id).on_voice_command(contact, hz);
+        }
+      }
     }
   });
 }
@@ -863,8 +902,26 @@ void World::run_until(uint32_t t_end) {
       }
     }
     // 2. every online device drains virtual FreeRTOS queues and runs real firmware tick
-    for (auto& kv : nodes_)
-      if (kv.second->online && kv.second->battery > 0) kv.second->drain_queues_and_tick();
+    for (auto& kv : nodes_) {
+      if (kv.second->online && kv.second->battery > 0) {
+        if (ch_.profile == RealismProfile::Field && ch_.enable_fall_detection &&
+            !kv.second->fall_sos_triggered &&
+            kv.second->imu_sensor.profile() == MotionProfile::FallImpact &&
+            kv.second->node->config().role == setu::Role::Survivor) {
+          ImuSample s = kv.second->imu_sensor.update(now_);
+          double total_g = std::sqrt(s.ax * s.ax + s.ay * s.ay + s.az * s.az) / Mpu6050SensorModel::kGravity;
+          kv.second->fall_detector.update(now_, total_g);
+          if (kv.second->fall_detector.is_fall_confirmed()) {
+            kv.second->fall_sos_triggered = true;
+            char fb[64];
+            std::snprintf(fb, sizeof fb, ",\"hazard\":2,\"action\":\"auto_trapped_sos\"");
+            trace_event("fall_impact_detected", kv.second->id, fb);
+            button_press(kv.second->id, now_, 1700);
+          }
+        }
+        kv.second->drain_queues_and_tick();
+      }
+    }
     // 3. transmissions that end now are delivered
     std::vector<Tx> done;
     for (auto& t : txs_)

@@ -136,7 +136,9 @@ async function runSuite() {
     throw new Error(`Golden baselines directory not found at ${GOLDEN_DIR}`);
   }
 
-  const scenarioFiles = fs.readdirSync(SCENARIOS_DIR).filter(f => f.endsWith('.json')).sort();
+  const scenarioFiles = fs.readdirSync(SCENARIOS_DIR)
+    .filter(f => f.endsWith('.json') && fs.existsSync(path.join(GOLDEN_DIR, `${path.basename(f, '.json')}.jsonl`)))
+    .sort();
   if (scenarioFiles.length === 0) {
     throw new Error('No scenario files found in scenarios directory');
   }

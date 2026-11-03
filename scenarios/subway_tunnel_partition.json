@@ -1,0 +1,28 @@
+{
+  "id": "subway_tunnel_partition",
+  "name": "Subterranean Metro Tunnel Structural Partition",
+  "description": "Linear subterranean transit corridor partitioned by collapsed tunnel bulkhead, requiring multi-hop relay bypassing and dead reckoning positioning.",
+  "params": {
+    "survivors": 15,
+    "relays": 5,
+    "zone": 1100,
+    "seed": 330,
+    "duration": 30000,
+    "sf": 9,
+    "loss": 0.06,
+    "path_exp": 3.6,
+    "profile": "field"
+  },
+  "obstacles": [
+    { "id": 10, "label": "tunnel_bulkhead_collapse", "material": "concrete", "x1": 350, "y1": -100, "x2": 350, "y2": 100, "thickness_m": 0.4, "attenuation_db": 35.0 }
+  ],
+  "triggers": [
+    { "node": 2, "kind": "long", "t": 2500, "label": "Survivor 2: Partitioned Section Trapped SOS" },
+    { "node": 8, "kind": "short", "t": 8000, "label": "Survivor 8: Train Cabin Evacuation SOS" }
+  ],
+  "faults": [
+    { "kind": "gps-off", "target": "2", "t": 50, "label": "Survivor 2: Underground Metro GNSS Denied" },
+    { "kind": "gps-off", "target": "8", "t": 50, "label": "Survivor 8: Underground Metro GNSS Denied" },
+    { "kind": "motion", "target": "2", "profile": "walking", "t": 500, "label": "Survivor 2: Walking Along Tunnel Track" }
+  ]
+}

@@ -1,0 +1,30 @@
+{
+  "id": "building_collapse_deep",
+  "name": "Deep Subterranean Concrete Collapse",
+  "description": "Reinforced concrete structural failure with multiple subterranean slabs, extreme RF penetration loss, GNSS denial, and IMU dead reckoning navigation.",
+  "params": {
+    "survivors": 20,
+    "relays": 5,
+    "zone": 800,
+    "seed": 108,
+    "duration": 30000,
+    "sf": 9,
+    "loss": 0.05,
+    "path_exp": 3.8,
+    "profile": "field"
+  },
+  "obstacles": [
+    { "id": 1, "label": "slab_floor_1", "material": "concrete", "x1": 150, "y1": 200, "x2": 700, "y2": 200, "thickness_m": 0.3, "attenuation_db": 22.0 },
+    { "id": 2, "label": "slab_floor_2", "material": "concrete", "x1": 50, "y1": 350, "x2": 700, "y2": 350, "thickness_m": 0.3, "attenuation_db": 22.0 }
+  ],
+  "triggers": [
+    { "node": 3, "kind": "long", "t": 1500, "label": "Survivor 3: Trapped Under Slab (Long Press)" },
+    { "node": 7, "kind": "voice-medical", "t": 5000, "label": "Survivor 7: Voice 'Setu - Medical Emergency'" },
+    { "node": 12, "kind": "short", "t": 9000, "label": "Survivor 12: General SOS" }
+  ],
+  "faults": [
+    { "kind": "gps-off", "target": "3", "t": 50, "label": "Survivor 3: Subterranean GNSS Loss" },
+    { "kind": "gps-off", "target": "7", "t": 50, "label": "Survivor 7: Subterranean GNSS Loss" },
+    { "kind": "motion", "target": "3", "profile": "fall_impact", "t": 100, "label": "Survivor 3: Fall Shock and Immobility" }
+  ]
+}

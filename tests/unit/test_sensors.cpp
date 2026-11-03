@@ -278,3 +278,67 @@ TEST(mpu6050_moving_profile_step_detection_and_kinematics) {
   CHECK(moving_steps >= 4);
   CHECK(moving_steps <= 6);
 }
+
+TEST(inmp441_acoustic_voice_trigger_and_noise_snr) {
+  // Voice inverse square law: 65 dB SPL at 1m is ~74 dB SPL at 0.35m
+  double mic_spl = AcousticVoiceModel::compute_received_voice_spl(65.0, 0.35);
+  CHECK(mic_spl > 73.0 && mic_spl < 76.0);
+
+  // Acoustic SNR: 74 dB voice in 45 dB quiet indoor ambient noise gives ~29 dB SNR
+  double snr_quiet = AcousticVoiceModel::compute_acoustic_snr(mic_spl, 45.0);
+  CHECK(snr_quiet > 28.0);
+
+  // Detection probability curve
+  CHECK(AcousticVoiceModel::detection_probability(20.0) > 0.95);
+  CHECK(std::abs(AcousticVoiceModel::detection_probability(6.0) - 0.50) < 0.05);
+  CHECK(AcousticVoiceModel::detection_probability(-5.0) < 0.15);
+
+  // Severe noise environment (92 dB SPL): shout (85 dB at 1m -> ~94 dB at mic)
+  double shout_mic = AcousticVoiceModel::compute_received_voice_spl(85.0, 0.35);
+  double snr_severe = AcousticVoiceModel::compute_acoustic_snr(shout_mic, 92.0);
+  CHECK(snr_severe < 5.0); // Marginally audible under severe machinery
+}
+
+TEST(mpu6050_fall_detector_three_stage_state_machine) {
+  FallDetector fd;
+  CHECK(fd.state() == FallDetector::State::Monitoring);
+
+  // 1. Normal movement (1.0g): stays in Monitoring
+  fd.update(50, 1.05);
+  CHECK(fd.state() == FallDetector::State::Monitoring);
+
+  // 2. Freefall dip (<0.6g at t=100ms)
+  fd.update(100, 0.25);
+  CHECK(fd.state() == FallDetector::State::FreefallDetected);
+
+  // 3. Shock impact (>3.0g at t=350ms)
+  fd.update(350, 4.8);
+  CHECK(fd.state() == FallDetector::State::ImpactDetected);
+
+  // 4. Post-impact immobility (1.0g +/- 0.1g for 2600ms)
+  for (uint32_t t = 400; t <= 3000; t += 100) {
+    fd.update(t, 1.01);
+  }
+  CHECK(fd.is_fall_confirmed());
+  CHECK(fd.state() == FallDetector::State::ConfirmedFall);
+}
+
+TEST(world_fall_impact_auto_sos_in_field_profile) {
+  ChannelParams ch;
+  ch.profile = RealismProfile::Field;
+  ch.enable_fall_detection = true;
+  World w(ch, 42);
+
+  setu::NodeConfig c;
+  c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
+  c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 100, 0);
+
+  // Set survivor motion profile to FallImpact
+  w.set_motion_profile(1, MotionProfile::FallImpact);
+
+  // Run world for 5500ms: fall detected at ~2900ms, 1500ms long-press hold fires at 4400ms
+  w.run_until(5500);
+
+  SimNodeInfo s1 = w.get_node_info(1);
+  CHECK(s1.active || s1.acked);
+}

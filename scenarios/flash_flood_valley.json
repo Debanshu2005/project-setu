@@ -1,0 +1,32 @@
+{
+  "id": "flash_flood_valley",
+  "name": "Flash Flood River Valley Rapid Inundation",
+  "description": "Torrential valley inundation with survivors drifting along fluid flow vectors, ridge relays maintaining line of sight elevation, and water dielectric RF attenuation.",
+  "params": {
+    "survivors": 18,
+    "relays": 4,
+    "zone": 1400,
+    "seed": 204,
+    "duration": 30000,
+    "sf": 8,
+    "loss": 0.04,
+    "path_exp": 3.2,
+    "profile": "field"
+  },
+  "fluid_drift": {
+    "vx": 2.5,
+    "vy": -0.8
+  },
+  "obstacles": [
+    { "id": 1, "label": "flood_channel", "material": "water", "x1": -100, "y1": 300, "x2": 800, "y2": 300, "thickness_m": 1.5, "attenuation_db": 45.0 }
+  ],
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 2000, "label": "Survivor 1: Drifting In Flood (General SOS)" },
+    { "node": 5, "kind": "double", "t": 6000, "label": "Survivor 5: Hypothermia Medical SOS" },
+    { "node": 10, "kind": "voice-trapped", "t": 12000, "label": "Survivor 10: Trapped on Debris Barrier" }
+  ],
+  "faults": [
+    { "kind": "motion", "target": "1", "profile": "irregular", "t": 100, "label": "Survivor 1: Violent Turbulent Motion" },
+    { "kind": "motion", "target": "5", "profile": "moving", "t": 100, "label": "Survivor 5: Steady River Drift" }
+  ]
+}

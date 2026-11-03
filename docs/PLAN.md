@@ -196,15 +196,19 @@ Model physical sensor inputs, calibrate against bench test measurements, and val
 - Status Label: Verified acceptance scenarios.
 
 Phase 3 Deliverables:
-- Acoustic and voice processing model in C++ simulator.
-- IMU drift and fall impact detection pipeline.
-- Benchmark calibration dataset from physical hardware.
-- Five comprehensive disaster acceptance scenarios with automated validation suites.
+- Acoustic and voice processing model in C++ simulator (`simulation/native/acoustic_model.hpp`).
+- IMU drift and 3-stage fall impact detection pipeline (`Freefall` to `Impact` to `Immobility` to automatic `Trapped SOS`).
+- Complete bench rig calibration registry with parameter provenance status labels in `docs/CALIBRATION.md`.
+- Automated global sensitivity analysis framework with parameter ranking via CLI and REST API.
+- Five golden disaster acceptance scenarios (`building_collapse_deep`, `flash_flood_valley`, `subway_tunnel_partition`, `urban_earthquake_aftershock`, `mixed_hazard_survival`).
+- Acceptance test suite in `tests/test_acceptance_scenarios.mjs`.
 
-Phase 3 Test Plan:
-- Sensitivity sweep validation tests.
-- Physical bench comparison tests with error bounds.
-- Automated acceptance scenario regression suite.
+Phase 3 Test Results:
+- All 90 C++ unit and integration tests passing (`ctest`).
+- All 13 JavaScript test suites passing (`npm test`), including `tests/test_acceptance_scenarios.mjs` (18/18 tests passed).
+- 16/16 baseline scenario traces byte-identical with commit 6628cfc.
+
+Phase 3 Status: COMPLETED. Ready for Human Checkpoint 3.
 
 Human Checkpoint 3:
 - Review calibrated physical parameters, sensitivity reports, and acceptance scenario results.

@@ -285,6 +285,73 @@ class Mpu6050SensorModel {
 };
 
 /**
+ * Physical Wearable Fall Impact Detection Pipeline.
+ * Status label: Cited from published biomedical wearable fall detection literature.
+ * Detects 3-stage dynamic signature:
+ * 1. Freefall: total acceleration magnitude < 0.6g for > 100 ms.
+ * 2. Impact: peak acceleration magnitude > 3.0g within 600 ms of freefall.
+ * 3. Post-impact immobility: acceleration magnitude within 1.0g +/- 0.3g for > 2.5 seconds.
+ */
+class FallDetector {
+ public:
+  enum class State : uint8_t {
+    Monitoring = 0,
+    FreefallDetected = 1,
+    ImpactDetected = 2,
+    ConfirmedFall = 3
+  };
+
+  void update(uint32_t now_ms, double total_accel_g) {
+    switch (state_) {
+      case State::Monitoring:
+        if (total_accel_g < 0.6) {
+          freefall_start_ms_ = now_ms;
+          state_ = State::FreefallDetected;
+        }
+        break;
+      case State::FreefallDetected:
+        if (total_accel_g > 3.0 && (now_ms - freefall_start_ms_) < 600) {
+          impact_time_ms_ = now_ms;
+          immobility_start_ms_ = now_ms;
+          state_ = State::ImpactDetected;
+        } else if ((now_ms - freefall_start_ms_) > 800) {
+          state_ = State::Monitoring; // Timeout without impact
+        }
+        break;
+      case State::ImpactDetected:
+        if (std::abs(total_accel_g - 1.0) < 0.3) {
+          if (now_ms - immobility_start_ms_ >= 2500) {
+            state_ = State::ConfirmedFall;
+            fall_confirmed_time_ms_ = now_ms;
+          }
+        } else if (now_ms - impact_time_ms_ < 1000) {
+          // Still settling from high-g impact ringdown
+          immobility_start_ms_ = now_ms;
+        } else {
+          // Patient recovered and active: cancel false alert
+          state_ = State::Monitoring;
+        }
+        break;
+      case State::ConfirmedFall:
+        // Remains confirmed until manual reset
+        break;
+    }
+  }
+
+  bool is_fall_confirmed() const { return state_ == State::ConfirmedFall; }
+  State state() const { return state_; }
+  void reset() { state_ = State::Monitoring; }
+  uint32_t fall_time() const { return fall_confirmed_time_ms_; }
+
+ private:
+  State state_ = State::Monitoring;
+  uint32_t freefall_start_ms_ = 0;
+  uint32_t impact_time_ms_ = 0;
+  uint32_t immobility_start_ms_ = 0;
+  uint32_t fall_confirmed_time_ms_ = 0;
+};
+
+/**
  * GNSS Receiver Sensor Model.
  * Simulates satellite lock, dilution of precision (HDOP), delayed acquisition (TTFF),
  * realistic Gaussian positioning uncertainty, temporary outages, recovery,

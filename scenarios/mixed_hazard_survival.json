@@ -1,0 +1,26 @@
+{
+  "id": "mixed_hazard_survival",
+  "name": "Mixed Multi-Hazard Complex Disaster Network",
+  "description": "Multi-hazard scenario featuring automatic fall detection escalation, voice triggers under elevated ambient rubble noise, relay battery depletion, and self-healing multi-hop routing.",
+  "params": {
+    "survivors": 20,
+    "relays": 5,
+    "zone": 1000,
+    "seed": 555,
+    "duration": 30000,
+    "sf": 8,
+    "loss": 0.03,
+    "path_exp": 3.3,
+    "profile": "field"
+  },
+  "triggers": [
+    { "node": 1, "kind": "voice-medical", "t": 1500, "label": "Survivor 1: Shouted Voice Medical SOS" },
+    { "node": 4, "kind": "double", "t": 6000, "label": "Survivor 4: Severe Bleeding Medical SOS" },
+    { "node": 8, "kind": "short", "t": 12000, "label": "Survivor 8: Evacuation General SOS" }
+  ],
+  "faults": [
+    { "kind": "motion", "target": "2", "profile": "fall_impact", "t": 500, "label": "Survivor 2: Balcony Fall Impact and Immobility" },
+    { "kind": "battery", "target": "100", "battery": 1, "t": 3000, "label": "Relay 100: Critical Battery Exhaustion" },
+    { "kind": "kill", "target": "100", "t": 5000, "label": "Relay 100: Node Power Exhausted" }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "id": "urban_earthquake_aftershock",
+  "name": "High-Density Urban Earthquake Simultaneous Aftershock",
+  "description": "Massive urban disaster scenario testing mesh contention, listen-before-talk deferrals, and SX1262 capture effect under simultaneous emergency transmissions.",
+  "params": {
+    "survivors": 30,
+    "relays": 6,
+    "zone": 1000,
+    "seed": 444,
+    "duration": 35000,
+    "sf": 7,
+    "loss": 0.04,
+    "path_exp": 3.4,
+    "profile": "field"
+  },
+  "obstacles": [
+    { "id": 1, "label": "collapsed_brick_building", "material": "brick", "x1": 150, "y1": -300, "x2": 150, "y2": 300, "thickness_m": 0.4, "attenuation_db": 18.0 }
+  ],
+  "triggers": [
+    { "node": 1, "kind": "short", "t": 1000, "label": "Survivor 1: Initial Aftershock SOS" },
+    { "node": 2, "kind": "short", "t": 1100, "label": "Survivor 2: Aftershock Panic Burst" },
+    { "node": 3, "kind": "double", "t": 1250, "label": "Survivor 3: Medical Emergency" },
+    { "node": 4, "kind": "long", "t": 1400, "label": "Survivor 4: Trapped in Stairwell" },
+    { "node": 5, "kind": "short", "t": 1600, "label": "Survivor 5: General Alarm" },
+    { "node": 6, "kind": "voice-medical", "t": 1800, "label": "Survivor 6: Voice Medical SOS" },
+    { "node": 7, "kind": "short", "t": 2000, "label": "Survivor 7: Burst Transmission" },
+    { "node": 8, "kind": "double", "t": 2200, "label": "Survivor 8: Concussion Medical SOS" },
+    { "node": 9, "kind": "long", "t": 2500, "label": "Survivor 9: Pinned Under Column" },
+    { "node": 10, "kind": "short", "t": 3000, "label": "Survivor 10: Street Level Alarm" }
+  ],
+  "faults": [
+    { "kind": "battery", "target": "101", "battery": 35, "t": 0, "label": "Relay 101: Depleted Battery After Initial Quake" }
+  ]
+}

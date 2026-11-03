@@ -1586,6 +1586,38 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // GET / POST /api/control/sensitivity-sweep
+  if ((req.method === 'GET' || req.method === 'POST') && pathname === '/api/control/sensitivity-sweep') {
+    try {
+      const simPath = findSimulator();
+      if (!simPath) {
+        return sendError(res, 500, 'Simulator binary (setu_sim) not found.', req);
+      }
+      const searchParams = reqUrl.searchParams;
+      const seed = Math.max(0, parseInt(searchParams.get('seed') || 42, 10));
+      const args = ['--sensitivity-sweep', '--seed', String(seed)];
+      const child = spawn(simPath, args, { cwd: ROOT_DIR });
+      let stdoutData = '';
+      let stderrData = '';
+      child.stdout.on('data', chunk => { stdoutData += chunk; });
+      child.stderr.on('data', chunk => { stderrData += chunk; });
+      child.on('close', code => {
+        if (code !== 0) {
+          return sendError(res, 500, `Sensitivity sweep failed with code ${code}: ${stderrData || stdoutData}`, req);
+        }
+        try {
+          const parsed = JSON.parse(stdoutData);
+          return sendJson(res, 200, parsed, req);
+        } catch {
+          return sendJson(res, 200, { raw: stdoutData }, req);
+        }
+      });
+      return;
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
   // POST /api/control/reposition
   if (req.method === 'POST' && pathname === '/api/control/reposition') {
     try {
@@ -1709,6 +1741,19 @@ const server = http.createServer(async (req, res) => {
       const vy = parseFloat(body.vy || 0);
       const result = await simManager.sendCommand({ cmd: 'set_fluid_drift', vx, vy });
       return sendJson(res, 200, { success: true, result, vx, vy }, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
+  // POST /api/control/ambient-noise
+  if (req.method === 'POST' && pathname === '/api/control/ambient-noise') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const spl = parseFloat(body.spl !== undefined ? body.spl : (body.spl_db !== undefined ? body.spl_db : 55.0));
+      const result = await simManager.sendCommand({ cmd: 'set_ambient_noise', spl });
+      return sendJson(res, 200, { success: true, result, spl }, req);
     } catch (err) {
       return sendError(res, errorStatus(err), err.message, req);
     }

@@ -14,6 +14,7 @@
 #include "setu/node.hpp"
 #include "sensor_models.hpp"
 #include "rf_environment.hpp"
+#include "acoustic_model.hpp"
 
 namespace sim {
 
@@ -81,6 +82,8 @@ struct ChannelParams {
   bool enable_obstacles = true;        // ray-cast against polygonal obstacles in Field profile
   bool enable_body_shadowing = true;   // 15dB human torso absorption sector in Field profile
   FluidDriftField fluid_drift;         // kinematic flood drift field in meters per second
+  double ambient_noise_spl = 55.0;     // ambient acoustic noise in dB SPL (disaster background)
+  bool enable_fall_detection = true;   // automatic fall impact shock detection in Field profile
   // Configurable battery consumption simulation parameters
   double tx_energy_pct = 0.5;          // energy consumed per LoRa transmission (%)
   double rx_energy_pct = 0.1;          // energy consumed per packet reception (%)
@@ -180,8 +183,11 @@ class World {
 
   // --- virtual user input (drives the real button classifier) ---
   void button_press(uint16_t id, uint32_t at_ms, uint32_t hold_ms);
-  void wake_word(uint16_t id, uint32_t at_ms);
-  void voice_command(uint16_t id, uint32_t at_ms, uint8_t contact, setu::Hazard hz);
+  void wake_word(uint16_t id, uint32_t at_ms, double voice_spl_1m = 85.0);
+  void voice_command(uint16_t id, uint32_t at_ms, uint8_t contact, setu::Hazard hz, double voice_spl_1m = 85.0);
+  void set_ambient_noise_spl(double spl_db) { ch_.ambient_noise_spl = spl_db; }
+  double ambient_noise_spl() const { return ch_.ambient_noise_spl; }
+  AcousticVoiceModel& acoustic_model() { return acoustic_model_; }
   void trigger_all_survivors(setu::Hazard hz, uint32_t delay_spread_ms = 0, const std::string& kind = "short");
 
   void run_until(uint32_t t_ms);
@@ -244,6 +250,7 @@ class World {
   Counters counters_;
   std::ostream* trace_ = nullptr;
   std::vector<Obstacle> obstacles_;
+  AcousticVoiceModel acoustic_model_;
 };
 
 // Hub in a corner, relays on a loose grid, survivors scattered. Retries seeds until the
