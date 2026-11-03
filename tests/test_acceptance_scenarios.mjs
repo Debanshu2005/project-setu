@@ -126,8 +126,9 @@ async function runScenario(scenarioFile) {
 
   const simBin = findSimulator(ROOT_DIR) || getSimBin();
   const res = spawnSync(simBin, args, { cwd: ROOT_DIR, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
-  if (res.status !== 0) {
-    throw new Error(`setu_sim failed for ${scenarioFile} with code ${res.status}: ${res.stderr || res.stdout}`);
+  if (res.status !== 0 || res.error) {
+    const errDetail = res.error ? res.error.message : (res.stderr || res.stdout);
+    throw new Error(`setu_sim failed for ${scenarioFile} with code ${res.status}: ${errDetail}`);
   }
 
   const events = (res.stdout || '')
