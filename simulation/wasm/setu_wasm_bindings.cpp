@@ -138,3 +138,4 @@ EMSCRIPTEN_BINDINGS(setu_wasm_module) {
       .function("get_summary_json", &setu_wasm::WasmSimSession::get_summary_json);
 }
 #endif
+

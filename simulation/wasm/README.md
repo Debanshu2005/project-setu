@@ -61,3 +61,4 @@ console.log("Obstacle loss:", lossBudget.obstacle_loss); // "not modeled yet"
 - Exact physics parity: Compiles the exact same C++ sources (`world.cpp`, `node.cpp`, `button.cpp`).
 - Zero npm runtime dependencies.
 - Deterministic trace generation across desktop, serverless, and browser execution.
+
