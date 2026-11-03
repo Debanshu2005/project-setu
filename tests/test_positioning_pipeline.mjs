@@ -15,11 +15,12 @@ import {
   computePositionErrorM
 } from '../dashboard/src/simulation.js';
 import { InspectorComponent } from '../dashboard/components/inspector.js';
+import { findSimulator } from '../dashboard/sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
-const NATIVE_BIN = path.resolve(ROOT, 'build', 'Release', 'setu_sim.exe');
+const NATIVE_BIN = findSimulator(ROOT);
 
 let passedAssertions = 0;
 let failedAssertions = 0;

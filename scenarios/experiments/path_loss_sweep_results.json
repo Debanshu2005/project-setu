@@ -1,4 +1,4 @@
-﻿{"experiment":"path_loss_sweep","seed":42,"fixed_params":{"tx_dbm":14.0,"freq_hz":868000000,"bw_hz":125000,"sf":7,"cr":"4/5","payload_bytes":25},"results":[
+{"experiment":"path_loss_sweep","seed":42,"fixed_params":{"tx_dbm":14.0,"freq_hz":868000000,"bw_hz":125000,"sf":7,"cr":"4/5","payload_bytes":25},"results":[
   {"path_exp":2,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
   {"path_exp":2.25,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},
   {"path_exp":2.5,"delivered":true,"pdr_pct":100,"acked":true,"latency_ms":62,"retries":0,"relay_tx":2,"tx_total":4,"drops":{"weak":0,"collision":0,"halfduplex":0,"lost":0}},

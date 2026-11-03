@@ -14,14 +14,13 @@ import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import { findSimulator } from '../dashboard/sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, '..');
 
-const simPath = process.platform === 'win32'
-  ? path.join(ROOT_DIR, 'build', 'Release', 'setu_sim.exe')
-  : path.join(ROOT_DIR, 'build', 'setu_sim');
+const simPath = findSimulator(ROOT_DIR);
 
 const TEST_PORT = 3209;
 const BASE_URL = `http://127.0.0.1:${TEST_PORT}`;

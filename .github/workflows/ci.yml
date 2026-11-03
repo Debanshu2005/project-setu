@@ -85,7 +85,7 @@ jobs:
   # Job 4: Node.js Backend & API Verification
   # ----------------------------------------------------------------------------
   backend-and-scenario-checks:
-    name: Backend API & Scenario Validation
+    name: All JavaScript Test Suites (Linux Node 20)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -111,7 +111,7 @@ jobs:
           cmake --build build --config Release -j$(nproc)
 
       - name: Run automated backend test suite
-        run: node tests/test_backend.mjs
+        run: npm test
 
   # ----------------------------------------------------------------------------
   # Job 5: ESP-IDF ESP32-S3 Target Firmware Build Verification

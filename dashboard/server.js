@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { findSimulator } from './sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -57,27 +58,6 @@ function validateSimulationParams(params = {}) {
     normalized[name] = value;
   }
   return normalized;
-}
-
-// Locate setu_sim executable
-function findSimulator() {
-  if (process.env.SETU_SIM_PATH && fs.existsSync(process.env.SETU_SIM_PATH)) {
-    return process.env.SETU_SIM_PATH;
-  }
-  const candidates = [
-    // Standard Windows build paths
-    path.join(ROOT_DIR, 'build', 'Release', 'setu_sim.exe'),
-    path.join(ROOT_DIR, 'build', 'setu_sim.exe'),
-    path.join(ROOT_DIR, 'setu_sim.exe'),
-    // Standard Linux / Docker / Cloud VM build paths
-    path.join(ROOT_DIR, 'build', 'setu_sim'),
-    path.join(ROOT_DIR, 'build', 'Release', 'setu_sim'),
-    path.join(ROOT_DIR, 'setu_sim')
-  ];
-  for (const c of candidates) {
-    if (fs.existsSync(c)) return c;
-  }
-  return null;
 }
 
 // Retrieve actual deployment build metadata without hardcoding git SHAs

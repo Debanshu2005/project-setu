@@ -7,6 +7,7 @@ import { Exporter } from '../dashboard/src/exporter.js';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { findSimulator } from '../dashboard/sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -282,7 +283,10 @@ console.log('\n[5/6] Testing Interactive Event Linkage for Timeline Navigation..
 console.log('\n[6/6] Testing Native C++ Engine Output & Latency Parity...');
 
 async function runNativeSimTest() {
-  const simExe = path.join(rootDir, 'build', 'Release', 'setu_sim.exe');
+  const simExe = findSimulator(rootDir);
+  if (!simExe) {
+    throw new Error('Simulator binary not found.');
+  }
 
   return new Promise((resolve, reject) => {
     // Launch native simulator: 5 survivors, 2 relays, seed 42, 5s duration, trigger node 1 short SOS
@@ -536,7 +540,10 @@ console.log('\n[7/7] Testing Controlled Trace PDR Scenarios & Energy Model Telem
 
 // Scenario 7.8: Native Simulator C++ Trace and Metrics Parity
 {
-  const simExe = path.join(rootDir, 'build', 'Release', 'setu_sim.exe');
+  const simExe = findSimulator(rootDir);
+  if (!simExe) {
+    throw new Error('Simulator binary not found.');
+  }
   await new Promise((resolve, reject) => {
     // Run native sim with trace output
     const proc = spawn(simExe, [

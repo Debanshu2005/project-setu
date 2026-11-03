@@ -142,14 +142,18 @@ project-setu/
 │   ├── integration/
 │   │   └── test_mesh.cpp        # 15 end-to-end multi-hop mesh integration tests
 │   ├── unit/
-│   │   ├── test_core.cpp        # 40 core protocol and serialization unit tests
-│   │   └── test_firmware_mocks.cpp # 25 FreeRTOS FITL, sensor fusion, and driver unit tests
-│   ├── test_backend.mjs         # 165 backend API, security, and lifecycle integration tests
-│   ├── test_custom_simulation.mjs # 81 role contract and parameter validation tests
-│   ├── test_reliability.mjs     # 41 cloud reliability, concurrency, and latency tests
+│   │   ├── test_core.cpp        # Core protocol and serialization unit tests
+│   │   └── test_firmware_mocks.cpp # FreeRTOS FITL, sensor fusion, and driver unit tests
+│   ├── test_analytics.mjs       # Authoritative analytics and metric tests
+│   ├── test_backend.mjs         # Backend API, security, and lifecycle integration tests
+│   ├── test_custom_simulation.mjs # Role contracts and parameter validation tests
+│   ├── test_inspector_settings.mjs # Inspector settings persistence tests
+│   ├── test_path_loss_exponent.mjs # Path loss exponent sweep and topology diagnostics tests
+│   ├── test_positioning_pipeline.mjs # Ground truth vs dead-reckoning positioning tests
+│   ├── test_reliability.mjs     # Cloud reliability, concurrency, and latency tests
 │   ├── test_scientific_analytics.mjs # Sliding-window PDR and throughput tests
 │   ├── test_scientific_dashboard_ui.mjs # Frontend visualizer DOM and chart tests
-│   └── test_simulator_js.mjs    # 163 portable JS simulator engine parity tests
+│   └── test_simulator_js.mjs    # Portable JS engine formula parity tests
 ├── CMakeLists.txt               # Master CMake configuration for C++ core and simulator
 ├── Dockerfile                   # Multi-stage container build (C++ compiler -> minimal Node.js runtime)
 ├── package.json                 # Node.js project manifest & automated test scripts
@@ -221,17 +225,17 @@ Project Setu defines a compact, fixed 25-byte binary frame optimized for extreme
  0                   1                   2                   3
  0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|       Magic: 'S' 'T'          |        Origin Node ID         |
+|        Origin Node ID         |        Sequence Number        |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|        Sequence Number        |        Target Node ID         |
+|        Target Node ID         |     Reference Sequence        |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|     Reference Sequence        |  Hazard Enum  | Flags Bitfield|
+|  Hazard Enum  | Flags Bitfield|    Latitude (microdegrees)    |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|                     Latitude (microdegrees)                   |
+|   Lat (cont)  |            Longitude (microdegrees)           |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|                    Longitude (microdegrees)                   |
+|   Lon (cont)  |               Timestamp (Unix s)              |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-|  Battery Pct  |   Hop Count   | Contact Code  |    CRC-8      |
+|   Ts (cont)   |  Battery Pct  |   Hop Count   | Contact Code  |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
 
@@ -239,19 +243,18 @@ Project Setu defines a compact, fixed 25-byte binary frame optimized for extreme
 
 | Byte Offset | Field | Type | Description |
 | :---: | :--- | :--- | :--- |
-| `[00 - 01]` | **Magic** | `uint8_t[2]` | Framing preamble bytes: `0x53` (`'S'`), `0x54` (`'T'`). Packets lacking this signature are rejected. |
-| `[02 - 03]` | **Node ID** | `uint16_t` | Originator device ID ($1 - 99$: Survivors, $100 - 199$: Relays, $0$: Central Command Hub). |
-| `[04 - 05]` | **Seq Number** | `uint16_t` | Monotonically increasing sequence number per originating node. Increments on retries. |
-| `[06 - 07]` | **Target ID** | `uint16_t` | Destination device ID. Set to `0xFFFF` (Broadcast) for SOS alerts; set to victim Node ID for ACKs. |
-| `[08 - 09]` | **Ref Seq** | `uint16_t` | Echoed sequence number in ACK packets, confirming the exact SOS sequence received. |
-| `[10]` | **Hazard Enum** | `uint8_t` | Emergency classification: `0`: General SOS, `1`: Medical Emergency, `2`: Trapped under Debris, `3`: Fire / Hazard. |
-| `[11]` | **Flags Bitfield** | `uint8_t` | Bit 0: `kFlagGps` (valid GNSS fix), Bit 1: `kFlagAck` (packet is an ACK), Bit 2: `kFlagDr` (dead-reckoned position). |
-| `[12 - 15]` | **Latitude** | `int32_t` | WGS84 Latitude scaled by $10^6$ (microdegrees). Range: $-90 \times 10^6$ to $+90 \times 10^6$. |
-| `[16 - 19]` | **Longitude** | `int32_t` | WGS84 Longitude scaled by $10^6$ (microdegrees). Range: $-180 \times 10^6$ to $+180 \times 10^6$. |
-| `[20]` | **Battery** | `uint8_t` | Current battery level ($0 - 100\%$). When battery hits $0\%$, transmissions cut off. |
-| `[21]` | **Hop Count** | `uint8_t` | Traversal distance ($0$ at origin; incremented by $+1$ at each relay hop; max $8$ hops). |
-| `[22]` | **Contact Code**| `uint8_t` | Encoded recipient / team slot or wake-word status indicator. |
-| `[23 - 24]` | **CRC-8 / Pad** | `uint8_t[2]` | Data integrity verification check and frame boundary padding. |
+| `[00 - 01]` | **Node ID** | `uint16_t` | Originator device ID ($1 - 99$: Survivors, $100 - 199$: Relays, $0$: Central Command Hub). |
+| `[02 - 03]` | **Seq Number** | `uint16_t` | Monotonically increasing sequence number per originating node. Increments on retries. |
+| `[04 - 05]` | **Target ID** | `uint16_t` | Destination device ID. Set to `0xFFFF` (Broadcast) for SOS alerts; set to victim Node ID for ACKs. |
+| `[06 - 07]` | **Ref Seq** | `uint16_t` | Echoed sequence number in ACK packets, confirming the exact SOS sequence received. |
+| `[08]` | **Hazard Enum** | `uint8_t` | Emergency classification: `0`: General SOS, `1`: Medical Emergency, `2`: Trapped under Debris. |
+| `[09]` | **Flags Bitfield** | `uint8_t` | Bit 0: `kFlagGps` (valid GNSS fix), Bit 1: `kFlagAck` (packet is an ACK), Bit 2: `kFlagDr` (dead-reckoned position). |
+| `[10 - 13]` | **Latitude** | `int32_t` | Signed WGS84 Latitude scaled by $10^6$ (microdegrees). Range: $-90 \times 10^6$ to $+90 \times 10^6$. |
+| `[14 - 17]` | **Longitude** | `int32_t` | Signed WGS84 Longitude scaled by $10^6$ (microdegrees). Range: $-180 \times 10^6$ to $+180 \times 10^6$. |
+| `[18 - 21]` | **Timestamp** | `uint32_t` | Unix epoch timestamp in seconds. |
+| `[22]` | **Battery** | `uint8_t` | Current battery level ($0 - 100\%$). When battery hits $0\%$, transmissions cut off. |
+| `[23]` | **Hop Count** | `uint8_t` | Traversal distance ($0$ at origin; incremented by $+1$ at each relay hop; max $32$ hops). |
+| `[24]` | **Contact Code**| `uint8_t` | Encoded recipient or team slot from fixed vocabulary ($0$ = none). |
 
 ---
 
@@ -278,10 +281,11 @@ Project Setu defines a compact, fixed 25-byte binary frame optimized for extreme
 ```
 
 ### 5.1. Panic Button Classification Engine
-A state machine inside [`shared/src/button.cpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/shared/src/button.cpp) classifies button taps into hazards:
-- **Short Press ($\le 300\text{ ms}$)**: Dispatches **General SOS** (`Hazard::General`).
-- **Double Press (two presses within $400\text{ ms}$)**: Dispatches **Trapped under Debris** (`Hazard::Trapped`).
-- **Long Press (held $\ge 1200\text{ ms}$)**: Dispatches **Medical Emergency** (`Hazard::Medical`).
+A state machine inside [`shared/src/button.cpp`](shared/src/button.cpp) classifies button taps into hazards:
+- **Short Press (< 500 ms)**: Dispatches **General SOS** (`Hazard::General`).
+- **Double Press (gap < 600 ms)**: Dispatches **Medical Emergency** (`Hazard::Medical`).
+- **Long Press (held >= 1500 ms)**: Dispatches **Trapped under Debris** (`Hazard::Trapped`).
+- **Invalid Press (held 500 ms to 1500 ms)**: Rejected without guessing, plays haptic reject pattern.
 - **Voice Fallback**: Detection of wake-word ("Setu") without an attached voice slot defaults to a General SOS.
 
 ### 5.2. Multi-Hop Forwarding & Duplicate Suppression (`dedup_`)
@@ -428,21 +432,25 @@ cmake --build build --config Release -j$(nproc)
 ctest --test-dir build -C Release --output-on-failure
 ```
 
-CTest executes **80 native test cases**:
-- **65 Unit Tests (`setu_unit_tests`)**: Verifies 25-byte wire packing, bitfields, panic button edge timing, sliding deduplication, duty-cycle limits, Semtech airtime, MPU6050 step detection, and FreeRTOS task queues.
+CTest executes **93 native test cases**:
+- **78 Unit Tests (`setu_unit_tests`)**: Verifies 25-byte wire packing, bitfields, panic button edge timing, sliding deduplication, duty-cycle limits, Semtech airtime, MPU6050 step detection, and FreeRTOS task queues.
 - **15 Integration Tests (`setu_integration_tests`)**: Simulates 15-node to 30-node mesh disaster scenarios, blocked link rerouting, dead relay survival, retry exhaustion, and sub-sensitivity co-channel collisions.
 
 ### 10.3. Run the Node.js Automated Test Suites
 ```bash
-# Run all 8 JavaScript test suites (500+ assertions)
+# Run all 10 JavaScript test suites (850+ assertions)
 npm test
 ```
 The test suite validates:
 1. `test_custom_simulation.mjs`: Role contracts, role aliases, and fault tolerances.
-2. `test_reliability.mjs`: Cloud concurrency pool, FIFO queueing, and sub-10ms API latency.
+2. `test_reliability.mjs`: Cloud concurrency pool, FIFO queueing, and low API latency.
 3. `test_backend.mjs`: Dual `/version` endpoints, CORS security, and interactive C++ lifecycle.
-4. `test_simulator_js.mjs`: Bit-level parity between C++ and JS physical engines.
+4. `test_simulator_js.mjs`: Formula parity (airtime, sensitivity, path loss) between C++ and JS engines.
 5. `test_analytics.mjs` & `test_scientific_analytics.mjs`: Sliding-window PDR, throughput, and bottleneck index.
+6. `test_positioning_pipeline.mjs`: GNSS fix status, outage drift, and dead-reckoning metrics.
+7. `test_path_loss_exponent.mjs`: Path loss sweep experiments and topology diagnostics.
+8. `test_inspector_settings.mjs`: Settings persistence across simulation lifecycles.
+9. `test_scientific_dashboard_ui.mjs`: Visualizer DOM rendering and UI components.
 
 ### 10.4. Compile Firmware Targets
 ```bash
@@ -498,7 +506,7 @@ Project Setu is engineered for rigorous scientific peer review:
 1. **Deterministic PRNG Sequencing**: Discrete event schedules and node positions are strictly reproducible across simulation runs when using the same seed.
 2. **Honest Metric Denominators**: Packet Delivery Ratio (PDR) is evaluated both per-packet and per-unique-emergency to avoid inflated delivery statistics.
 3. **No Synthetic Telemetry**: All SNR and RSSI metrics emitted in trace logs correspond directly to physical log-distance path loss, noise floor calculations, and cumulative SINR equations.
-4. **Independent Physical Validation**: Sub-sensitivity interference sums and capture effect dynamics have been independently validated against Semtech AN1200.13 application notes and standard discrete-event wireless simulation methodologies.
+4. **Physical Validation**: Attenuation, receiver sensitivity, and capture dynamics are verified against theoretical propagation models and Semtech AN1200.13 application note specifications. Physical hardware bench testing and field calibration are planned.
 
 ---
 
