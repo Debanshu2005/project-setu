@@ -32,3 +32,4 @@
     { "kind": "battery", "target": "101", "battery": 35, "t": 0, "label": "Relay 101: Depleted Battery After Initial Quake" }
   ]
 }
+

@@ -81,3 +81,4 @@ The 5 golden disaster acceptance scenarios validate system survivability under e
 3. **`subway_tunnel_partition`**: PDR $\ge 90\%$, multi-hop routing successfully bridges collapsed tunnel partition.
 4. **`urban_earthquake_aftershock`**: PDR $\ge 80\%$, mesh avoids broadcast storm collapse during 30-node simultaneous panic burst.
 5. **`mixed_hazard_survival`**: $100\%$ delivery of medical, trapped (fall-triggered), and general SOS packets with automatic route self-healing around battery-depleted relay.
+
