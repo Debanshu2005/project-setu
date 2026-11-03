@@ -13,6 +13,7 @@
 
 #include "setu/node.hpp"
 #include "sensor_models.hpp"
+#include "rf_environment.hpp"
 
 namespace sim {
 
@@ -77,6 +78,9 @@ struct ChannelParams {
   double capture_db = 6.0;       // stronger signal survives a collision if this much louder
   double random_loss = 0.0;      // extra independent packet loss probability
   double connect_margin_db = 3.0;  // margin used when judging planned connectivity
+  bool enable_obstacles = true;        // ray-cast against polygonal obstacles in Field profile
+  bool enable_body_shadowing = true;   // 15dB human torso absorption sector in Field profile
+  FluidDriftField fluid_drift;         // kinematic flood drift field in meters per second
   // Configurable battery consumption simulation parameters
   double tx_energy_pct = 0.5;          // energy consumed per LoRa transmission (%)
   double rx_energy_pct = 0.1;          // energy consumed per packet reception (%)
@@ -201,6 +205,11 @@ class World {
   PlannedConnectivityReport planned_connectivity_report() const;
   bool planned_connected() const;                   // every node can reach a hub at connect_margin
   double position_error_m(uint16_t id, int32_t lat_e6, int32_t lon_e6) const;
+  void add_obstacle(const Obstacle& obs);
+  void clear_obstacles();
+  const std::vector<Obstacle>& obstacles() const { return obstacles_; }
+  void set_fluid_drift(double vx, double vy);
+  const FluidDriftField& fluid_drift() const { return ch_.fluid_drift; }
   void dump_topology_trace();
   void set_trace(std::ostream* os);
 
@@ -234,6 +243,7 @@ class World {
   std::map<std::pair<uint16_t, uint16_t>, uint32_t> orig_time_;
   Counters counters_;
   std::ostream* trace_ = nullptr;
+  std::vector<Obstacle> obstacles_;
 };
 
 // Hub in a corner, relays on a loose grid, survivors scattered. Retries seeds until the

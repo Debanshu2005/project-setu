@@ -267,19 +267,194 @@ TEST(reproducible_hash_randomness_independent_of_receiver_order) {
 }
 
 TEST(loss_budget_waterfall_calculation) {
+  // Baseline profile leaves obstacle and body loss unmodeled
+  {
+    sim::ChannelParams ch;
+    ch.profile = sim::RealismProfile::Baseline;
+    sim::World w(ch, 42);
+
+    setu::NodeConfig c;
+    c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
+    c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 250, 0);
+
+    sim::LossBudget lb = w.get_loss_budget(1, 0);
+    CHECK_EQ(static_cast<int>(lb.tx_power_dbm), 14);
+    CHECK(lb.path_loss_db > 0.0);
+    CHECK(lb.rx_power_dbm < lb.tx_power_dbm);
+    CHECK(lb.obstacle_loss == "not modeled yet");
+    CHECK(lb.body_loss == "not modeled yet");
+    CHECK(lb.link_margin_db > -50.0);
+  }
+
+  // Field profile reports obstacle and body loss
+  {
+    sim::ChannelParams ch;
+    ch.profile = sim::RealismProfile::Field;
+    sim::World w(ch, 42);
+
+    setu::NodeConfig c;
+    c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
+    c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 250, 0);
+
+    sim::LossBudget lb = w.get_loss_budget(1, 0);
+    CHECK(lb.obstacle_loss == "0.0 dB (line of sight)");
+    CHECK(lb.body_loss == "0.0 dB (unshadowed)");
+
+    // Add concrete obstacle
+    sim::Obstacle obs;
+    obs.id = 1;
+    obs.material = sim::Material::Concrete;
+    obs.x1 = 100; obs.y1 = -50; obs.x2 = 100; obs.y2 = 50;
+    obs.attenuation_db = 22.0;
+    w.add_obstacle(obs);
+
+    // Set heading of node 1 facing away from node 0 (eastward, heading 0 rad, vector to node 0 is west)
+    w.set_node_heading(1, 0.0);
+
+    sim::LossBudget lb2 = w.get_loss_budget(1, 0);
+    CHECK(lb2.obstacle_loss.find("22.0 dB") != std::string::npos);
+    CHECK(lb2.body_loss == "15.0 dB");
+  }
+}
+
+TEST(obstacle_segment_intersection_and_material_attenuation) {
+  // Line segments intersect
+  double ix = 0, iy = 0;
+  CHECK(sim::segments_intersect(0, 0, 10, 10, 0, 10, 10, 0, &ix, &iy));
+  CHECK(std::abs(ix - 5.0) < 1e-4);
+  CHECK(std::abs(iy - 5.0) < 1e-4);
+
+  // Parallel non-intersecting
+  CHECK(!sim::segments_intersect(0, 0, 10, 0, 0, 5, 10, 5));
+
+  // Non-parallel non-intersecting
+  CHECK(!sim::segments_intersect(0, 0, 5, 5, 6, 6, 10, 10));
+
+  // Material attenuation defaults
+  CHECK_EQ(static_cast<int>(sim::material_default_attenuation_db(sim::Material::Concrete, 0.2)), 22);
+  CHECK_EQ(static_cast<int>(sim::material_default_attenuation_db(sim::Material::Brick, 0.2)), 10);
+  CHECK_EQ(static_cast<int>(sim::material_default_attenuation_db(sim::Material::Soil, 1.0)), 15);
+  CHECK_EQ(static_cast<int>(sim::material_default_attenuation_db(sim::Material::Water, 1.0)), 50);
+  CHECK_EQ(static_cast<int>(sim::material_default_attenuation_db(sim::Material::MetalSheet)), 35);
+
+  // Cumulative obstacle attenuation
+  std::vector<sim::Obstacle> obstacles;
+  sim::Obstacle o1; o1.id = 1; o1.x1 = 5; o1.y1 = -10; o1.x2 = 5; o1.y2 = 10; o1.attenuation_db = 10.0;
+  sim::Obstacle o2; o2.id = 2; o2.x1 = 15; o2.y1 = -10; o2.x2 = 15; o2.y2 = 10; o2.attenuation_db = 22.0;
+  obstacles.push_back(o1);
+  obstacles.push_back(o2);
+
+  int count = 0;
+  double loss = sim::calculate_obstacle_attenuation(0, 0, 20, 0, obstacles, &count);
+  CHECK_EQ(count, 2);
+  CHECK(std::abs(loss - 32.0) < 1e-4);
+}
+
+TEST(body_shadowing_torso_absorption) {
+  // Node at (10, 0) talking to Node at (0, 0). Line of sight angle is PI (180 deg).
+  // 1. Wearer facing receiver (heading PI): delta = 0 -> 0 dB
+  CHECK_EQ(static_cast<int>(sim::calculate_body_shadowing_db(10, 0, 0, 0, M_PI)), 0);
+
+  // 2. Wearer facing directly away (heading 0): delta = PI (180 deg) -> 15 dB
+  CHECK_EQ(static_cast<int>(sim::calculate_body_shadowing_db(10, 0, 0, 0, 0.0)), 15);
+
+  // 3. Glancing angle (heading 1.3 rad, wearer facing north-northeast, receiver is west):
+  // Angle difference is PI - 1.3 = 1.84 rad (~105 deg), in glancing range (90 to 120 deg) -> 6 dB
+  CHECK_EQ(static_cast<int>(sim::calculate_body_shadowing_db(10, 0, 0, 0, 1.3)), 6);
+
+  // 4. Unspecified / negative heading -> 0 dB
+  CHECK_EQ(static_cast<int>(sim::calculate_body_shadowing_db(10, 0, 0, 0, -1.0)), 0);
+}
+
+TEST(sx1262_capture_threshold_and_sf_isolation) {
+  // Capture thresholds per Semtech AN1200.22
+  CHECK(std::abs(sim::capture_threshold_db(7) - 6.0) < 1e-4);
+  CHECK(std::abs(sim::capture_threshold_db(8) - 7.0) < 1e-4);
+  CHECK(std::abs(sim::capture_threshold_db(9) - 8.0) < 1e-4);
+  CHECK(std::abs(sim::capture_threshold_db(10) - 9.0) < 1e-4);
+  CHECK(std::abs(sim::capture_threshold_db(11) - 10.0) < 1e-4);
+  CHECK(std::abs(sim::capture_threshold_db(12) - 10.5) < 1e-4);
+
+  // Multi-SF quasi-orthogonality isolation matrix
+  CHECK_EQ(static_cast<int>(sim::inter_sf_isolation_db(7, 7)), 0);
+  CHECK_EQ(static_cast<int>(sim::inter_sf_isolation_db(7, 8)), 16);
+  CHECK_EQ(static_cast<int>(sim::inter_sf_isolation_db(7, 9)), 18);
+  CHECK_EQ(static_cast<int>(sim::inter_sf_isolation_db(7, 10)), 20);
+  CHECK_EQ(static_cast<int>(sim::inter_sf_isolation_db(7, 12)), 20);
+}
+
+TEST(fluid_flow_kinematic_drift_in_field_profile) {
   sim::ChannelParams ch;
   ch.profile = sim::RealismProfile::Field;
+  ch.fluid_drift.vx_mps = 2.0;
+  ch.fluid_drift.vy_mps = -1.0;
   sim::World w(ch, 42);
 
   setu::NodeConfig c;
   c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
-  c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 250, 0);
+  c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 100, 100);
 
-  sim::LossBudget lb = w.get_loss_budget(1, 0);
-  CHECK_EQ(static_cast<int>(lb.tx_power_dbm), 14);
-  CHECK(lb.path_loss_db > 0.0);
-  CHECK(lb.rx_power_dbm < lb.tx_power_dbm);
-  CHECK(lb.obstacle_loss == "not modeled yet");
-  CHECK(lb.body_loss == "not modeled yet");
-  CHECK(lb.link_margin_db > -50.0);
+  // Run for 5 full seconds (5001 ms ensures t=5000ms tick executes)
+  w.run_until(5001);
+
+  auto h_info = w.get_node_info(0);
+  auto s_info = w.get_node_info(1);
+
+  // Hub is static infrastructure
+  CHECK_EQ(static_cast<int>(h_info.x), 0);
+  CHECK_EQ(static_cast<int>(h_info.y), 0);
+
+  // Survivor drifted by 5s * 2m/s = +10m in X, 5s * -1m/s = -5m in Y
+  CHECK_EQ(static_cast<int>(std::round(s_info.x)), 110);
+  CHECK_EQ(static_cast<int>(std::round(s_info.y)), 95);
+}
+
+TEST(obstacle_rf_attenuation_in_world_simulation) {
+  // In Field profile, obstacle reduces RSSI
+  {
+    sim::ChannelParams ch;
+    ch.profile = sim::RealismProfile::Field;
+    ch.shadow_sigma_db = 0.0;
+    sim::World w(ch, 42);
+
+    setu::NodeConfig c;
+    c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
+    c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 200, 0);
+
+    double clear_rssi = w.mean_rssi(1, 0);
+
+    sim::Obstacle obs;
+    obs.id = 1;
+    obs.material = sim::Material::Concrete;
+    obs.x1 = 100; obs.y1 = -50; obs.x2 = 100; obs.y2 = 50;
+    obs.attenuation_db = 22.0;
+    w.add_obstacle(obs);
+
+    double obstructed_rssi = w.mean_rssi(1, 0);
+    CHECK(std::abs((clear_rssi - obstructed_rssi) - 22.0) < 1e-4);
+  }
+
+  // In Baseline profile, obstacles do not affect RSSI (backward compatibility)
+  {
+    sim::ChannelParams ch;
+    ch.profile = sim::RealismProfile::Baseline;
+    ch.shadow_sigma_db = 0.0;
+    sim::World w(ch, 42);
+
+    setu::NodeConfig c;
+    c.node_id = 0; c.role = setu::Role::Hub; w.add_node(c, 0, 0);
+    c.node_id = 1; c.role = setu::Role::Survivor; w.add_node(c, 200, 0);
+
+    double clear_rssi = w.mean_rssi(1, 0);
+
+    sim::Obstacle obs;
+    obs.id = 1;
+    obs.material = sim::Material::Concrete;
+    obs.x1 = 100; obs.y1 = -50; obs.x2 = 100; obs.y2 = 50;
+    obs.attenuation_db = 22.0;
+    w.add_obstacle(obs);
+
+    double baseline_rssi = w.mean_rssi(1, 0);
+    CHECK(std::abs(clear_rssi - baseline_rssi) < 1e-4);
+  }
 }

@@ -65,6 +65,7 @@ struct World::SimNode {
   bool online = true;
   bool gnss_on = true, dr_on = true;
   uint32_t gnss_lost_at = 0;
+  double heading_rad = -1.0;
   uint8_t battery = 100;
   uint8_t initial_battery = 100;
   double battery_fraction = 100.0;
@@ -379,6 +380,26 @@ void World::dump_topology_trace() {
   }
 }
 
+void World::add_obstacle(const Obstacle& obs) {
+  obstacles_.push_back(obs);
+  if (trace_ && ch_.profile != RealismProfile::Baseline) {
+    char b[140];
+    std::snprintf(b, sizeof b, ",\"id\":%u,\"material\":\"%s\",\"loss_db\":%.1f,\"p1\":[%.1f,%.1f],\"p2\":[%.1f,%.1f]",
+                  obs.id, material_name(obs.material), obs.attenuation_db,
+                  obs.x1, obs.y1, obs.x2, obs.y2);
+    trace_event("obstacle_init", 0, b);
+  }
+}
+
+void World::clear_obstacles() {
+  obstacles_.clear();
+}
+
+void World::set_fluid_drift(double vx, double vy) {
+  ch_.fluid_drift.vx_mps = vx;
+  ch_.fluid_drift.vy_mps = vy;
+}
+
 void World::set_online(uint16_t id, bool on) {
   nodes_.at(id)->online = on;
   trace_event(on ? "node_revive" : "node_kill", id);
@@ -496,7 +517,17 @@ double World::mean_rssi(uint16_t a, uint16_t b) const {
   const double shadow = (ch_.shadow_sigma_db > 0.0)
                             ? std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr)
                             : 0.0;
-  const double pl = ch_.ref_loss_db + 10.0 * ch_.path_exp * std::log10(d) + ch_.extra_loss_db + shadow;
+  double pl = ch_.ref_loss_db + 10.0 * ch_.path_exp * std::log10(d) + ch_.extra_loss_db + shadow;
+
+  if (ch_.profile == RealismProfile::Field) {
+    if (ch_.enable_obstacles && !obstacles_.empty()) {
+      pl += calculate_obstacle_attenuation(na.x, na.y, nb.x, nb.y, obstacles_);
+    }
+    if (ch_.enable_body_shadowing) {
+      pl += calculate_body_shadowing_db(na.x, na.y, nb.x, nb.y, na.heading_rad);
+      pl += calculate_body_shadowing_db(nb.x, nb.y, na.x, na.y, nb.heading_rad);
+    }
+  }
   return ch_.tx_dbm - pl;
 }
 
@@ -506,13 +537,13 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
   lb.ref_loss_db = ch_.ref_loss_db;
   lb.extra_loss_db = ch_.extra_loss_db;
   lb.sensitivity_dbm = sens_;
-  lb.obstacle_loss = "not modeled yet";
-  lb.body_loss = "not modeled yet";
 
   if (a == b || !nodes_.count(a) || !nodes_.count(b)) {
     lb.rx_power_dbm = kNegInf;
     lb.link_margin_db = kNegInf;
     lb.viable = false;
+    lb.obstacle_loss = "not modeled yet";
+    lb.body_loss = "not modeled yet";
     return lb;
   }
 
@@ -521,6 +552,8 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
     lb.rx_power_dbm = kNegInf;
     lb.link_margin_db = kNegInf;
     lb.viable = false;
+    lb.obstacle_loss = "blocked link";
+    lb.body_loss = "blocked link";
     return lb;
   }
 
@@ -535,7 +568,35 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
                           : 0.0;
   lb.fading_loss_db = 0.0;
 
-  const double total_pl = lb.ref_loss_db + lb.path_loss_db + lb.shadow_loss_db + lb.extra_loss_db;
+  double obs_loss = 0.0;
+  int obs_count = 0;
+  double body_loss = 0.0;
+
+  if (ch_.profile == RealismProfile::Baseline) {
+    lb.obstacle_loss = "not modeled yet";
+    lb.body_loss = "not modeled yet";
+  } else {
+    if (!obstacles_.empty()) {
+      obs_loss = calculate_obstacle_attenuation(na.x, na.y, nb.x, nb.y, obstacles_, &obs_count);
+      char ob[64];
+      std::snprintf(ob, sizeof ob, "%.1f dB (%dx intersected)", obs_loss, obs_count);
+      lb.obstacle_loss = ob;
+    } else {
+      lb.obstacle_loss = "0.0 dB (line of sight)";
+    }
+
+    if (na.heading_rad >= 0.0 || nb.heading_rad >= 0.0) {
+      body_loss = calculate_body_shadowing_db(na.x, na.y, nb.x, nb.y, na.heading_rad) +
+                  calculate_body_shadowing_db(nb.x, nb.y, na.x, na.y, nb.heading_rad);
+      char bb[64];
+      std::snprintf(bb, sizeof bb, "%.1f dB", body_loss);
+      lb.body_loss = bb;
+    } else {
+      lb.body_loss = "0.0 dB (unshadowed)";
+    }
+  }
+
+  const double total_pl = lb.ref_loss_db + lb.path_loss_db + lb.shadow_loss_db + lb.extra_loss_db + obs_loss + body_loss;
   lb.rx_power_dbm = lb.tx_power_dbm - total_pl;
   lb.link_margin_db = lb.rx_power_dbm - lb.sensitivity_dbm;
   lb.viable = (lb.link_margin_db >= 0.0);
@@ -729,7 +790,11 @@ void World::finish_tx(const Tx& tx) {
       }
       if (total_interf_mw > 0.0) {
         const double total_interf_dbm = 10.0 * std::log10(total_interf_mw);
-        if (total_interf_dbm >= sens_ && (rssi - total_interf_dbm) < ch_.capture_db) {
+        double cap_threshold = ch_.capture_db;
+        if (ch_.profile == RealismProfile::Field) {
+          cap_threshold = capture_threshold_db(ch_.sf);
+        }
+        if (total_interf_dbm >= sens_ && (rssi - total_interf_dbm) < cap_threshold) {
           dropped = true;
           why = "collision";
           counters_.collisions++;
@@ -784,6 +849,16 @@ void World::run_until(uint32_t t_end) {
           } else if (ch_.idle_energy_pct_per_s > 0) {
             kv.second->consume_energy(ch_.idle_energy_pct_per_s, "idle");
           }
+        }
+      }
+    }
+    // Fluid flow environmental drift (active in Field profile when fluid drift velocity is non-zero)
+    if (now_ > 0 && now_ % 1000 == 0 && ch_.profile == RealismProfile::Field &&
+        (ch_.fluid_drift.vx_mps != 0.0 || ch_.fluid_drift.vy_mps != 0.0)) {
+      for (auto& kv : nodes_) {
+        if (kv.second->online && kv.second->node->config().role == setu::Role::Survivor) {
+          kv.second->x += ch_.fluid_drift.vx_mps * 1.0;
+          kv.second->y += ch_.fluid_drift.vy_mps * 1.0;
         }
       }
     }
@@ -897,6 +972,7 @@ void World::schedule_gnss_outage(uint16_t id, uint32_t start_ms, uint32_t durati
 void World::set_node_heading(uint16_t id, double heading_rad) {
   auto it = nodes_.find(id);
   if (it != nodes_.end()) {
+    it->second->heading_rad = heading_rad;
     it->second->imu_sensor.set_heading_rad(heading_rad);
   }
 }

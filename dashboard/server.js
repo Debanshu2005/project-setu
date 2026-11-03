@@ -398,6 +398,30 @@ class SimulationJobManager {
       }
     }
 
+    const obstacles = job.obstacles || (job.params && job.params.obstacles) || [];
+    if (Array.isArray(obstacles)) {
+      for (const obs of obstacles) {
+        const id = obs.id || 1;
+        const mat = obs.material || 'concrete';
+        const x1 = obs.x1 !== undefined ? obs.x1 : 0;
+        const y1 = obs.y1 !== undefined ? obs.y1 : 0;
+        const x2 = obs.x2 !== undefined ? obs.x2 : 0;
+        const y2 = obs.y2 !== undefined ? obs.y2 : 0;
+        let str = `${id}:${mat}:${x1},${y1},${x2},${y2}`;
+        if (obs.attenuation_db !== undefined) {
+          str += `@${obs.attenuation_db}`;
+        }
+        args.push('--obstacle', str);
+      }
+    }
+
+    const fluidDrift = job.fluid_drift || (job.params && job.params.fluid_drift);
+    if (fluidDrift && (fluidDrift.vx !== undefined || fluidDrift.vy !== undefined)) {
+      const vx = fluidDrift.vx || 0;
+      const vy = fluidDrift.vy || 0;
+      args.push('--fluid-drift', `${vx},${vy}`);
+    }
+
     // Open file stream for writing output trace safely without buffering everything in V8 memory
     job.writeStream = fs.createWriteStream(job.traceFilePath, { flags: 'w', encoding: 'utf8' });
 
@@ -1360,6 +1384,7 @@ const server = http.createServer(async (req, res) => {
       if (params.sf) simManager.config.sf = parseInt(params.sf, 10);
       if (params.loss !== undefined) simManager.config.loss = parseFloat(params.loss);
       if (params.path_exp) simManager.config.path_exp = parseFloat(params.path_exp);
+      if (params.profile) simManager.config.profile = String(params.profile);
 
       if (!simManager.process) {
         await simManager.spawn();
@@ -1372,7 +1397,8 @@ const server = http.createServer(async (req, res) => {
           seed: simManager.config.seed,
           sf: simManager.config.sf,
           loss: simManager.config.loss,
-          path_exp: simManager.config.path_exp
+          path_exp: simManager.config.path_exp,
+          profile: simManager.config.profile
         });
       }
       return sendJson(res, 200, { success: true, config: simManager.config, t: simManager.simTime }, req);
@@ -1610,6 +1636,79 @@ const server = http.createServer(async (req, res) => {
       const blocked = body.blocked !== undefined ? Boolean(body.blocked) : true;
       const result = await simManager.sendCommand({ cmd: 'block_link', a, b, blocked });
       return sendJson(res, 200, { success: true, result, a, b, blocked }, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
+  // GET /api/control/loss-budget?from=1&to=0
+  if (req.method === 'GET' && pathname === '/api/control/loss-budget') {
+    try {
+      await simManager.ensureStarted();
+      const from = Math.max(0, parseInt(reqUrl.searchParams.get('from') || 1, 10));
+      const to = Math.max(0, parseInt(reqUrl.searchParams.get('to') || 0, 10));
+      const result = await simManager.sendCommand({ cmd: 'get_loss_budget', from, to });
+      return sendJson(res, 200, result, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
+  // POST /api/control/add-obstacle
+  if (req.method === 'POST' && pathname === '/api/control/add-obstacle') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const id = Math.max(1, parseInt(body.id || 1, 10));
+      const label = String(body.label || 'wall');
+      const material = String(body.material || 'concrete');
+      const x1 = parseFloat(body.x1 || 0);
+      const y1 = parseFloat(body.y1 || 0);
+      const x2 = parseFloat(body.x2 || 0);
+      const y2 = parseFloat(body.y2 || 0);
+      const thickness_m = parseFloat(body.thickness_m || 0.2);
+      const cmdObj = { cmd: 'add_obstacle', id, label, material, x1, y1, x2, y2, thickness_m };
+      if (body.attenuation_db !== undefined) {
+        cmdObj.attenuation_db = parseFloat(body.attenuation_db);
+      }
+      const result = await simManager.sendCommand(cmdObj);
+      return sendJson(res, 200, { success: true, result }, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
+  // POST /api/control/clear-obstacles
+  if (req.method === 'POST' && pathname === '/api/control/clear-obstacles') {
+    try {
+      await simManager.ensureStarted();
+      const result = await simManager.sendCommand({ cmd: 'clear_obstacles' });
+      return sendJson(res, 200, { success: true, result }, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
+  // GET /api/control/obstacles
+  if (req.method === 'GET' && pathname === '/api/control/obstacles') {
+    try {
+      await simManager.ensureStarted();
+      const result = await simManager.sendCommand({ cmd: 'get_obstacles' });
+      return sendJson(res, 200, result, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
+  // POST /api/control/fluid-drift
+  if (req.method === 'POST' && pathname === '/api/control/fluid-drift') {
+    try {
+      await simManager.ensureStarted();
+      const body = await parseBody(req);
+      const vx = parseFloat(body.vx || 0);
+      const vy = parseFloat(body.vy || 0);
+      const result = await simManager.sendCommand({ cmd: 'set_fluid_drift', vx, vy });
+      return sendJson(res, 200, { success: true, result, vx, vy }, req);
     } catch (err) {
       return sendError(res, errorStatus(err), err.message, req);
     }

@@ -14,6 +14,7 @@
 #include <cstring>
 #include <fstream>
 #include <iostream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -476,6 +477,44 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
                 << ",\"sensitivity_dbm\":" << lb.sensitivity_dbm
                 << ",\"link_margin_db\":" << lb.link_margin_db
                 << ",\"viable\":" << (lb.viable ? "true" : "false") << "}\n" << std::flush;
+    } else if (cmd == "add_obstacle") {
+      Obstacle obs;
+      obs.id = static_cast<uint16_t>(json_get_int(line, "id", 1));
+      obs.label = json_get_str(line, "label");
+      if (obs.label.empty()) obs.label = "wall";
+      obs.material = parse_material(json_get_str(line, "material"));
+      obs.x1 = json_get_double(line, "x1", 0.0);
+      obs.y1 = json_get_double(line, "y1", 0.0);
+      obs.x2 = json_get_double(line, "x2", 0.0);
+      obs.y2 = json_get_double(line, "y2", 0.0);
+      obs.thickness_m = json_get_double(line, "thickness_m", 0.2);
+      obs.attenuation_db = json_get_double(line, "attenuation_db", material_default_attenuation_db(obs.material, obs.thickness_m));
+      w->add_obstacle(obs);
+      std::cout << "{\"ok\":true,\"cmd\":\"add_obstacle\",\"id\":" << obs.id << "}\n" << std::flush;
+    } else if (cmd == "clear_obstacles") {
+      w->clear_obstacles();
+      std::cout << "{\"ok\":true,\"cmd\":\"clear_obstacles\"}\n" << std::flush;
+    } else if (cmd == "set_fluid_drift") {
+      double vx = json_get_double(line, "vx", 0.0);
+      double vy = json_get_double(line, "vy", 0.0);
+      w->set_fluid_drift(vx, vy);
+      std::cout << "{\"ok\":true,\"cmd\":\"set_fluid_drift\",\"vx\":" << vx << ",\"vy\":" << vy << "}\n" << std::flush;
+    } else if (cmd == "get_obstacles") {
+      std::cout << "{\"ok\":true,\"cmd\":\"get_obstacles\",\"obstacles\":[";
+      const auto& obss = w->obstacles();
+      for (size_t i = 0; i < obss.size(); ++i) {
+        if (i > 0) std::cout << ",";
+        std::cout << "{\"id\":" << obss[i].id
+                  << ",\"label\":\"" << obss[i].label << "\""
+                  << ",\"material\":\"" << material_name(obss[i].material) << "\""
+                  << ",\"x1\":" << obss[i].x1
+                  << ",\"y1\":" << obss[i].y1
+                  << ",\"x2\":" << obss[i].x2
+                  << ",\"y2\":" << obss[i].y2
+                  << ",\"thickness_m\":" << obss[i].thickness_m
+                  << ",\"attenuation_db\":" << obss[i].attenuation_db << "}";
+      }
+      std::cout << "]}\n" << std::flush;
     } else if (cmd == "summary") {
       print_summary(*w, seed, ch.sf, w->now());
     } else if (cmd == "reset") {
@@ -556,6 +595,7 @@ int main(int argc, char** argv) {
   bool experiment_path_loss = false;
   bool allow_disconnected = false;
   std::vector<Trigger> triggers;
+  std::vector<Obstacle> obstacles_to_add;
   std::vector<std::pair<std::string, std::string>> misc;  // (kind, arg)
 
   for (int i = 1; i < argc; i++) {
@@ -601,6 +641,45 @@ int main(int argc, char** argv) {
       ch.priority_bypass_duty = (val == "1" || val == "true");
     } else if (a == "--gnss-continuous") {
       ch.gnss_continuous = true;
+    } else if (a == "--obstacle") {
+      std::string val = next();
+      double custom_atten = -1.0;
+      auto at_pos = val.find('@');
+      if (at_pos != std::string::npos) {
+        custom_atten = std::stod(val.substr(at_pos + 1));
+        val = val.substr(0, at_pos);
+      }
+      auto c1 = val.find(':');
+      if (c1 == std::string::npos) die("--obstacle needs ID:MATERIAL:X1,Y1,X2,Y2[@ATTEN]");
+      auto c2 = val.find(':', c1 + 1);
+      if (c2 == std::string::npos) die("--obstacle needs ID:MATERIAL:X1,Y1,X2,Y2[@ATTEN]");
+      uint16_t obs_id = static_cast<uint16_t>(std::stoi(val.substr(0, c1)));
+      std::string mat_str = val.substr(c1 + 1, c2 - c1 - 1);
+      std::string coords_str = val.substr(c2 + 1);
+      std::stringstream ss(coords_str);
+      std::string seg;
+      std::vector<double> coords;
+      while (std::getline(ss, seg, ',')) {
+        coords.push_back(std::stod(seg));
+      }
+      if (coords.size() != 4) die("--obstacle coordinates must be X1,Y1,X2,Y2");
+      Obstacle obs;
+      obs.id = obs_id;
+      obs.label = "obs_" + std::to_string(obs_id);
+      obs.material = parse_material(mat_str);
+      obs.x1 = coords[0];
+      obs.y1 = coords[1];
+      obs.x2 = coords[2];
+      obs.y2 = coords[3];
+      obs.thickness_m = 0.2;
+      obs.attenuation_db = (custom_atten >= 0.0) ? custom_atten : material_default_attenuation_db(obs.material, obs.thickness_m);
+      obstacles_to_add.push_back(obs);
+    } else if (a == "--fluid-drift") {
+      std::string val = next();
+      auto comma = val.find(',');
+      if (comma == std::string::npos) die("--fluid-drift needs VX,VY");
+      ch.fluid_drift.vx_mps = std::stod(val.substr(0, comma));
+      ch.fluid_drift.vy_mps = std::stod(val.substr(comma + 1));
     } else {
       die("unknown option " + a);
     }
@@ -621,12 +700,17 @@ int main(int argc, char** argv) {
   } catch (const std::exception& e) {
     die(e.what());
   }
+
   std::ofstream trace;
   if (trace_path == "-") {
     w->set_trace(&std::cout);
   } else if (!trace_path.empty()) {
     trace.open(trace_path);
     w->set_trace(&trace);
+  }
+
+  for (const auto& obs : obstacles_to_add) {
+    w->add_obstacle(obs);
   }
 
   for (auto& tr : triggers) {
