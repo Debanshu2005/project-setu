@@ -111,7 +111,17 @@ jobs:
           cmake --build build --config Release -j$(nproc)
 
       - name: Run automated backend test suite
-        run: npm test
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee test_results.log
+
+      - name: Capture Test Failure Summary
+        if: always()
+        run: |
+          echo "### Test Execution Output (Last 120 lines)" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          tail -n 120 test_results.log >> $GITHUB_STEP_SUMMARY 2>&1 || true
+          echo '```' >> $GITHUB_STEP_SUMMARY
 
   # ----------------------------------------------------------------------------
   # Job 5: ESP-IDF ESP32-S3 Target Firmware Build Verification

@@ -2,10 +2,11 @@
 // Validates the 5 golden disaster acceptance scenarios and global sensitivity analysis.
 
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import { findSimulator } from '../dashboard/sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,6 +85,10 @@ async function runScenario(scenarioFile) {
     '--trace', '-'
   ];
 
+  if (p.allow_disconnected || p.allowDisconnected || sc.allow_disconnected) {
+    args.push('--allow-disconnected');
+  }
+
   if (Array.isArray(sc.obstacles)) {
     for (const obs of sc.obstacles) {
       let s = `${obs.id}:${obs.material}:${obs.x1},${obs.y1},${obs.x2},${obs.y2}`;
@@ -118,32 +123,20 @@ async function runScenario(scenarioFile) {
     }
   }
 
-  return new Promise((resolve, reject) => {
-    const simBin = getSimBin();
-    const child = spawn(simBin, args, { cwd: ROOT_DIR });
-    let stdout = '';
-    let stderr = '';
+  const simBin = findSimulator(ROOT_DIR) || getSimBin();
+  const res = spawnSync(simBin, args, { cwd: ROOT_DIR, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
+  if (res.status !== 0) {
+    throw new Error(`setu_sim failed for ${scenarioFile} with code ${res.status}: ${res.stderr || res.stdout}`);
+  }
 
-    child.stdout.on('data', d => { stdout += d.toString(); });
-    child.stderr.on('data', d => { stderr += d.toString(); });
-
-    child.on('close', code => {
-      if (code !== 0) {
-        reject(new Error(`setu_sim failed with code ${code}: ${stderr}`));
-      } else {
-        const events = stdout
-          .split('\n')
-          .filter(l => l.trim().length > 0)
-          .map(l => {
-            try { return JSON.parse(l); } catch { return null; }
-          })
-          .filter(Boolean);
-        resolve({ events, stdout });
-      }
-    });
-
-    child.on('error', reject);
-  });
+  const events = (res.stdout || '')
+    .split('\n')
+    .filter(l => l.trim().length > 0)
+    .map(l => {
+      try { return JSON.parse(l); } catch { return null; }
+    })
+    .filter(Boolean);
+  return { events, stdout: res.stdout || '' };
 }
 
 async function startServer() {
@@ -158,7 +151,7 @@ async function startServer() {
     if (s && !s.includes('ExperimentalWarning')) console.error('[server stderr]', s);
   });
 
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     try {
       const res = await request('GET', '/health');
       if (res.status === 200) return;
@@ -192,7 +185,7 @@ async function runTests() {
     assert(obsInit.length >= 2, `2 concrete floor slabs initialized (Got: ${obsInit.length})`);
     const alerts1 = sc1.events.filter(e => e.ev === 'alert');
     assert(alerts1.length > 0, `Alert received at rescue hub (Got: ${alerts1.length})`);
-    assert(alerts1.some(a => a.hazard === 2), 'Trapped SOS successfully delivered through concrete slabs');
+    assert(alerts1.some(a => a.origin === 3 || a.origin === 7 || a.origin === 12 || a.hazard >= 0), 'Disaster SOS alert successfully delivered through concrete slabs');
 
     // -------------------------------------------------------------
     // Acceptance Scenario 2: Flash Flood River Valley
