@@ -2,10 +2,11 @@
 // Tests REST control endpoints and native simulator integration for Phase 2 realism features.
 
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
+import { findSimulator } from '../dashboard/sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -76,7 +77,7 @@ async function startServer() {
 
   // Wait for server to become responsive
   let ready = false;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 60; i++) {
     try {
       const res = await request('GET', '/health');
       if (res.status === 200) {
@@ -198,32 +199,25 @@ async function runTests() {
 
     // 5. Direct CLI test of setu_sim with --obstacle and --fluid-drift flags
     console.log('\n[5/5] Testing setu_sim CLI flags (--obstacle and --fluid-drift)...');
-    const simBin = process.platform === 'win32'
+    const simBin = findSimulator(ROOT_DIR) || (process.platform === 'win32'
       ? path.join(ROOT_DIR, 'build', 'Release', 'setu_sim.exe')
-      : path.join(ROOT_DIR, 'build', 'setu_sim');
+      : path.join(ROOT_DIR, 'build', 'setu_sim'));
 
-    await new Promise((resolve, reject) => {
-      const simProc = spawn(simBin, [
-        '--survivors', '3',
-        '--relays', '1',
-        '--profile', 'field',
-        '--obstacle', '10:brick:0,-100,0,100@10.0',
-        '--fluid-drift', '1.0,0.5',
-        '--duration', '2000',
-        '--trace', '-'
-      ], { cwd: ROOT_DIR });
+    const simRes = spawnSync(simBin, [
+      '--survivors', '3',
+      '--relays', '1',
+      '--profile', 'field',
+      '--obstacle', '10:brick:0,-100,0,100@10.0',
+      '--fluid-drift', '1.0,0.5',
+      '--duration', '2000',
+      '--trace', '-'
+    ], { cwd: ROOT_DIR, encoding: 'utf8', maxBuffer: 32 * 1024 * 1024 });
 
-      let out = '';
-      simProc.stdout.on('data', c => { out += c.toString(); });
-      simProc.on('close', code => {
-        assert(code === 0, `setu_sim exited with code 0 (Got: ${code})`);
-        assert(out.includes('"ev":"obstacle_init"'), 'Trace output contains obstacle_init event');
-        assert(out.includes('"material":"brick"'), 'Trace output contains brick material');
-        assert(out.includes('"loss_db":10.0'), 'Trace output contains 10.0 dB loss');
-        resolve();
-      });
-      simProc.on('error', reject);
-    });
+    assert(simRes.status === 0, `setu_sim exited with code 0 (Got: ${simRes.status})`);
+    const out = simRes.stdout || '';
+    assert(out.includes('"ev":"obstacle_init"'), 'Trace output contains obstacle_init event');
+    assert(out.includes('"material":"brick"'), 'Trace output contains brick material');
+    assert(out.includes('"loss_db":10.0'), 'Trace output contains 10.0 dB loss');
 
     console.log(`\n================================================================`);
     console.log(`  ALL ${passedCount} PHASE 2 RF ENVIRONMENT TESTS PASSED!`);

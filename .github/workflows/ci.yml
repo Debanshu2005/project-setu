@@ -118,6 +118,9 @@ jobs:
       - name: Capture Test Failure Summary
         if: always()
         run: |
+          tail -n 80 test_results.log || true
+          SUMMARY_ERR=$(tail -n 12 test_results.log | tr '\n' ' ' | head -c 240)
+          echo "::error title=Test Log Summary::$SUMMARY_ERR"
           echo "### Test Execution Output (Last 120 lines)" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           tail -n 120 test_results.log >> $GITHUB_STEP_SUMMARY 2>&1 || true
