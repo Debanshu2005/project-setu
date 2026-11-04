@@ -82,7 +82,6 @@ async function runScenario(scenarioFile) {
     '--loss', String(p.loss || 0.0),
     '--path-exp', String(p.path_exp || 3.0),
     '--profile', String(p.profile || 'field'),
-    '--allow-disconnected',
     '--trace', '-'
   ];
 
@@ -188,12 +187,10 @@ async function runTests() {
     const alerts1 = sc1.events.filter(e => e.ev === 'alert');
     const txEvents1 = sc1.events.filter(e => e.ev === 'tx');
     assert(txEvents1.length > 0, `Subterranean transmissions originated under concrete slabs (Got: ${txEvents1.length})`);
-    if (alerts1.length > 0) {
-      assert(alerts1.some(a => a.origin === 3 || a.origin === 7 || a.origin === 12 || a.hazard >= 0), 'Disaster SOS alert successfully delivered through concrete slabs');
-    } else {
-      const drops1 = sc1.events.filter(e => e.ev === 'drop' && e.why === 'weak');
-      assert(drops1.length > 0, `Subterranean obstacle attenuation correctly enforced by physical SX1262 sensitivity model (Got: ${drops1.length} drops)`);
-    }
+    assert(alerts1.length > 0, `Alert received at rescue hub through subterranean concrete slabs (Got: ${alerts1.length})`);
+    assert(alerts1.some(a => a.origin === 3 && a.hazard === 2), 'Survivor 3 trapped under slab alert delivered to hub');
+    assert(alerts1.some(a => a.origin === 7 && a.hazard === 1), 'Survivor 7 voice medical emergency alert delivered to hub');
+    assert(alerts1.some(a => a.origin === 12 && a.hazard === 0), 'Survivor 12 general SOS alert delivered to hub');
 
     // -------------------------------------------------------------
     // Acceptance Scenario 2: Flash Flood River Valley
@@ -214,6 +211,8 @@ async function runTests() {
     assert(bulkheadObs.length >= 1, 'Tunnel bulkhead collapse partition registered (35.0 dB)');
     const relays3 = sc3.events.filter(e => e.ev === 'node_init' && e.role === 'relay');
     assert(relays3.length === 5, '5 subway tunnel relays initialized');
+    const alerts3 = sc3.events.filter(e => e.ev === 'alert');
+    assert(alerts3.length > 0, `Tunnel structural partition bypass delivers alert to hub (Got: ${alerts3.length} alerts)`);
 
     // -------------------------------------------------------------
     // Acceptance Scenario 4: Urban Earthquake Simultaneous Aftershock
