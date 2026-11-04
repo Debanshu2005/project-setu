@@ -240,8 +240,8 @@ ${tableRows}
 
   if (content.includes('### 3.4 Pedestrian Dead Reckoning')) {
     const parts = content.split('### 3.4 Pedestrian Dead Reckoning');
-    const rest = parts[1].split('\n---\n');
-    content = parts[0] + section34 + '\n---\n' + rest.slice(1).join('\n---\n');
+    const rest = parts[1].split('## 4. Priority Recommendation for Physical Measurement');
+    content = parts[0] + section34 + '\n---\n\n## 4. Priority Recommendation for Physical Measurement' + (rest[1] || '\n');
   } else {
     content = content.replace(
       '## 4. Priority Recommendation for Physical Measurement',

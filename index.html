@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="./styles/topology.css" />
   <link rel="stylesheet" href="./styles/controls.css" />
   <link rel="stylesheet" href="./styles/inspector.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "./vendor/three/three.module.js",
+      "three/addons/": "./vendor/three/"
+    }
+  }
+  </script>
 </head>
 <body>
   <!-- Application Header -->
@@ -214,7 +222,7 @@
       </nav>
 
       <!-- Tab: Setu Twin Hardware Inspector and Loss Waterfall -->
-      <section class="tab-content" id="tab-twin" style="display:none; padding:12px; flex-direction:column; gap:12px; overflow-y:auto; max-height:calc(100vh - 120px);">
+      <section class="tab-content" id="tab-twin" style="padding:12px; flex-direction:column; gap:12px; overflow-y:auto; max-height:calc(100vh - 120px);">
         <div id="containerWristbandTwin"></div>
         <div id="containerLossWaterfall" style="margin-top:12px;"></div>
       </section>

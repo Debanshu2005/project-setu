@@ -141,3 +141,34 @@ export function narrateIncidentStory(events, originNodeId, sf = 7) {
   })).filter(item => item.text.length > 0);
 }
 
+// Explains failure root causes in plain English without raw hex or jargon
+export function explainFailure(ev, context = {}) {
+  if (!ev) return 'No event data available.';
+  const sens = context.sens || -123.0;
+
+  if (ev.ev === 'drop') {
+    if (ev.why === 'weak') {
+      const below = (sens - (ev.rssi || sens)).toFixed(1);
+      return `Packet from Node ${ev.from} dropped at Node ${ev.node} because signal (${(ev.rssi || -130).toFixed(1)} dBm) was ${below} dB below the receiver sensitivity threshold (${sens} dBm). Physical cause: Distance path loss or concrete structural attenuation extinguished the link margin.`;
+    }
+    if (ev.why === 'collision') {
+      return `Packet from Node ${ev.from} collided at Node ${ev.node} with a concurrent transmission on Spreading Factor ${context.sf || 7}. The co-channel signal-to-interference ratio was below the SX1262 capture threshold.`;
+    }
+    if (ev.why === 'halfduplex') {
+      return `Node ${ev.node} was actively transmitting when the incoming packet arrived. LoRa transceivers are half-duplex and cannot receive while transmitting.`;
+    }
+    if (ev.why === 'loss') {
+      return `Packet was corrupted by random environmental channel fading.`;
+    }
+    if (ev.why === 'duty') {
+      return `Retransmission was rejected by regional duty-cycle limits (maximum 1 percent channel airtime).`;
+    }
+  }
+
+  if (ev.ev === 'dead_battery') {
+    return `Node ${ev.node} battery depleted to 0 percent. Total operating time: ${(ev.lifetime_s || 0).toFixed(1)} seconds. Continuous voice DSP is the primary energy drain.`;
+  }
+
+  return `Event ${ev.ev} on Node ${ev.node}.`;
+}
+

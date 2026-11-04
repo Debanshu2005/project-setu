@@ -1,0 +1,24 @@
+{
+  "id": "walkthrough_w5_acoustic",
+  "name": "Walkthrough 5: Acoustic Voice Trigger in Machinery Roar",
+  "description": "Heavy rescue concrete cutting saws and rubble excavators create intense 88-92 dB SPL acoustic noise. Demonstrates WakeNet sigmoid SNR margin evaluation and tactile button fallback.",
+  "params": {
+    "survivors": 10,
+    "relays": 4,
+    "zone": 600,
+    "seed": 920,
+    "duration": 30000,
+    "sf": 7,
+    "loss": 0.02,
+    "path_exp": 3.4,
+    "profile": "field",
+    "dr_mode": "step_and_heading"
+  },
+  "triggers": [
+    { "node": 2, "kind": "voice-medical", "t": 2000, "label": "Survivor 2: Voice SOS (88 dB SPL zone, +6 dB SNR -> SUCCESS)" },
+    { "node": 6, "kind": "voice-trapped", "t": 6000, "label": "Survivor 6: Shouted SOS (92 dB SPL concrete saw zone -> SNR < 2 dB, Masked)" },
+    { "node": 6, "kind": "short", "t": 9000, "label": "Survivor 6: Tactile Button Fallback Pressed -> DISPATCHED" }
+  ],
+  "faults": []
+}
+

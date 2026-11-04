@@ -1,0 +1,31 @@
+{
+  "id": "walkthrough_w4_pdr",
+  "name": "Walkthrough 4: Dead Reckoning Rescue (GPS-Denied Void)",
+  "description": "Survivor crawls through subterranean basement under total GNSS denial. MPU-6050 step-and-heading accumulates realistic drift (13m at 5 min, 21m at 15 min), guiding first responder search beacon.",
+  "params": {
+    "survivors": 8,
+    "relays": 4,
+    "zone": 600,
+    "seed": 512,
+    "duration": 30000,
+    "sf": 9,
+    "loss": 0.02,
+    "path_exp": 3.6,
+    "profile": "field",
+    "dr_mode": "step_and_heading"
+  },
+  "obstacles": [
+    { "id": 1, "label": "basement_ceiling_slab", "material": "concrete", "x1": 100, "y1": 300, "x2": 500, "y2": 300, "thickness_m": 0.35, "attenuation_db": 25.0, "floor_index": -1, "height_m": 3.0, "tilt_deg": 4.0 }
+  ],
+  "triggers": [
+    { "node": 1, "kind": "long", "t": 1000, "label": "Survivor 1: Subterranean Entrapment SOS" },
+    { "node": 4, "kind": "short", "t": 5000, "label": "Survivor 4: Rubble Crawl Beacon" }
+  ],
+  "faults": [
+    { "kind": "gps-off", "target": "1", "t": 50, "label": "Survivor 1: Complete Subterranean GNSS Loss" },
+    { "kind": "gps-off", "target": "4", "t": 50, "label": "Survivor 4: Complete Subterranean GNSS Loss" },
+    { "kind": "motion", "target": "1", "profile": "crawling", "t": 100, "label": "Survivor 1: Rubble Crawl" },
+    { "kind": "motion", "target": "4", "profile": "crawling", "t": 100, "label": "Survivor 4: Rubble Crawl" }
+  ]
+}
+

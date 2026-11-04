@@ -1898,6 +1898,11 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  if (pathname === '/favicon.ico') {
+    res.writeHead(204);
+    return res.end();
+  }
+
   // --- Static Files Serving ---
   let filePath = pathname === '/' ? '/index.html' : pathname;
   let absPath = path.join(DASHBOARD_DIR, filePath);

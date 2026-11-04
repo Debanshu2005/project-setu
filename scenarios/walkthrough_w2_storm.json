@@ -1,0 +1,28 @@
+{
+  "id": "walkthrough_w2_storm",
+  "name": "Walkthrough 2: High-Congestion RF Storm (100 Survivors)",
+  "description": "Mass-casualty earthquake triggering 100 survivor wristbands simultaneously within a 600m urban zone. Demonstrates channel contention, airtime ring waves, and co-channel collision mitigation.",
+  "params": {
+    "survivors": 100,
+    "relays": 12,
+    "zone": 600,
+    "seed": 888,
+    "duration": 30000,
+    "sf": 7,
+    "loss": 0.03,
+    "path_exp": 3.2,
+    "profile": "field",
+    "dr_mode": "step_and_heading"
+  },
+  "triggers": [
+    { "node": 1, "kind": "long", "t": 1000, "label": "Survivor 1: Trapped SOS" },
+    { "node": 5, "kind": "double", "t": 1200, "label": "Survivor 5: Medical SOS" },
+    { "node": 12, "kind": "short", "t": 1400, "label": "Survivor 12: General SOS" },
+    { "node": 25, "kind": "long", "t": 1600, "label": "Survivor 25: Trapped SOS" },
+    { "node": 42, "kind": "short", "t": 1800, "label": "Survivor 42: Panic SOS" },
+    { "node": 68, "kind": "voice-medical", "t": 2000, "label": "Survivor 68: Voice Emergency" },
+    { "node": 85, "kind": "short", "t": 2200, "label": "Survivor 85: General SOS" }
+  ],
+  "faults": []
+}
+

@@ -16,7 +16,7 @@ import { calculateTheoreticalRssi, calculateEcdf } from './scientific_metrics.js
 import { WristbandTwinComponent } from '../components/wristband_twin.js';
 import { LossWaterfallComponent } from '../components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../components/setu_twin.js';
-import { narrateEvent } from './narrator.js';
+import { narrateEvent, explainFailure } from './narrator.js';
 
 class SetuDashboardApp {
   constructor() {
@@ -516,6 +516,10 @@ class SetuDashboardApp {
         if (recentEv) {
           const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
           if (narration) this.setuTwin.setNarratorText(narration);
+          if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
+            const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
+            this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+          }
           if (recentEv.ev === 'tx') {
             this.setuTwin.triggerPacketPulse(recentEv.node, recentEv.hazard, recentEv.hop);
           }
