@@ -32,7 +32,7 @@ function Find-CTest {
 
 try {
     Write-Host "==========================================================" -ForegroundColor Cyan
-    Write-Host "  Project Setu -- Automated Test Suite ($Config)" -ForegroundColor Cyan
+    Write-Host "  Project Setu: Automated Test Suite ($Config)" -ForegroundColor Cyan
     Write-Host "==========================================================" -ForegroundColor Cyan
 
     $buildDir = Join-Path $projectRoot "build"
@@ -97,9 +97,14 @@ try {
     if ($LASTEXITCODE -ne 0) { throw "Backend integration tests failed!" }
 
     # 5. Authoritative Analytics & Simulation Integrity Tests
-    Write-Host "`n[5/5] Authoritative Analytics & Simulation Integrity Verification..." -ForegroundColor Cyan
+    Write-Host "`n[5/6] Authoritative Analytics & Simulation Integrity Verification..." -ForegroundColor Cyan
     & node tests/test_analytics.mjs
     if ($LASTEXITCODE -ne 0) { throw "Analytics verification tests failed!" }
+
+    # 6. Golden Baseline & Portable Golden Verification
+    Write-Host "`n[6/6] Golden Baseline & Portable Golden Verification..." -ForegroundColor Cyan
+    & node tests/test_golden_baselines.mjs
+    if ($LASTEXITCODE -ne 0) { throw "Golden baseline verification failed!" }
 
     Write-Host "`n==========================================================" -ForegroundColor Green
     Write-Host "  ALL TESTS PASSED SUCCESSFULLY!" -ForegroundColor Green

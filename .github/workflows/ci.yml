@@ -48,11 +48,52 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Build with PowerShell build script
         run: powershell -ExecutionPolicy Bypass -File scripts/build_windows.ps1
 
       - name: Execute automated test suite
         run: powershell -ExecutionPolicy Bypass -File scripts/test_windows.ps1
+
+      - name: Run Golden and Portable Baselines on Windows MSVC
+        run: node tests/test_golden_baselines.mjs
+
+  # Job 2b: Native C++ Build and Test on Linux (Ubuntu Clang)
+  build-and-test-linux-clang:
+    name: Native C++ Core (Linux Clang)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Clang build toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang cmake ninja-build
+
+      - name: Configure CMake with Clang
+        run: |
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++
+
+      - name: Build all targets with Clang
+        run: cmake --build build --config Release
+
+      - name: Run CTest test suite
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Verify Golden and Portable Baselines on Linux Clang
+        run: node tests/test_golden_baselines.mjs
 
   # ----------------------------------------------------------------------------
   # Job 3: Docker Container Build & Healthcheck Verification
@@ -87,13 +128,9 @@ jobs:
   backend-and-scenario-checks:
     name: All JavaScript Test Suites (Linux Node 20)
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -114,35 +151,10 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j$(nproc)
 
-      - name: Generate Linux Golden Baselines if not present
-        run: |
-          if [ ! -f tests/golden/linux-gcc/ack_loss.jsonl ]; then
-            echo "Recording Linux baseline goldens..."
-            node tests/test_golden_baselines.mjs --record
-          fi
-
       - name: Run automated backend test suite
         run: |
           set -o pipefail
           npm test 2>&1 | tee test_results.log
-
-      - name: Upload Linux Golden Baselines artifact
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: linux-gcc-goldens
-          path: tests/golden/linux-gcc/
-
-      - name: Commit Linux Golden Baselines
-        if: success()
-        run: |
-          if git status --porcelain tests/golden/linux-gcc/ | grep -q .; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add tests/golden/linux-gcc/
-            git commit -m "chore: record linux-gcc golden baselines"
-            git push origin HEAD:${{ github.ref_name }} || echo "Push skipped or not allowed"
-          fi
 
       - name: Capture Test Failure Summary
         if: always()
