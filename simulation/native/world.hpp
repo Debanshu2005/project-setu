@@ -77,7 +77,8 @@ struct ChannelParams {
   double extra_loss_db = 15.0;   // body shadowing + small wrist antenna
   double shadow_sigma_db = 4.0;  // fixed per link
   double fading_sigma_db = 1.5;  // per packet
-  double capture_db = 6.0;       // stronger signal survives a collision if this much louder
+  double capture_db = 6.0;
+  bool custom_capture = false;       // stronger signal survives a collision if this much louder
   double random_loss = 0.0;      // extra independent packet loss probability
   double connect_margin_db = 3.0;  // margin used when judging planned connectivity
   bool enable_obstacles = true;        // ray-cast against polygonal obstacles in Field profile

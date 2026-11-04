@@ -396,7 +396,7 @@ async function runSuite() {
     }
   } finally {
     if (fs.existsSync(tempOutPath)) {
-      fs.unlinkSync(tempOutPath);
+      try { fs.unlinkSync(tempOutPath); } catch (_) {}
     }
   }
 

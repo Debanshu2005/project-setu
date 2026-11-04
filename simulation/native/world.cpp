@@ -854,7 +854,7 @@ void World::finish_tx(const Tx& tx) {
       if (total_interf_mw > 0.0) {
         const double total_interf_dbm = 10.0 * std::log10(total_interf_mw);
         double cap_threshold = ch_.capture_db;
-        if (ch_.profile == RealismProfile::Field) {
+        if (ch_.profile == RealismProfile::Field && !ch_.custom_capture) {
           cap_threshold = capture_threshold_db(ch_.sf);
         }
         if (total_interf_dbm >= sens_ && (rssi - total_interf_dbm) < cap_threshold) {

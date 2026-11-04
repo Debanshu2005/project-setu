@@ -626,6 +626,10 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       if (line.find("\"capacity\":") != std::string::npos) {
         ch.battery_capacity_mah = json_get_double(line, "capacity", ch.battery_capacity_mah);
       }
+      if (line.find("\"capture_db\":") != std::string::npos) {
+        ch.capture_db = json_get_double(line, "capture_db", ch.capture_db);
+        ch.custom_capture = true;
+      }
       if (line.find("\"wake_word_always_on\":") != std::string::npos) {
         ch.wake_word_always_on = json_get_bool(line, "wake_word_always_on", ch.wake_word_always_on);
       }
@@ -706,7 +710,14 @@ int main(int argc, char** argv) {
       }
     } else if (a == "--capacity") {
       ch.battery_capacity_mah = std::stod(next());
-    } else if (a == "--no-wake-word") {
+    } else if (a == "--capture") {
+      ch.capture_db = std::stod(next());
+      ch.custom_capture = true;
+    }
+    else if (a == "--rx-energy") {
+      ch.rx_energy_pct = std::stod(next());
+    }
+    else if (a == "--no-wake-word") {
       ch.wake_word_always_on = false;
     } else if (a == "--priority-bypass-duty") {
       std::string val = next();
