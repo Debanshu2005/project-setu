@@ -8,6 +8,7 @@
 #include <memory>
 #include <ostream>
 #include <random>
+#include <setu/setu_random.hpp>
 #include <set>
 #include <vector>
 
@@ -240,6 +241,7 @@ class World {
   double sens_;
   uint32_t now_ = 0;
   std::mt19937 rng_;
+  setu::Xoshiro256PlusPlus prng_;
   std::map<uint16_t, std::unique_ptr<SimNode>> nodes_;
   std::set<std::pair<uint16_t, uint16_t>> blocked_;
   std::vector<Tx> txs_;

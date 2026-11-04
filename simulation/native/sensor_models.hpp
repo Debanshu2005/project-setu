@@ -16,6 +16,7 @@
 #include <string>
 #include <vector>
 #include <random>
+#include <setu/setu_random.hpp>
 #include <algorithm>
 #include <deque>
 
@@ -78,13 +79,16 @@ class Mpu6050SensorModel {
   static constexpr double kDegToRad = M_PI / 180.0;
   static constexpr double kRadToDeg = 180.0 / M_PI;
 
-  Mpu6050SensorModel(uint32_t seed = 42)
-      : rng_(seed), gauss_(0.0, 1.0) {
+  Mpu6050SensorModel(uint32_t seed = 42, bool is_baseline = false)
+      : is_baseline_(is_baseline), rng_(seed), gauss_(0.0, 1.0), prng_(seed) {
     // Initial stochastic sensor bias offsets
-    accel_bias_x_ = 0.02 * gauss_(rng_);
-    accel_bias_y_ = 0.02 * gauss_(rng_);
-    accel_bias_z_ = 0.03 * gauss_(rng_);
-    gyro_bias_z_ = 0.005 * gauss_(rng_);
+    accel_bias_x_ = 0.02 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    accel_bias_y_ = 0.02 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    accel_bias_z_ = 0.03 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    gyro_bias_z_ = 0.005 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+
+
+
   }
 
   void set_profile(MotionProfile p) { profile_ = p; }
@@ -192,25 +196,26 @@ class Mpu6050SensorModel {
           dyn_gz = 4.2;
         } else {
           // Post-fall immobility
-          dyn_ax = 0.005 * gauss_(rng_);
-          dyn_ay = 0.005 * gauss_(rng_);
-          dyn_az = 0.005 * gauss_(rng_);
+          dyn_ax = 0.005 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+          dyn_ay = 0.005 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+          dyn_az = 0.005 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
         }
         break;
       }
 
       case MotionProfile::Irregular: {
         // Chaotic traversal over disaster rubble
-        dyn_az = 0.6 * kGravity * std::sin(phase_ * 3.1) + 0.3 * kGravity * gauss_(rng_);
-        dyn_ax = 0.4 * kGravity * std::cos(phase_ * 2.3) + 0.2 * kGravity * gauss_(rng_);
+        dyn_az = 0.6 * kGravity * std::sin(phase_ * 3.1) + 0.3 * kGravity * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+        dyn_ax = 0.4 * kGravity * std::cos(phase_ * 2.3) + 0.2 * kGravity * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
         dyn_ay = 0.4 * kGravity * std::sin(phase_ * 1.7);
-        dyn_gz = 0.3 * gauss_(rng_);
+        dyn_gz = 0.3 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
 
-        if (now_ms - last_step_ms_ >= 650 + (rng_() % 300)) {
+        uint32_t step_jitter = is_baseline_ ? (rng_() % 300) : static_cast<uint32_t>(prng_.next_u64() % 300);
+        if (now_ms - last_step_ms_ >= 650 + step_jitter) {
           last_step_ms_ = now_ms;
           step_event = true;
-          step_dist = 0.55f + 0.2f * static_cast<float>(gauss_(rng_));
-          yaw_ += 0.15 * gauss_(rng_); // heading perturbation
+          step_dist = 0.55f + 0.2f * static_cast<float>(is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+          yaw_ += 0.15 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0)); // heading perturbation
         }
         break;
       }
@@ -219,17 +224,17 @@ class Mpu6050SensorModel {
     (void)gt_speed_mps;
 
     // 3. Add white noise & bias drift
-    double noise_ax = 0.08 * gauss_(rng_); // ~80 mg noise
-    double noise_ay = 0.08 * gauss_(rng_);
-    double noise_az = 0.08 * gauss_(rng_);
-    double noise_gz = 0.015 * gauss_(rng_); // ~0.8 deg/s noise
+    double noise_ax = 0.08 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0)); // ~80 mg noise
+    double noise_ay = 0.08 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    double noise_az = 0.08 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    double noise_gz = 0.015 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0)); // ~0.8 deg/s noise
 
     s.ax = grav_x + dyn_ax + accel_bias_x_ + noise_ax;
     s.ay = grav_y + dyn_ay + accel_bias_y_ + noise_ay;
     s.az = grav_z + dyn_az + accel_bias_z_ + noise_az;
     s.gz = dyn_gz + gyro_bias_z_ + noise_gz;
-    s.gx = 0.02 * gauss_(rng_);
-    s.gy = 0.02 * gauss_(rng_);
+    s.gx = 0.02 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    s.gy = 0.02 * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
 
     // 4. Quantization to 16-bit register LSBs with saturation clipping
     auto clamp_i16 = [](double v) -> int16_t {
@@ -266,8 +271,10 @@ class Mpu6050SensorModel {
     }
   }
 
+  bool is_baseline_ = false;
   std::mt19937 rng_;
-  std::normal_distribution<double> gauss_;
+  std::normal_distribution<double> gauss_{0.0, 1.0};
+  setu::Xoshiro256PlusPlus prng_;
 
   MotionProfile profile_ = MotionProfile::Stationary;
   double pitch_ = 0.0;
@@ -382,8 +389,8 @@ class GnssSensorModel {
  public:
   static constexpr double kMPerDegLat = 111320.0;
 
-  GnssSensorModel(uint32_t seed = 42)
-      : rng_(seed), gauss_(0.0, 1.0) {}
+  GnssSensorModel(uint32_t seed = 42, bool is_baseline = false)
+      : is_baseline_(is_baseline), rng_(seed), gauss_(0.0, 1.0), prng_(seed) {}
 
   void set_status(GnssFixStatus s) { status_ = s; }
   GnssFixStatus status() const { return status_; }
@@ -433,8 +440,8 @@ class GnssSensorModel {
     }
 
     // 3. Add Gaussian measurement noise to ground-truth coordinates
-    double err_x = noise_sigma_m * gauss_(rng_);
-    double err_y = noise_sigma_m * gauss_(rng_);
+    double err_x = noise_sigma_m * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
+    double err_y = noise_sigma_m * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
 
     // Convert to microdegrees relative to ground truth
     double dlat_deg = err_y / kMPerDegLat;
@@ -483,8 +490,10 @@ class GnssSensorModel {
   }
 
  private:
+  bool is_baseline_ = false;
   std::mt19937 rng_;
-  std::normal_distribution<double> gauss_;
+  std::normal_distribution<double> gauss_{0.0, 1.0};
+  setu::Xoshiro256PlusPlus prng_;
 
   GnssFixStatus status_ = GnssFixStatus::ValidFix;
   uint32_t outage_start_ms_ = 0;

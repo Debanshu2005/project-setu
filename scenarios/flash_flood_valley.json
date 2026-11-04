@@ -18,7 +18,7 @@
     "vy": -0.8
   },
   "obstacles": [
-    { "id": 1, "label": "flood_channel", "material": "water", "x1": -100, "y1": 300, "x2": 800, "y2": 300, "thickness_m": 1.5, "attenuation_db": 45.0 }
+    { "id": 1, "label": "flood_channel", "material": "water", "x1": 350, "y1": 300, "x2": 1200, "y2": 300, "thickness_m": 1.5, "attenuation_db": 45.0 }
   ],
   "triggers": [
     { "node": 1, "kind": "short", "t": 2000, "label": "Survivor 1: Drifting In Flood (General SOS)" },

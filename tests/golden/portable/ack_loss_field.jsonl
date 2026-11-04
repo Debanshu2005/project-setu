@@ -1,0 +1,334 @@
+{"t":0,"ev":"meta","sf":7,"bw_hz":125000,"tx_dbm":14,"sens":-123,"path_exp":3,"seed":1010}
+{"t":0,"ev":"node_init","id":0,"role":"hub","x":60,"y":60,"lat_e6":22573139,"lon_e6":88434384,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":1,"role":"survivor","x":354.935,"y":572.442,"lat_e6":22577742,"lon_e6":88437253,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":2,"role":"survivor","x":210.959,"y":458.994,"lat_e6":22576723,"lon_e6":88435852,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":3,"role":"survivor","x":706.372,"y":199.405,"lat_e6":22574391,"lon_e6":88440672,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":4,"role":"survivor","x":137.519,"y":126.432,"lat_e6":22573736,"lon_e6":88435138,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":5,"role":"survivor","x":504.586,"y":252.056,"lat_e6":22574864,"lon_e6":88438709,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":6,"role":"survivor","x":467.199,"y":730.165,"lat_e6":22579159,"lon_e6":88438345,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":7,"role":"survivor","x":508.413,"y":665.37,"lat_e6":22578577,"lon_e6":88438746,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":8,"role":"survivor","x":280.577,"y":493.308,"lat_e6":22577031,"lon_e6":88436530,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":100,"role":"relay","x":239.84,"y":326.293,"lat_e6":22575531,"lon_e6":88436133,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":101,"role":"relay","x":530.649,"y":316.749,"lat_e6":22575445,"lon_e6":88438962,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":102,"role":"relay","x":288.254,"y":503.722,"lat_e6":22577125,"lon_e6":88436604,"battery":100,"online":true}
+{"t":0,"ev":"link_init","a":0,"b":1,"rssi":-113.186,"dist":591.256,"path_loss":83.1533,"shadow":-0.359794,"link_margin":8.00653,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":2,"rssi":-116.065,"dist":426.597,"path_loss":78.9005,"shadow":-1.03556,"link_margin":12.935,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":3,"rssi":-121.839,"dist":661.234,"path_loss":84.6106,"shadow":3.85924,"link_margin":2.33011,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":4,"rssi":-95.3167,"dist":102.091,"path_loss":60.2696,"shadow":-1.04689,"link_margin":31.5773,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":5,"rssi":-108.379,"dist":484.295,"path_loss":80.5533,"shadow":-2.60505,"link_margin":12.8517,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":6,"rssi":-120.173,"dist":784.176,"path_loss":86.8324,"shadow":4.16323,"link_margin":-0.195627,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":8,"rssi":-116.198,"dist":486.22,"path_loss":80.605,"shadow":0.916699,"link_margin":9.27832,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":100,"rssi":-103.221,"dist":321.332,"path_loss":75.2086,"shadow":-3.48627,"link_margin":19.0777,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":101,"rssi":-113.466,"dist":536.125,"path_loss":81.878,"shadow":-0.265698,"link_margin":9.18771,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":102,"rssi":-112.319,"dist":498.988,"path_loss":80.9427,"shadow":-1.34151,"link_margin":11.1988,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":2,"rssi":-106.663,"dist":183.302,"path_loss":67.895,"shadow":-10.021,"link_margin":32.926,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":3,"rssi":-114.924,"dist":512.508,"path_loss":81.291,"shadow":-7.4932,"link_margin":17.0022,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":4,"rssi":-116.689,"dist":496.18,"path_loss":80.8692,"shadow":-0.0086211,"link_margin":9.93945,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":5,"rssi":-107.984,"dist":353.614,"path_loss":76.4559,"shadow":1.2528,"link_margin":13.0913,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":6,"rssi":-102.524,"dist":193.596,"path_loss":68.6069,"shadow":0.428551,"link_margin":21.7645,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":7,"rssi":-100.406,"dist":179.418,"path_loss":67.616,"shadow":-1.31989,"link_margin":24.5039,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":8,"rssi":-90.3303,"dist":108.588,"path_loss":61.0735,"shadow":7.36522,"link_margin":22.3613,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":100,"rssi":-91.8919,"dist":271.729,"path_loss":73.0241,"shadow":9.50152,"link_margin":8.2744,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":101,"rssi":-104.321,"dist":310.25,"path_loss":74.7513,"shadow":6.16183,"link_margin":9.88683,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":102,"rssi":-91.521,"dist":95.7539,"path_loss":59.4347,"shadow":-8.91076,"link_margin":40.2761,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":3,"rssi":-110.843,"dist":559.304,"path_loss":82.4294,"shadow":-2.72861,"link_margin":11.0992,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":4,"rssi":-108.773,"dist":340.574,"path_loss":75.9664,"shadow":-3.08581,"link_margin":17.9195,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":5,"rssi":-107.691,"dist":359.222,"path_loss":76.6609,"shadow":6.68517,"link_margin":7.45394,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":6,"rssi":-108.884,"dist":373.085,"path_loss":77.1542,"shadow":-1.07256,"link_margin":14.7183,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":7,"rssi":-113.463,"dist":362.035,"path_loss":76.7625,"shadow":7.67606,"link_margin":6.3614,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":8,"rssi":-86.0017,"dist":77.6152,"path_loss":56.6984,"shadow":5.05136,"link_margin":29.0502,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":100,"rssi":-93.2612,"dist":135.808,"path_loss":63.9878,"shadow":-1.7541,"link_margin":28.5663,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":101,"rssi":-108.185,"dist":349.908,"path_loss":76.3186,"shadow":3.26077,"link_margin":11.2206,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":2,"b":102,"rssi":-89.5874,"dist":89.3035,"path_loss":58.5261,"shadow":0.313379,"link_margin":31.9606,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":4,"rssi":-116.454,"dist":573.514,"path_loss":82.7563,"shadow":2.12085,"link_margin":5.92283,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":5,"rssi":-104.235,"dist":208.542,"path_loss":69.5758,"shadow":0.122648,"link_margin":21.1016,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":6,"rssi":-114.231,"dist":582.159,"path_loss":82.9513,"shadow":-4.1555,"link_margin":12.0042,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":7,"rssi":-110.07,"dist":506.272,"path_loss":81.1315,"shadow":-0.580977,"link_margin":10.2495,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":8,"rssi":-117.861,"dist":517.378,"path_loss":81.4142,"shadow":2.28948,"link_margin":7.09629,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":100,"rssi":-111.353,"dist":483.48,"path_loss":80.5313,"shadow":-2.53349,"link_margin":12.8021,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":101,"rssi":-112.789,"dist":211.301,"path_loss":69.747,"shadow":3.47386,"link_margin":17.5791,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":3,"b":102,"rssi":-118.446,"dist":517.138,"path_loss":81.4082,"shadow":-0.321649,"link_margin":9.71346,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":4,"b":5,"rssi":-110.736,"dist":387.968,"path_loss":77.6639,"shadow":-2.13746,"link_margin":15.2736,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":4,"b":8,"rssi":-105.981,"dist":393.78,"path_loss":77.8576,"shadow":-5.64623,"link_margin":18.5886,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":4,"b":100,"rssi":-103.176,"dist":224.53,"path_loss":70.5382,"shadow":-1.68017,"link_margin":21.942,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":4,"b":101,"rssi":-115.122,"dist":436.774,"path_loss":79.2077,"shadow":-5.14409,"link_margin":16.7364,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":4,"b":102,"rssi":-113.022,"dist":406.286,"path_loss":78.265,"shadow":3.34575,"link_margin":9.18928,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":5,"b":6,"rssi":-112.777,"dist":479.568,"path_loss":80.4255,"shadow":-0.0267017,"link_margin":10.4012,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":5,"b":7,"rssi":-107.789,"dist":413.332,"path_loss":78.489,"shadow":3.08459,"link_margin":9.22645,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":5,"b":8,"rssi":-98.7229,"dist":329.215,"path_loss":75.5244,"shadow":2.23098,"link_margin":13.0446,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":5,"b":100,"rssi":-106.248,"dist":274.958,"path_loss":73.178,"shadow":5.73316,"link_margin":11.8889,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":5,"b":101,"rssi":-90.3429,"dist":69.7456,"path_loss":55.3055,"shadow":-3.61211,"link_margin":39.1066,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":5,"b":102,"rssi":-115.918,"dist":331.867,"path_loss":75.6289,"shadow":0.25473,"link_margin":14.9164,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":6,"b":7,"rssi":-87.5422,"dist":76.7914,"path_loss":56.5594,"shadow":-2.77309,"link_margin":37.0137,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":6,"b":8,"rssi":-110.691,"dist":301.544,"path_loss":74.3805,"shadow":3.17853,"link_margin":13.2409,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":6,"b":100,"rssi":-116.198,"dist":463.47,"path_loss":79.9807,"shadow":-5.77686,"link_margin":16.5962,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":6,"b":101,"rssi":-114.409,"dist":418.257,"path_loss":78.6433,"shadow":-4.55689,"link_margin":16.7136,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":6,"b":102,"rssi":-105.972,"dist":288.613,"path_loss":73.8095,"shadow":-0.475235,"link_margin":17.4658,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":7,"b":8,"rssi":-100.713,"dist":285.507,"path_loss":73.6685,"shadow":2.81215,"link_margin":14.3193,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":7,"b":100,"rssi":-111.115,"dist":432.556,"path_loss":79.0813,"shadow":3.61354,"link_margin":8.10518,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":7,"b":101,"rssi":-111.091,"dist":349.33,"path_loss":76.2971,"shadow":-3.06855,"link_margin":17.5715,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":7,"b":102,"rssi":-104.659,"dist":273.13,"path_loss":73.0911,"shadow":1.78278,"link_margin":15.9261,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":8,"b":100,"rssi":-97.4959,"dist":171.911,"path_loss":67.0591,"shadow":-0.781032,"link_margin":24.5219,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":8,"b":101,"rssi":-103.102,"dist":306.119,"path_loss":74.5767,"shadow":6.0869,"link_margin":10.1364,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":8,"b":102,"rssi":-55.0908,"dist":12.9381,"path_loss":33.3562,"shadow":-0.444807,"link_margin":57.8886,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":100,"b":101,"rssi":-102.26,"dist":290.966,"path_loss":73.9153,"shadow":1.06163,"link_margin":15.8231,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":100,"b":102,"rssi":-86.9217,"dist":183.916,"path_loss":67.9386,"shadow":0.762402,"link_margin":22.099,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":101,"b":102,"rssi":-107.68,"dist":306.128,"path_loss":74.5771,"shadow":-2.16743,"link_margin":18.3903,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":1000,"ev":"button_down","node":1}
+{"t":1000,"ev":"gpio_btn_isr","node":1,"edge":1,"queue_depth":1}
+{"t":1000,"ev":"haptic","node":1,"pattern":0}
+{"t":1150,"ev":"button_up","node":1,"hold_ms":150}
+{"t":1150,"ev":"gpio_btn_isr","node":1,"edge":0,"queue_depth":1}
+{"t":1500,"ev":"link_block","node":100,"to":1}
+{"t":1750,"ev":"haptic","node":1,"pattern":1}
+{"t":1750,"ev":"originate","node":1,"seq":1,"hazard":0,"contact":0,"flags":1}
+{"t":1750,"ev":"tx","node":1,"origin":1,"seq":1,"ack":0,"target":65535,"ref_seq":0,"hazard":0,"flags":1,"lat_e6":22577705,"lon_e6":88437285,"battery":100,"hop":0,"contact":0,"air":62,"energy_mah":0.030}
+{"t":1811,"ev":"rx","node":0,"from":1,"rssi":-112.9,"snr":4.1,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":1811,"ev":"rx","node":2,"from":1,"rssi":-109.2,"snr":7.8,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":1811,"ev":"rx","node":3,"from":1,"rssi":-116.0,"snr":1.0,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":3,"queue_depth":1}
+{"t":1811,"ev":"rx","node":4,"from":1,"rssi":-117.1,"snr":-0.1,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":4,"queue_depth":1}
+{"t":1811,"ev":"rx","node":5,"from":1,"rssi":-107.4,"snr":9.7,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":1811,"ev":"rx","node":6,"from":1,"rssi":-103.4,"snr":13.7,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":1811,"ev":"rx","node":7,"from":1,"rssi":-100.7,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":7,"queue_depth":1}
+{"t":1811,"ev":"rx","node":8,"from":1,"rssi":-92.1,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":1811,"ev":"rx","node":101,"from":1,"rssi":-104.6,"snr":12.4,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":1811,"ev":"rx","node":102,"from":1,"rssi":-90.4,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":1812,"ev":"alert","node":0,"origin":1,"hazard":0,"hops":0,"seq":1,"lat_e6":22577705,"lon_e6":88437285,"battery":100,"flags":1,"contact":0,"latency_ms":62}
+{"t":1813,"ev":"tx","node":0,"origin":0,"seq":1,"ack":1,"target":1,"ref_seq":1,"hazard":0,"flags":2,"lat_e6":0,"lon_e6":0,"battery":100,"hop":0,"contact":0,"air":62,"energy_mah":0.022}
+{"t":1874,"ev":"rx","node":1,"from":0,"rssi":-114.5,"snr":2.5,"battery":100,"energy_mah":0.030}
+{"t":1874,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":1874,"ev":"rx","node":2,"from":0,"rssi":-114.1,"snr":3.0,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":1874,"ev":"rx","node":3,"from":0,"rssi":-121.2,"snr":-4.2,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":3,"queue_depth":1}
+{"t":1874,"ev":"rx","node":4,"from":0,"rssi":-95.4,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":4,"queue_depth":1}
+{"t":1874,"ev":"rx","node":5,"from":0,"rssi":-108.6,"snr":8.4,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":1874,"ev":"rx","node":6,"from":0,"rssi":-118.8,"snr":-1.7,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":1874,"ev":"drop","node":7,"from":0,"rssi":-124.1,"why":"weak"}
+{"t":1874,"ev":"rx","node":8,"from":0,"rssi":-116.1,"snr":0.9,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":1874,"ev":"rx","node":100,"from":0,"rssi":-104.1,"snr":13.0,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":1874,"ev":"rx","node":101,"from":0,"rssi":-110.8,"snr":6.3,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":1874,"ev":"rx","node":102,"from":0,"rssi":-110.1,"snr":6.9,"battery":100,"energy_mah":0.021}
+{"t":1874,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":1875,"ev":"ack_rx","node":1,"ref_seq":1}
+{"t":1875,"ev":"haptic","node":1,"pattern":6}
+{"t":1877,"ev":"tx","node":3,"origin":0,"seq":1,"ack":1,"target":1,"ref_seq":1,"hazard":0,"flags":2,"lat_e6":0,"lon_e6":0,"battery":100,"hop":1,"contact":0,"air":62,"energy_mah":0.022}
+{"t":1938,"ev":"rx","node":0,"from":3,"rssi":-121.9,"snr":-4.9,"battery":100,"energy_mah":0.022}
+{"t":1938,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":1938,"ev":"rx","node":1,"from":3,"rssi":-114.5,"snr":2.5,"battery":100,"energy_mah":0.034}
+{"t":1938,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":1938,"ev":"rx","node":2,"from":3,"rssi":-111.3,"snr":5.8,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":1938,"ev":"rx","node":4,"from":3,"rssi":-117.2,"snr":-0.2,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":4,"queue_depth":1}
+{"t":1938,"ev":"rx","node":5,"from":3,"rssi":-104.2,"snr":12.9,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":1938,"ev":"rx","node":6,"from":3,"rssi":-113.8,"snr":3.3,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":1938,"ev":"rx","node":7,"from":3,"rssi":-109.0,"snr":8.0,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":7,"queue_depth":1}
+{"t":1938,"ev":"rx","node":8,"from":3,"rssi":-116.8,"snr":0.2,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":1938,"ev":"rx","node":100,"from":3,"rssi":-109.7,"snr":7.3,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":1938,"ev":"rx","node":101,"from":3,"rssi":-112.8,"snr":4.2,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":1938,"ev":"rx","node":102,"from":3,"rssi":-119.0,"snr":-2.0,"battery":100,"energy_mah":0.021}
+{"t":1938,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":1939,"ev":"dedup_drop","node":1,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":2,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":4,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":5,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":6,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":8,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":100,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":101,"origin":0,"seq":1}
+{"t":1939,"ev":"dedup_drop","node":102,"origin":0,"seq":1}
+{"t":1948,"ev":"tx","node":8,"origin":0,"seq":1,"ack":1,"target":1,"ref_seq":1,"hazard":0,"flags":2,"lat_e6":0,"lon_e6":0,"battery":100,"hop":1,"contact":0,"air":62,"energy_mah":0.022}
+{"t":2009,"ev":"rx","node":0,"from":8,"rssi":-115.6,"snr":1.4,"battery":100,"energy_mah":0.043}
+{"t":2009,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2009,"ev":"rx","node":1,"from":8,"rssi":-90.9,"snr":15.0,"battery":100,"energy_mah":0.055}
+{"t":2009,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":2009,"ev":"rx","node":2,"from":8,"rssi":-88.0,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":2009,"ev":"rx","node":3,"from":8,"rssi":-116.2,"snr":0.8,"battery":100,"energy_mah":0.043}
+{"t":2009,"ev":"radio_dio1_isr","node":3,"queue_depth":1}
+{"t":2009,"ev":"rx","node":4,"from":8,"rssi":-105.8,"snr":11.2,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":4,"queue_depth":1}
+{"t":2009,"ev":"rx","node":5,"from":8,"rssi":-101.0,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":2009,"ev":"rx","node":6,"from":8,"rssi":-109.5,"snr":7.6,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":2009,"ev":"rx","node":7,"from":8,"rssi":-98.5,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":7,"queue_depth":1}
+{"t":2009,"ev":"rx","node":100,"from":8,"rssi":-98.1,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":2009,"ev":"rx","node":101,"from":8,"rssi":-103.5,"snr":13.5,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":2009,"ev":"rx","node":102,"from":8,"rssi":-57.8,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2009,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":2010,"ev":"dedup_drop","node":1,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":2,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":3,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":4,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":5,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":6,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":7,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":100,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":101,"origin":0,"seq":1}
+{"t":2010,"ev":"dedup_drop","node":102,"origin":0,"seq":1}
+{"t":2016,"ev":"tx","node":4,"origin":1,"seq":1,"ack":0,"target":65535,"ref_seq":0,"hazard":0,"flags":1,"lat_e6":22577705,"lon_e6":88437285,"battery":100,"hop":1,"contact":0,"air":62,"energy_mah":0.043}
+{"t":2051,"ev":"relay_suppressed","node":6,"origin":0,"seq":1}
+{"t":2066,"ev":"relay_suppressed","node":4,"origin":0,"seq":1}
+{"t":2077,"ev":"rx","node":0,"from":4,"rssi":-96.9,"snr":15.0,"battery":100,"energy_mah":0.043}
+{"t":2077,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2077,"ev":"rx","node":1,"from":4,"rssi":-115.6,"snr":1.5,"battery":100,"energy_mah":0.055}
+{"t":2077,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":2077,"ev":"rx","node":2,"from":4,"rssi":-110.2,"snr":6.8,"battery":100,"energy_mah":0.042}
+{"t":2077,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":2077,"ev":"rx","node":3,"from":4,"rssi":-118.2,"snr":-1.2,"battery":100,"energy_mah":0.043}
+{"t":2077,"ev":"radio_dio1_isr","node":3,"queue_depth":1}
+{"t":2077,"ev":"rx","node":5,"from":4,"rssi":-110.9,"snr":6.1,"battery":100,"energy_mah":0.042}
+{"t":2077,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":2077,"ev":"drop","node":6,"from":4,"rssi":-126.8,"why":"weak"}
+{"t":2077,"ev":"rx","node":7,"from":4,"rssi":-122.9,"snr":-5.9,"battery":100,"energy_mah":0.042}
+{"t":2077,"ev":"radio_dio1_isr","node":7,"queue_depth":1}
+{"t":2077,"ev":"rx","node":8,"from":4,"rssi":-104.0,"snr":13.0,"battery":100,"energy_mah":0.043}
+{"t":2077,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":2077,"ev":"rx","node":100,"from":4,"rssi":-102.6,"snr":14.4,"battery":100,"energy_mah":0.042}
+{"t":2077,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":2077,"ev":"rx","node":101,"from":4,"rssi":-116.8,"snr":0.2,"battery":100,"energy_mah":0.042}
+{"t":2077,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":2077,"ev":"rx","node":102,"from":4,"rssi":-111.8,"snr":5.2,"battery":100,"energy_mah":0.042}
+{"t":2077,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":2078,"ev":"dedup_drop","node":0,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":2,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":3,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":5,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":7,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":8,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":101,"origin":1,"seq":1}
+{"t":2078,"ev":"dedup_drop","node":102,"origin":1,"seq":1}
+{"t":2084,"ev":"relay_suppressed","node":100,"origin":0,"seq":1}
+{"t":2088,"ev":"tx","node":3,"origin":1,"seq":1,"ack":0,"target":65535,"ref_seq":0,"hazard":0,"flags":1,"lat_e6":22577705,"lon_e6":88437285,"battery":100,"hop":1,"contact":0,"air":62,"energy_mah":0.044}
+{"t":2149,"ev":"rx","node":0,"from":3,"rssi":-122.5,"snr":-5.5,"battery":100,"energy_mah":0.043}
+{"t":2149,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2149,"ev":"rx","node":1,"from":3,"rssi":-113.2,"snr":3.8,"battery":100,"energy_mah":0.055}
+{"t":2149,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":2149,"ev":"rx","node":2,"from":3,"rssi":-111.7,"snr":5.3,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":2149,"ev":"rx","node":4,"from":3,"rssi":-115.9,"snr":1.1,"battery":100,"energy_mah":0.043}
+{"t":2149,"ev":"radio_dio1_isr","node":4,"queue_depth":1}
+{"t":2149,"ev":"rx","node":5,"from":3,"rssi":-102.9,"snr":14.2,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":2149,"ev":"rx","node":6,"from":3,"rssi":-116.7,"snr":0.3,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":2149,"ev":"rx","node":7,"from":3,"rssi":-110.4,"snr":6.7,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":7,"queue_depth":1}
+{"t":2149,"ev":"rx","node":8,"from":3,"rssi":-116.8,"snr":0.2,"battery":100,"energy_mah":0.043}
+{"t":2149,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":2149,"ev":"rx","node":100,"from":3,"rssi":-112.2,"snr":4.9,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":2149,"ev":"rx","node":101,"from":3,"rssi":-112.4,"snr":4.6,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":2149,"ev":"rx","node":102,"from":3,"rssi":-118.8,"snr":-1.8,"battery":100,"energy_mah":0.042}
+{"t":2149,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":2150,"ev":"dedup_drop","node":0,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":2,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":4,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":5,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":6,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":7,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":8,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":100,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":101,"origin":1,"seq":1}
+{"t":2150,"ev":"dedup_drop","node":102,"origin":1,"seq":1}
+{"t":2185,"ev":"relay_suppressed","node":8,"origin":1,"seq":1}
+{"t":2198,"ev":"relay_suppressed","node":7,"origin":1,"seq":1}
+{"t":2205,"ev":"relay_suppressed","node":5,"origin":1,"seq":1}
+{"t":2207,"ev":"relay_suppressed","node":2,"origin":1,"seq":1}
+{"t":2208,"ev":"relay_suppressed","node":2,"origin":0,"seq":1}
+{"t":2216,"ev":"relay_suppressed","node":101,"origin":0,"seq":1}
+{"t":2218,"ev":"tx","node":7,"origin":0,"seq":1,"ack":1,"target":1,"ref_seq":1,"hazard":0,"flags":2,"lat_e6":0,"lon_e6":0,"battery":100,"hop":2,"contact":0,"air":62,"energy_mah":0.043}
+{"t":2228,"ev":"relay_suppressed","node":5,"origin":0,"seq":1}
+{"t":2231,"ev":"relay_suppressed","node":102,"origin":0,"seq":1}
+{"t":2239,"ev":"relay_suppressed","node":102,"origin":1,"seq":1}
+{"t":2252,"ev":"relay_suppressed","node":101,"origin":1,"seq":1}
+{"t":2279,"ev":"rx","node":0,"from":7,"rssi":-122.6,"snr":-5.6,"battery":100,"energy_mah":0.043}
+{"t":2279,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2279,"ev":"rx","node":1,"from":7,"rssi":-102.7,"snr":14.3,"battery":100,"energy_mah":0.055}
+{"t":2279,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":2279,"ev":"rx","node":2,"from":7,"rssi":-112.6,"snr":4.4,"battery":100,"energy_mah":0.042}
+{"t":2279,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":2279,"ev":"rx","node":3,"from":7,"rssi":-112.6,"snr":4.4,"battery":100,"energy_mah":0.044}
+{"t":2279,"ev":"radio_dio1_isr","node":3,"queue_depth":1}
+{"t":2279,"ev":"drop","node":4,"from":7,"rssi":-123.6,"why":"weak"}
+{"t":2279,"ev":"rx","node":5,"from":7,"rssi":-107.6,"snr":9.5,"battery":100,"energy_mah":0.042}
+{"t":2279,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":2279,"ev":"rx","node":6,"from":7,"rssi":-89.7,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2279,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":2279,"ev":"rx","node":8,"from":7,"rssi":-102.0,"snr":15.0,"battery":100,"energy_mah":0.043}
+{"t":2279,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":2279,"ev":"rx","node":100,"from":7,"rssi":-110.6,"snr":6.4,"battery":100,"energy_mah":0.042}
+{"t":2279,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":2279,"ev":"rx","node":101,"from":7,"rssi":-111.7,"snr":5.3,"battery":100,"energy_mah":0.042}
+{"t":2279,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":2279,"ev":"rx","node":102,"from":7,"rssi":-104.8,"snr":12.2,"battery":100,"energy_mah":0.042}
+{"t":2279,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":2280,"ev":"dedup_drop","node":1,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":2,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":3,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":5,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":6,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":8,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":100,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":101,"origin":0,"seq":1}
+{"t":2280,"ev":"dedup_drop","node":102,"origin":0,"seq":1}
+{"t":2286,"ev":"tx","node":100,"origin":1,"seq":1,"ack":0,"target":65535,"ref_seq":0,"hazard":0,"flags":1,"lat_e6":22577705,"lon_e6":88437285,"battery":100,"hop":2,"contact":0,"air":62,"energy_mah":0.043}
+{"t":2347,"ev":"rx","node":0,"from":100,"rssi":-103.7,"snr":13.3,"battery":100,"energy_mah":0.043}
+{"t":2347,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2347,"ev":"rx","node":2,"from":100,"rssi":-91.2,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2347,"ev":"radio_dio1_isr","node":2,"queue_depth":1}
+{"t":2347,"ev":"rx","node":3,"from":100,"rssi":-110.6,"snr":6.4,"battery":100,"energy_mah":0.044}
+{"t":2347,"ev":"radio_dio1_isr","node":3,"queue_depth":1}
+{"t":2347,"ev":"rx","node":4,"from":100,"rssi":-102.1,"snr":15.0,"battery":100,"energy_mah":0.043}
+{"t":2347,"ev":"radio_dio1_isr","node":4,"queue_depth":1}
+{"t":2347,"ev":"rx","node":5,"from":100,"rssi":-105.7,"snr":11.3,"battery":100,"energy_mah":0.042}
+{"t":2347,"ev":"radio_dio1_isr","node":5,"queue_depth":1}
+{"t":2347,"ev":"rx","node":6,"from":100,"rssi":-117.5,"snr":-0.5,"battery":100,"energy_mah":0.042}
+{"t":2347,"ev":"radio_dio1_isr","node":6,"queue_depth":1}
+{"t":2347,"ev":"rx","node":7,"from":100,"rssi":-111.7,"snr":5.3,"battery":100,"energy_mah":0.043}
+{"t":2347,"ev":"radio_dio1_isr","node":7,"queue_depth":1}
+{"t":2347,"ev":"rx","node":8,"from":100,"rssi":-99.5,"snr":15.0,"battery":100,"energy_mah":0.043}
+{"t":2347,"ev":"radio_dio1_isr","node":8,"queue_depth":1}
+{"t":2347,"ev":"rx","node":101,"from":100,"rssi":-100.7,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2347,"ev":"radio_dio1_isr","node":101,"queue_depth":1}
+{"t":2347,"ev":"rx","node":102,"from":100,"rssi":-86.4,"snr":15.0,"battery":100,"energy_mah":0.042}
+{"t":2347,"ev":"radio_dio1_isr","node":102,"queue_depth":1}
+{"t":2348,"ev":"dedup_drop","node":0,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":2,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":3,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":4,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":5,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":6,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":7,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":8,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":101,"origin":1,"seq":1}
+{"t":2348,"ev":"dedup_drop","node":102,"origin":1,"seq":1}
+{"t":2359,"ev":"relay_suppressed","node":6,"origin":1,"seq":1}

@@ -1,0 +1,39 @@
+{"t":0,"ev":"meta","sf":7,"bw_hz":125000,"tx_dbm":14,"sens":-123,"path_exp":2.5,"seed":101}
+{"t":0,"ev":"node_init","id":0,"role":"hub","x":60,"y":60,"lat_e6":22573139,"lon_e6":88434384,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":1,"role":"survivor","x":410.559,"y":321.586,"lat_e6":22575489,"lon_e6":88437794,"battery":100,"online":true}
+{"t":0,"ev":"node_init","id":100,"role":"relay","x":236.79,"y":276.098,"lat_e6":22575080,"lon_e6":88436104,"battery":100,"online":true}
+{"t":0,"ev":"link_init","a":0,"b":1,"rssi":-95.0632,"dist":437.4,"path_loss":66.022,"shadow":3.24782,"link_margin":21.5302,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":100,"rssi":-94.6383,"dist":279.201,"path_loss":61.1479,"shadow":-0.0951101,"link_margin":29.7472,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":100,"rssi":-86.0509,"dist":179.624,"path_loss":56.3591,"shadow":-0.392143,"link_margin":34.833,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":1000,"ev":"button_down","node":1}
+{"t":1000,"ev":"gpio_btn_isr","node":1,"edge":1,"queue_depth":1}
+{"t":1000,"ev":"haptic","node":1,"pattern":0}
+{"t":1150,"ev":"button_up","node":1,"hold_ms":150}
+{"t":1150,"ev":"gpio_btn_isr","node":1,"edge":0,"queue_depth":1}
+{"t":1750,"ev":"haptic","node":1,"pattern":1}
+{"t":1750,"ev":"originate","node":1,"seq":1,"hazard":0,"contact":0,"flags":1}
+{"t":1750,"ev":"tx","node":1,"origin":1,"seq":1,"ack":0,"target":65535,"ref_seq":0,"hazard":0,"flags":1,"lat_e6":22575504,"lon_e6":88437833,"battery":100,"hop":0,"contact":0,"air":62,"energy_mah":0.030}
+{"t":1811,"ev":"rx","node":0,"from":1,"rssi":-96.2,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":1811,"ev":"rx","node":100,"from":1,"rssi":-85.1,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1811,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":1812,"ev":"alert","node":0,"origin":1,"hazard":0,"hops":0,"seq":1,"lat_e6":22575504,"lon_e6":88437833,"battery":100,"flags":1,"contact":0,"latency_ms":62}
+{"t":1826,"ev":"tx","node":0,"origin":0,"seq":1,"ack":1,"target":1,"ref_seq":1,"hazard":0,"flags":2,"lat_e6":0,"lon_e6":0,"battery":100,"hop":0,"contact":0,"air":62,"energy_mah":0.022}
+{"t":1887,"ev":"rx","node":1,"from":0,"rssi":-93.7,"snr":15.0,"battery":100,"energy_mah":0.030}
+{"t":1887,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":1887,"ev":"rx","node":100,"from":0,"rssi":-95.4,"snr":15.0,"battery":100,"energy_mah":0.021}
+{"t":1887,"ev":"radio_dio1_isr","node":100,"queue_depth":1}
+{"t":1888,"ev":"ack_rx","node":1,"ref_seq":1}
+{"t":1888,"ev":"haptic","node":1,"pattern":6}
+{"t":2055,"ev":"tx","node":100,"origin":1,"seq":1,"ack":0,"target":65535,"ref_seq":0,"hazard":0,"flags":1,"lat_e6":22575504,"lon_e6":88437833,"battery":100,"hop":1,"contact":0,"air":62,"energy_mah":0.043}
+{"t":2116,"ev":"rx","node":0,"from":100,"rssi":-95.9,"snr":15.0,"battery":100,"energy_mah":0.043}
+{"t":2116,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2116,"ev":"rx","node":1,"from":100,"rssi":-86.7,"snr":15.0,"battery":100,"energy_mah":0.055}
+{"t":2116,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":2117,"ev":"dedup_drop","node":0,"origin":1,"seq":1}
+{"t":2166,"ev":"tx","node":100,"origin":0,"seq":1,"ack":1,"target":1,"ref_seq":1,"hazard":0,"flags":2,"lat_e6":0,"lon_e6":0,"battery":100,"hop":1,"contact":0,"air":62,"energy_mah":0.044}
+{"t":2227,"ev":"rx","node":0,"from":100,"rssi":-95.8,"snr":15.0,"battery":100,"energy_mah":0.043}
+{"t":2227,"ev":"radio_dio1_isr","node":0,"queue_depth":1}
+{"t":2227,"ev":"rx","node":1,"from":100,"rssi":-84.3,"snr":15.0,"battery":100,"energy_mah":0.055}
+{"t":2227,"ev":"radio_dio1_isr","node":1,"queue_depth":1}
+{"t":2228,"ev":"dedup_drop","node":1,"origin":0,"seq":1}

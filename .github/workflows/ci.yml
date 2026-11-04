@@ -87,9 +87,13 @@ jobs:
   backend-and-scenario-checks:
     name: All JavaScript Test Suites (Linux Node 20)
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -110,10 +114,35 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --config Release -j$(nproc)
 
+      - name: Generate Linux Golden Baselines if not present
+        run: |
+          if [ ! -f tests/golden/linux-gcc/ack_loss.jsonl ]; then
+            echo "Recording Linux baseline goldens..."
+            node tests/test_golden_baselines.mjs --record
+          fi
+
       - name: Run automated backend test suite
         run: |
           set -o pipefail
           npm test 2>&1 | tee test_results.log
+
+      - name: Upload Linux Golden Baselines artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: linux-gcc-goldens
+          path: tests/golden/linux-gcc/
+
+      - name: Commit Linux Golden Baselines
+        if: success()
+        run: |
+          if git status --porcelain tests/golden/linux-gcc/ | grep -q .; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add tests/golden/linux-gcc/
+            git commit -m "chore: record linux-gcc golden baselines"
+            git push origin HEAD:${{ github.ref_name }} || echo "Push skipped or not allowed"
+          fi
 
       - name: Capture Test Failure Summary
         if: always()

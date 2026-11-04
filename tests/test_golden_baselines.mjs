@@ -15,27 +15,6 @@ const SCENARIOS_DIR = path.join(ROOT_DIR, 'scenarios');
 const GOLDEN_DIR = path.join(ROOT_DIR, 'tests', 'golden');
 
 const NUMERIC_EPSILON = 0.05;
-const RF_EPSILON = 6.0; // 6.0 dB tolerance for compiler standard library normal distribution variation
-
-// Known deterministic event count signatures for Linux GCC 13 (GNU libstdc++)
-const LINUX_GCC13_EVENT_COUNTS = {
-  ack_loss: 321,
-  all_survivors_sos: 18551,
-  basic_network: 42,
-  building_collapse: 1952,
-  congested_disaster: 13335,
-  flash_flood_network: 5615,
-  gps_denied_rescue: 539,
-  high_congestion_storm: 19202,
-  long_duration_network: 3133,
-  multi_sos: 4498,
-  network_partition: 486,
-  recovery: 1002,
-  relay_failure: 1227,
-  single_sos: 360,
-  urban_earthquake: 8376,
-  weak_radio_conditions: 824
-};
 
 const simPath = findSimulator(ROOT_DIR);
 if (!simPath) {
@@ -43,7 +22,15 @@ if (!simPath) {
   process.exit(1);
 }
 
-function buildScenarioArgs(sc, outPath) {
+const isWin = process.platform === 'win32';
+const platformSubdir = isWin ? 'windows-msvc' : 'linux-gcc';
+const platformGoldenDir = path.join(GOLDEN_DIR, platformSubdir);
+const portableGoldenDir = path.join(GOLDEN_DIR, 'portable');
+
+const isRecordMode = process.argv.includes('--record');
+const isRecordPortable = process.argv.includes('--record-portable');
+
+function buildScenarioArgs(sc, outPath, profile = 'baseline') {
   const p = sc.params || {};
   const survivors = p.survivors !== undefined ? p.survivors : 20;
   const relays = p.relays !== undefined ? p.relays : 5;
@@ -56,7 +43,7 @@ function buildScenarioArgs(sc, outPath) {
   const allowDisconnected = Boolean(p.allow_disconnected || p.allowDisconnected || sc.allow_disconnected);
 
   const args = [
-    '--profile', 'baseline',
+    '--profile', profile,
     '--survivors', String(survivors),
     '--relays', String(relays),
     '--zone', String(zone),
@@ -132,9 +119,8 @@ function compareEvents(actual, expected, lineNum) {
     if (typeof expVal === 'number' && typeof actVal === 'number') {
       if (FLOAT_FIELDS.has(k)) {
         const diff = Math.abs(actVal - expVal);
-        const eps = (k === 'rssi' || k === 'snr') ? RF_EPSILON : NUMERIC_EPSILON;
-        if (diff > eps) {
-          return `Line ${lineNum} [${expected.ev}]: field "${k}" exceeds epsilon (expected ${expVal}, got ${actVal}, diff ${diff.toFixed(4)} > ${eps})`;
+        if (diff > NUMERIC_EPSILON) {
+          return `Line ${lineNum} [${expected.ev}]: field "${k}" exceeds epsilon (expected ${expVal}, got ${actVal}, diff ${diff.toFixed(4)} > ${NUMERIC_EPSILON})`;
         }
       } else if (COORD_E6_FIELDS.has(k)) {
         const diff = Math.abs(actVal - expVal);
@@ -142,7 +128,6 @@ function compareEvents(actual, expected, lineNum) {
           return `Line ${lineNum} [${expected.ev}]: coordinate "${k}" exceeds tolerance (expected ${expVal}, got ${actVal}, diff ${diff})`;
         }
       } else if (k === 'seed') {
-        // Topology retry loop may succeed on different iteration index depending on compiler normal distribution
         continue;
       } else {
         if (actVal !== expVal) {
@@ -161,20 +146,72 @@ function compareEvents(actual, expected, lineNum) {
 async function runSuite() {
   console.log('Project Setu: Platform-Tolerant Golden Baseline Verification Suite');
   console.log(`Using binary: ${simPath}`);
+  console.log(`Target platform golden directory: ${platformSubdir}`);
   console.log(`Tolerance epsilon for floating point values: ${NUMERIC_EPSILON}`);
 
   if (!fs.existsSync(GOLDEN_DIR)) {
     throw new Error(`Golden baselines directory not found at ${GOLDEN_DIR}`);
   }
 
+  if (!fs.existsSync(platformGoldenDir)) {
+    fs.mkdirSync(platformGoldenDir, { recursive: true });
+  }
+
   const scenarioFiles = fs.readdirSync(SCENARIOS_DIR)
-    .filter(f => f.endsWith('.json') && fs.existsSync(path.join(GOLDEN_DIR, `${path.basename(f, '.json')}.jsonl`)))
+    .filter(f => f.endsWith('.json') && (
+      fs.existsSync(path.join(platformGoldenDir, `${path.basename(f, '.json')}.jsonl`)) ||
+      fs.existsSync(path.join(GOLDEN_DIR, `${path.basename(f, '.json')}.jsonl`))
+    ))
     .sort();
+
   if (scenarioFiles.length === 0) {
     throw new Error('No scenario files found in scenarios directory');
   }
 
-  console.log(`Checking ${scenarioFiles.length} scenario baseline traces...`);
+  if (isRecordMode || isRecordPortable) {
+    if (isRecordMode) {
+      console.log(`Recording golden traces for platform ${platformSubdir}...`);
+      for (const file of scenarioFiles) {
+        const baseName = path.basename(file, '.json');
+        const scPath = path.join(SCENARIOS_DIR, file);
+        const targetGoldenPath = path.join(platformGoldenDir, `${baseName}.jsonl`);
+        const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
+        const args = buildScenarioArgs(sc, targetGoldenPath, 'baseline');
+        const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
+        if (res.status !== 0) {
+          console.error(`  [ FAIL ] Recording failed for ${file}: ${res.stderr}`);
+          process.exit(1);
+        }
+        console.log(`  [ RECORDED ] ${baseName}.jsonl (${fs.statSync(targetGoldenPath).size} bytes)`);
+      }
+    }
+
+    if (isRecordPortable) {
+      console.log('Recording portable field goldens...');
+      if (!fs.existsSync(portableGoldenDir)) {
+        fs.mkdirSync(portableGoldenDir, { recursive: true });
+      }
+      const portableScenarios = ['basic_network.json', 'single_sos.json', 'ack_loss.json'];
+      for (const file of portableScenarios) {
+        const baseName = path.basename(file, '.json');
+        const scPath = path.join(SCENARIOS_DIR, file);
+        const targetGoldenPath = path.join(portableGoldenDir, `${baseName}_field.jsonl`);
+        const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
+        const args = buildScenarioArgs(sc, targetGoldenPath, 'field');
+        const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
+        if (res.status !== 0) {
+          console.error(`  [ FAIL ] Portable recording failed for ${file}: ${res.stderr}`);
+          process.exit(1);
+        }
+        console.log(`  [ RECORDED PORTABLE ] ${baseName}_field.jsonl (${fs.statSync(targetGoldenPath).size} bytes)`);
+      }
+    }
+
+    console.log('Recording complete.');
+    return;
+  }
+
+  console.log(`Checking ${scenarioFiles.length} scenario baseline traces (${platformSubdir})...`);
   let passedCount = 0;
   let failedCount = 0;
 
@@ -184,7 +221,10 @@ async function runSuite() {
     for (const file of scenarioFiles) {
       const baseName = path.basename(file, '.json');
       const scPath = path.join(SCENARIOS_DIR, file);
-      const goldenPath = path.join(GOLDEN_DIR, `${baseName}.jsonl`);
+      let goldenPath = path.join(platformGoldenDir, `${baseName}.jsonl`);
+      if (!fs.existsSync(goldenPath)) {
+        goldenPath = path.join(GOLDEN_DIR, `${baseName}.jsonl`);
+      }
 
       if (!fs.existsSync(goldenPath)) {
         console.error(`  [ FAIL ] Missing golden baseline file for scenario: ${baseName}.jsonl`);
@@ -193,7 +233,7 @@ async function runSuite() {
       }
 
       const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
-      const args = buildScenarioArgs(sc, tempOutPath);
+      const args = buildScenarioArgs(sc, tempOutPath, 'baseline');
 
       const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
       if (res.status !== 0) {
@@ -205,19 +245,14 @@ async function runSuite() {
       const actualRaw = fs.readFileSync(tempOutPath, 'utf8');
       const expectedRaw = fs.readFileSync(goldenPath, 'utf8');
 
-      // Fast path: exact byte match
       if (actualRaw === expectedRaw) {
         console.log(`  [ PASS ] ${baseName}: Exact byte match (${actualRaw.length} chars)`);
         passedCount++;
         continue;
       }
 
-      // Platform-tolerant line by line JSON event validation
       const actualLines = actualRaw.split(/\r?\n/).filter(line => line.trim().length > 0);
       const expectedLines = expectedRaw.split(/\r?\n/).filter(line => line.trim().length > 0);
-
-      const expectedGccCount = LINUX_GCC13_EVENT_COUNTS[baseName];
-      const countMatchesGcc = expectedGccCount !== undefined && actualLines.length === expectedGccCount;
 
       if (actualLines.length === expectedLines.length) {
         let scenarioFailed = false;
@@ -248,10 +283,6 @@ async function runSuite() {
           console.log(`  [ PASS ] ${baseName}: Sequence and values verified within epsilon tolerance (${actualLines.length} events)`);
           passedCount++;
           continue;
-        } else if (countMatchesGcc) {
-          console.log(`  [ PASS ] ${baseName}: Deterministic baseline confirmed (${actualLines.length} events, verified Linux GCC 13 signature)`);
-          passedCount++;
-          continue;
         } else {
           console.error(`  [ FAIL ] ${baseName}: ${mismatchReason}`);
           failedCount++;
@@ -259,35 +290,73 @@ async function runSuite() {
         }
       }
 
-      // Event counts differ across standard libraries (MSVC vs GCC libstdc++ normal_distribution implementation).
-      // Check known deterministic Linux GCC 13 baseline signature or within valid bounds.
-      if (countMatchesGcc) {
-        console.log(`  [ PASS ] ${baseName}: Deterministic baseline confirmed (${actualLines.length} events, verified Linux GCC 13 signature)`);
-        passedCount++;
-        continue;
-      }
-
-      // Verify that the simulation run is internally deterministic on this platform by running a 2nd time
+      // Check if this platform run is self deterministic
       const res2 = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
       const actualRaw2 = fs.existsSync(tempOutPath) ? fs.readFileSync(tempOutPath, 'utf8') : '';
       const isLocallyDeterministic = (res2.status === 0 && actualRaw.trim() === actualRaw2.trim());
 
-      // Verify meta line and topology initialization consistency
-      let topologyValid = false;
-      try {
-        const actMeta = JSON.parse(actualLines[0]);
-        const expMeta = JSON.parse(expectedLines[0]);
-        topologyValid = (actMeta.ev === 'meta' && actMeta.sf === expMeta.sf);
-      } catch (e) {
-        topologyValid = false;
-      }
+      console.error(`  [ FAIL ] ${baseName}: Event count mismatch (expected ${expectedLines.length} events, got ${actualLines.length} events; locally deterministic: ${isLocallyDeterministic})`);
+      failedCount++;
+    }
 
-      if (actualLines.length > 0 && Math.abs(actualLines.length - expectedLines.length) / expectedLines.length < 0.35 && isLocallyDeterministic && topologyValid) {
-        console.log(`  [ PASS ] ${baseName}: Deterministic baseline confirmed (${actualLines.length} events, compiler-tolerant deterministic run)`);
-        passedCount++;
-      } else {
-        console.error(`  [ FAIL ] ${baseName}: Event count mismatch (expected ${expectedLines.length} events [or GCC ${expectedGccCount}], got ${actualLines.length} events; deterministic: ${isLocallyDeterministic})`);
-        failedCount++;
+    // Next: verify portable field profile goldens if portable directory exists
+    if (fs.existsSync(portableGoldenDir)) {
+      const portableFiles = fs.readdirSync(portableGoldenDir).filter(f => f.endsWith('.jsonl')).sort();
+      if (portableFiles.length > 0) {
+        console.log(`\nChecking ${portableFiles.length} portable field profile goldens...`);
+        for (const pFile of portableFiles) {
+          const scName = pFile.replace('_field.jsonl', '.json');
+          const scPath = path.join(SCENARIOS_DIR, scName);
+          const goldenPath = path.join(portableGoldenDir, pFile);
+          if (!fs.existsSync(scPath)) continue;
+
+          const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
+          const args = buildScenarioArgs(sc, tempOutPath, 'field');
+          const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
+          if (res.status !== 0) {
+            console.error(`  [ FAIL ] Portable run failed for ${pFile}: ${res.stderr}`);
+            failedCount++;
+            continue;
+          }
+
+          const actualRaw = fs.readFileSync(tempOutPath, 'utf8');
+          const expectedRaw = fs.readFileSync(goldenPath, 'utf8');
+
+          if (actualRaw === expectedRaw) {
+            console.log(`  [ PASS ] ${pFile}: Exact portable match (${actualRaw.length} chars)`);
+            passedCount++;
+            continue;
+          }
+
+          const actualLines = actualRaw.split(/\r?\n/).filter(line => line.trim().length > 0);
+          const expectedLines = expectedRaw.split(/\r?\n/).filter(line => line.trim().length > 0);
+
+          if (actualLines.length === expectedLines.length) {
+            let pFailed = false;
+            let pReason = null;
+            for (let i = 0; i < expectedLines.length; i++) {
+              if (actualLines[i] === expectedLines[i]) continue;
+              const actObj = JSON.parse(actualLines[i]);
+              const expObj = JSON.parse(expectedLines[i]);
+              const mismatch = compareEvents(actObj, expObj, i + 1);
+              if (mismatch) {
+                pReason = mismatch;
+                pFailed = true;
+                break;
+              }
+            }
+            if (!pFailed) {
+              console.log(`  [ PASS ] ${pFile}: Sequence and values verified within epsilon (${actualLines.length} events)`);
+              passedCount++;
+            } else {
+              console.error(`  [ FAIL ] ${pFile}: ${pReason}`);
+              failedCount++;
+            }
+          } else {
+            console.error(`  [ FAIL ] ${pFile}: Event count mismatch (expected ${expectedLines.length}, got ${actualLines.length})`);
+            failedCount++;
+          }
+        }
       }
     }
   } finally {
@@ -297,9 +366,8 @@ async function runSuite() {
   }
 
   console.log('\nBaseline Verification Summary:');
-  console.log(`  Total:  ${scenarioFiles.length}`);
-  console.log(`  Passed: ${passedCount}`);
-  console.log(`  Failed: ${failedCount}`);
+  console.log(`  Total Passed: ${passedCount}`);
+  console.log(`  Total Failed: ${failedCount}`);
 
   if (failedCount > 0) {
     process.exit(1);

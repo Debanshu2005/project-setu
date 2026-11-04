@@ -58,18 +58,19 @@ TEST(duty_cycle_budget) {
 
 TEST(make_demo_world_topology_is_cross_compiler_deterministic) {
   sim::ChannelParams ch;
+  ch.profile = sim::RealismProfile::Field;
   auto w = sim::make_demo_world(20, 5, 1200, ch, 7);
   CHECK(w != nullptr);
   auto n0 = w->get_node_info(0);
   CHECK_EQ(static_cast<int>(n0.x), 60);
   CHECK_EQ(static_cast<int>(n0.y), 60);
-  // Verify that Survivor 7 position is exactly deterministic across all compilers
+  // Verify that Survivor 7 position is exactly deterministic across all compilers in Field profile
   auto n7 = w->get_node_info(7);
-  CHECK_EQ(static_cast<int>(std::round(n7.x * 10)), 9415);
-  CHECK_EQ(static_cast<int>(std::round(n7.y * 10)), 8035);
+  CHECK_EQ(static_cast<int>(std::round(n7.x * 10)), 6840);
+  CHECK_EQ(static_cast<int>(std::round(n7.y * 10)), 9718);
   auto r100 = w->get_node_info(100);
-  CHECK_EQ(static_cast<int>(std::round(r100.x * 10)), 2999);
-  CHECK_EQ(static_cast<int>(std::round(r100.y * 10)), 3837);
+  CHECK_EQ(static_cast<int>(std::round(r100.x * 10)), 2607);
+  CHECK_EQ(static_cast<int>(std::round(r100.y * 10)), 3466);
 }
 
 TEST(zero_sigma_channel_precondition_safety) {
@@ -457,4 +458,23 @@ TEST(obstacle_rf_attenuation_in_world_simulation) {
     double baseline_rssi = w.mean_rssi(1, 0);
     CHECK(std::abs(clear_rssi - baseline_rssi) < 1e-4);
   }
+}
+
+TEST(setu_portable_random_generator) {
+  setu::Xoshiro256PlusPlus rng1(12345);
+  setu::Xoshiro256PlusPlus rng2(12345);
+
+  for (int i = 0; i < 1000; i++) {
+    CHECK_EQ(rng1.next_u64(), rng2.next_u64());
+    CHECK(std::abs(rng1.next_u01() - rng2.next_u01()) < 1e-15);
+  }
+
+  // Reciprocity of hash link keys
+  uint64_t k1 = setu::HashRandom::hash_link_key(42, 10, 20);
+  uint64_t k2 = setu::HashRandom::hash_link_key(42, 20, 10);
+  CHECK_EQ(k1, k2);
+
+  double g1 = setu::HashRandom::link_gaussian(42, 10, 20, 0.0, 3.0);
+  double g2 = setu::HashRandom::link_gaussian(42, 20, 10, 0.0, 3.0);
+  CHECK(std::abs(g1 - g2) < 1e-15);
 }

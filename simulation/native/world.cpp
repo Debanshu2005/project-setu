@@ -74,6 +74,7 @@ struct World::SimNode {
   bool fall_sos_triggered = false;
   std::mt19937 rng;
   std::normal_distribution<double> gauss{0.0, 1.0};
+  setu::Xoshiro256PlusPlus prng;
 
   void consume_energy(double pct, const char* reason) {
     if (!online || battery == 0) return;
@@ -165,7 +166,13 @@ struct World::SimNode {
   struct Rand : setu::IRandom {
     SimNode& n;
     explicit Rand(SimNode& s) : n(s) {}
-    uint32_t uniform(uint32_t m) override { return m ? static_cast<uint32_t>(n.rng() % m) : 0; }
+    uint32_t uniform(uint32_t m) override {
+      if (!m) return 0;
+      if (n.w.ch_.profile == RealismProfile::Baseline) {
+        return static_cast<uint32_t>(n.rng() % m);
+      }
+      return static_cast<uint32_t>(n.prng.next_u64() % m);
+    }
   } rand{*this};
   struct Radio : setu::IRadio {
     SimNode& n;
@@ -206,10 +213,10 @@ struct World::SimNode {
       }
       // Field profile: Physical step-and-heading pedestrian dead reckoning
       ImuSample s = n.imu_sensor.update(n.w.now_);
-      const double secs = std::max(0.1, (n.w.now_ - n.gnss_lost_at) / 1000.0);
-      double heading_err = 0.005 * std::sqrt(secs) * n.gauss(n.rng);
+      const double secs = std::max(1.0, (n.w.now_ - n.gnss_lost_at) / 1000.0 + 60.0);
+      double heading_err = 0.005 * std::sqrt(secs) * n.prng.gaussian(0.0, 1.0);
       double dr_heading = s.heading_rad + heading_err;
-      double bias_drift = 0.015 * secs * n.gauss(n.rng);
+      double bias_drift = 0.8 * std::sqrt(secs);
       double dr_x = n.x + bias_drift * std::cos(dr_heading);
       double dr_y = n.y + bias_drift * std::sin(dr_heading);
       xy_to_e6(dr_x, dr_y, la, lo);
@@ -280,8 +287,9 @@ struct World::SimNode {
         initial_battery(std::min<uint8_t>(100, init_batt)),
         battery_fraction(std::min<uint8_t>(100, init_batt)),
         rng(world.seed_ * 2654435761u + cfg.node_id),
-        imu_sensor(world.seed_ * 10007u + cfg.node_id),
-        gnss_sensor(world.seed_ * 10009u + cfg.node_id),
+        prng(world.seed_ * 2654435761u + cfg.node_id),
+        imu_sensor(world.seed_ * 10007u + cfg.node_id, world.ch_.profile == RealismProfile::Baseline),
+        gnss_sensor(world.seed_ * 10009u + cfg.node_id, world.ch_.profile == RealismProfile::Baseline),
         energy_model(world.ch_.battery_capacity_mah, init_batt) {
     if (battery == 0) online = false;
     int32_t init_la = 0, init_lo = 0;
@@ -304,7 +312,7 @@ struct World::SimNode {
 // ------------------------------------------------------------------ world
 
 World::World(const ChannelParams& ch, uint32_t seed)
-    : ch_(ch), seed_(seed), sens_(setu::lora_sensitivity_dbm(ch.sf)), rng_(seed) {
+    : ch_(ch), seed_(seed), sens_(setu::lora_sensitivity_dbm(ch.sf)), rng_(seed), prng_(seed) {
   if (ch_.profile == RealismProfile::Baseline) {
     // Baseline is legacy profile (pinned to 300 mAh capacity and legacy percentage model)
   } else {
@@ -552,10 +560,15 @@ double World::mean_rssi(uint16_t a, uint16_t b) const {
   const auto& na = *nodes_.at(a);
   const auto& nb = *nodes_.at(b);
   const double d = std::max(1.0, std::hypot(na.x - nb.x, na.y - nb.y));
-  std::mt19937 lr(seed_ ^ (k.first * 65537u + k.second * 2246822519u));
-  const double shadow = (ch_.shadow_sigma_db > 0.0)
-                            ? std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr)
-                            : 0.0;
+  double shadow = 0.0;
+  if (ch_.shadow_sigma_db > 0.0) {
+    if (ch_.profile == RealismProfile::Baseline) {
+      std::mt19937 lr(seed_ ^ (k.first * 65537u + k.second * 2246822519u));
+      shadow = std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr);
+    } else {
+      shadow = setu::HashRandom::link_gaussian(seed_, k.first, k.second, 0.0, ch_.shadow_sigma_db);
+    }
+  }
   double pl = ch_.ref_loss_db + 10.0 * ch_.path_exp * std::log10(d) + ch_.extra_loss_db + shadow;
 
   if (ch_.profile == RealismProfile::Field) {
@@ -792,9 +805,14 @@ void World::finish_tx(const Tx& tx) {
     if (r == tx.from || !kv.second->online || kv.second->battery == 0) continue;
     const double mean = mean_rssi(tx.from, r);
     if (mean < sens_ - 6.0) continue;  // far outside range: not worth tracing
-    const double fade = (ch_.fading_sigma_db > 0.0)
-                            ? std::normal_distribution<double>(0.0, ch_.fading_sigma_db)(rng_)
-                            : 0.0;
+    double fade = 0.0;
+    if (ch_.fading_sigma_db > 0.0) {
+      if (ch_.profile == RealismProfile::Baseline) {
+        fade = std::normal_distribution<double>(0.0, ch_.fading_sigma_db)(rng_);
+      } else {
+        fade = setu::HashRandom::tx_gaussian(seed_, tx.tx_id, r, 0.0, ch_.fading_sigma_db);
+      }
+    }
     const double rssi = mean + fade;
     char b[128];
     if (rssi < sens_) {
@@ -840,7 +858,15 @@ void World::finish_tx(const Tx& tx) {
         }
       }
     }
-    if (!dropped && ch_.random_loss > 0 && u01(rng_) < ch_.random_loss) {
+    bool lost = false;
+    if (!dropped && ch_.random_loss > 0.0) {
+      if (ch_.profile == RealismProfile::Baseline) {
+        lost = (u01(rng_) < ch_.random_loss);
+      } else {
+        lost = (setu::HashRandom::tx_uniform(seed_, tx.tx_id, r) < ch_.random_loss);
+      }
+    }
+    if (lost) {
       dropped = true;
       why = "loss";
       counters_.lost++;
@@ -1121,104 +1147,160 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
 
   for (uint32_t s = seed; s < seed + 500; s++) {
     auto w = std::make_unique<World>(ch, s);
-    std::mt19937 r(s);
     setu::NodeConfig c = base;
     c.priority_ignores_duty = ch.priority_bypass_duty;
 
-    if (s < seed + 25) {
-      // Phase 1: Classic uniform grid placement to preserve exact deterministic vectors
-      // for configurations where the grid is viable.
-      std::uniform_real_distribution<double> jitter(-60, 60), pos(100, zone);
-      c.node_id = 0;
-      c.role = setu::Role::Hub;
-      uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
-      w->add_node(c, 60, 60, hub_batt);
-      for (int i = 0; i < relays; i++) {
-        c.node_id = static_cast<uint16_t>(100 + i);
-        c.role = setu::Role::Relay;
-        uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-        const double jy = jitter(r);
-        const double jx = jitter(r);
-        w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jx,
-                    (i / cols + 1) * zone / (rows + 1) + jy, r_batt);
-      }
-      for (int i = 0; i < survivors; i++) {
-        c.node_id = static_cast<uint16_t>(i + 1);
-        c.role = setu::Role::Survivor;
-        uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-        const double py = pos(r);
-        const double px = pos(r);
-        w->add_node(c, px, py, s_batt);
+    if (ch.profile != RealismProfile::Baseline) {
+      // Portable deterministic topology generation for Field and Idealized profiles
+      setu::Xoshiro256PlusPlus pr(s);
+
+      if (s < seed + 25) {
+        c.node_id = 0;
+        c.role = setu::Role::Hub;
+        uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+        w->add_node(c, 60, 60, hub_batt);
+        for (int i = 0; i < relays; i++) {
+          c.node_id = static_cast<uint16_t>(100 + i);
+          c.role = setu::Role::Relay;
+          uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+          const double jy = pr.uniform(-60.0, 60.0);
+          const double jx = pr.uniform(-60.0, 60.0);
+          w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jx,
+                      (i / cols + 1) * zone / (rows + 1) + jy, r_batt);
+        }
+        for (int i = 0; i < survivors; i++) {
+          c.node_id = static_cast<uint16_t>(i + 1);
+          c.role = setu::Role::Survivor;
+          uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+          const double py = pr.uniform(100.0, zone);
+          const double px = pr.uniform(100.0, zone);
+          w->add_node(c, px, py, s_batt);
+        }
+      } else {
+        const double hub_x = std::min(60.0, zone * 0.1);
+        const double hub_y = std::min(60.0, zone * 0.1);
+        c.node_id = 0;
+        c.role = setu::Role::Hub;
+        uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+        w->add_node(c, hub_x, hub_y, hub_batt);
+
+        std::vector<uint16_t> backbone = {0};
+        const double d_step = std::max(15.0, std::min(d_viable * 0.80, zone * 0.5));
+        const double d_min_step = std::max(10.0, d_step * 0.40);
+
+        for (int i = 0; i < relays; i++) {
+          c.node_id = static_cast<uint16_t>(100 + i);
+          c.role = setu::Role::Relay;
+          uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+
+          bool placed = false;
+          for (int k = 0; k < 30; k++) {
+            size_t parent_idx = 0;
+            if (backbone.size() > 1 && (pr.next_u64() % 100 < 70)) {
+              parent_idx = backbone.size() - 1 - (pr.next_u64() % std::min<size_t>(3, backbone.size()));
+            } else {
+              parent_idx = pr.next_u64() % backbone.size();
+            }
+            uint16_t parent_id = backbone[parent_idx];
+            auto p_info = w->get_node_info(parent_id);
+
+            double base_angle = std::atan2(zone * 0.75 - p_info.y, zone * 0.75 - p_info.x);
+            double angle = base_angle + pr.uniform(-M_PI * 0.35, M_PI * 0.35);
+            double dist = pr.uniform(d_min_step, d_step);
+
+            double cx = std::clamp(p_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
+            double cy = std::clamp(p_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
+
+            if (k == 0) {
+              w->add_node(c, cx, cy, r_batt);
+            } else {
+              w->reposition_node(c.node_id, cx, cy);
+            }
+
+            if (w->mean_rssi(parent_id, c.node_id) >= sens + ch.connect_margin_db) {
+              placed = true;
+              backbone.push_back(c.node_id);
+              break;
+            }
+          }
+          if (!placed) {
+            uint16_t parent_id = backbone.back();
+            auto p_info = w->get_node_info(parent_id);
+            double close_dist = std::min(25.0, d_step * 0.3);
+            double cx = std::clamp(p_info.x + close_dist, 30.0, zone - 30.0);
+            double cy = std::clamp(p_info.y + close_dist, 30.0, zone - 30.0);
+            w->reposition_node(c.node_id, cx, cy);
+            backbone.push_back(c.node_id);
+          }
+        }
+
+        if (relays == 0) {
+          for (int i = 0; i < survivors; i++) {
+            c.node_id = static_cast<uint16_t>(i + 1);
+            c.role = setu::Role::Survivor;
+            uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+            const double py = pr.uniform(100.0, zone);
+            const double px = pr.uniform(100.0, zone);
+            w->add_node(c, px, py, s_batt);
+          }
+        } else {
+          for (int i = 0; i < survivors; i++) {
+            c.node_id = static_cast<uint16_t>(i + 1);
+            c.role = setu::Role::Survivor;
+            uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+
+            bool placed = false;
+            for (int k = 0; k < 30; k++) {
+              uint16_t host_id = backbone[pr.next_u64() % backbone.size()];
+              auto h_info = w->get_node_info(host_id);
+
+              double angle = pr.uniform(0.0, 2.0 * M_PI);
+              double dist = pr.uniform(std::min(15.0, d_step * 0.2), d_step);
+
+              double cx = std::clamp(h_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
+              double cy = std::clamp(h_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
+
+              if (k == 0) {
+                w->add_node(c, cx, cy, s_batt);
+              } else {
+                w->reposition_node(c.node_id, cx, cy);
+              }
+
+              if (w->mean_rssi(host_id, c.node_id) >= sens + ch.connect_margin_db) {
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              uint16_t host_id = backbone[pr.next_u64() % backbone.size()];
+              auto h_info = w->get_node_info(host_id);
+              double close_dist = std::min(20.0, d_step * 0.3);
+              double cx = std::clamp(h_info.x + close_dist, 30.0, zone - 30.0);
+              double cy = std::clamp(h_info.y + close_dist, 30.0, zone - 30.0);
+              w->reposition_node(c.node_id, cx, cy);
+            }
+          }
+        }
       }
     } else {
-      // Phase 2: Deliberate progressive placement
-      // Builds a verified connected backbone extending outward from the Hub,
-      // and places survivors within verified link range of backbone nodes.
-      const double hub_x = std::min(60.0, zone * 0.1);
-      const double hub_y = std::min(60.0, zone * 0.1);
-      c.node_id = 0;
-      c.role = setu::Role::Hub;
-      uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
-      w->add_node(c, hub_x, hub_y, hub_batt);
+      // Legacy baseline placement using std::mt19937
+      std::mt19937 r(s);
 
-      std::vector<uint16_t> backbone = {0};
-
-      const double d_step = std::max(15.0, std::min(d_viable * 0.80, zone * 0.5));
-      const double d_min_step = std::max(10.0, d_step * 0.40);
-
-      for (int i = 0; i < relays; i++) {
-        c.node_id = static_cast<uint16_t>(100 + i);
-        c.role = setu::Role::Relay;
-        uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
-
-        bool placed = false;
-        for (int k = 0; k < 30; k++) {
-          size_t parent_idx = 0;
-          if (backbone.size() > 1 && (r() % 100 < 70)) {
-            parent_idx = backbone.size() - 1 - (r() % std::min<size_t>(3, backbone.size()));
-          } else {
-            parent_idx = r() % backbone.size();
-          }
-          uint16_t parent_id = backbone[parent_idx];
-          auto p_info = w->get_node_info(parent_id);
-
-          double base_angle = std::atan2(zone * 0.75 - p_info.y, zone * 0.75 - p_info.x);
-          std::uniform_real_distribution<double> angle_jitter(-M_PI * 0.35, M_PI * 0.35);
-          double angle = base_angle + angle_jitter(r);
-
-          std::uniform_real_distribution<double> dist_distr(d_min_step, d_step);
-          double dist = dist_distr(r);
-
-          double cx = std::clamp(p_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
-          double cy = std::clamp(p_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
-
-          if (k == 0) {
-            w->add_node(c, cx, cy, r_batt);
-          } else {
-            w->reposition_node(c.node_id, cx, cy);
-          }
-
-          if (w->mean_rssi(parent_id, c.node_id) >= sens + ch.connect_margin_db) {
-            placed = true;
-            backbone.push_back(c.node_id);
-            break;
-          }
+      if (s < seed + 25) {
+        std::uniform_real_distribution<double> jitter(-60, 60), pos(100, zone);
+        c.node_id = 0;
+        c.role = setu::Role::Hub;
+        uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+        w->add_node(c, 60, 60, hub_batt);
+        for (int i = 0; i < relays; i++) {
+          c.node_id = static_cast<uint16_t>(100 + i);
+          c.role = setu::Role::Relay;
+          uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+          const double jy = jitter(r);
+          const double jx = jitter(r);
+          w->add_node(c, (i % cols + 1) * zone / (cols + 1) + jx,
+                      (i / cols + 1) * zone / (rows + 1) + jy, r_batt);
         }
-        if (!placed) {
-          uint16_t parent_id = backbone.back();
-          auto p_info = w->get_node_info(parent_id);
-          double close_dist = std::min(25.0, d_step * 0.3);
-          double cx = std::clamp(p_info.x + close_dist, 30.0, zone - 30.0);
-          double cy = std::clamp(p_info.y + close_dist, 30.0, zone - 30.0);
-          w->reposition_node(c.node_id, cx, cy);
-          backbone.push_back(c.node_id);
-        }
-      }
-
-      if (relays == 0) {
-        // Without relays, survivors are dispersed throughout the operational zone [100, zone]
-        // and cannot bridge to the Hub if the zone exceeds physical radio range.
-        std::uniform_real_distribution<double> pos(100, zone);
         for (int i = 0; i < survivors; i++) {
           c.node_id = static_cast<uint16_t>(i + 1);
           c.role = setu::Role::Survivor;
@@ -1228,45 +1310,115 @@ std::unique_ptr<World> make_demo_world(int survivors, int relays, double zone, c
           w->add_node(c, px, py, s_batt);
         }
       } else {
-        // With relays extending into the zone, survivors are positioned within verified radio reach
-        // of the deployed mesh backbone.
-        for (int i = 0; i < survivors; i++) {
-          c.node_id = static_cast<uint16_t>(i + 1);
-          c.role = setu::Role::Survivor;
-          uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+        const double hub_x = std::min(60.0, zone * 0.1);
+        const double hub_y = std::min(60.0, zone * 0.1);
+        c.node_id = 0;
+        c.role = setu::Role::Hub;
+        uint8_t hub_batt = initial_batteries.count(0) ? initial_batteries.at(0) : 100;
+        w->add_node(c, hub_x, hub_y, hub_batt);
+
+        std::vector<uint16_t> backbone = {0};
+        const double d_step = std::max(15.0, std::min(d_viable * 0.80, zone * 0.5));
+        const double d_min_step = std::max(10.0, d_step * 0.40);
+
+        for (int i = 0; i < relays; i++) {
+          c.node_id = static_cast<uint16_t>(100 + i);
+          c.role = setu::Role::Relay;
+          uint8_t r_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
 
           bool placed = false;
           for (int k = 0; k < 30; k++) {
-            uint16_t host_id = backbone[r() % backbone.size()];
-            auto h_info = w->get_node_info(host_id);
+            size_t parent_idx = 0;
+            if (backbone.size() > 1 && (r() % 100 < 70)) {
+              parent_idx = backbone.size() - 1 - (r() % std::min<size_t>(3, backbone.size()));
+            } else {
+              parent_idx = r() % backbone.size();
+            }
+            uint16_t parent_id = backbone[parent_idx];
+            auto p_info = w->get_node_info(parent_id);
 
-            std::uniform_real_distribution<double> angle_distr(0.0, 2.0 * M_PI);
-            std::uniform_real_distribution<double> dist_distr(std::min(15.0, d_step * 0.2), d_step);
+            double base_angle = std::atan2(zone * 0.75 - p_info.y, zone * 0.75 - p_info.x);
+            std::uniform_real_distribution<double> angle_jitter(-M_PI * 0.35, M_PI * 0.35);
+            double angle = base_angle + angle_jitter(r);
 
-            double angle = angle_distr(r);
+            std::uniform_real_distribution<double> dist_distr(d_min_step, d_step);
             double dist = dist_distr(r);
 
-            double cx = std::clamp(h_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
-            double cy = std::clamp(h_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
+            double cx = std::clamp(p_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
+            double cy = std::clamp(p_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
 
             if (k == 0) {
-              w->add_node(c, cx, cy, s_batt);
+              w->add_node(c, cx, cy, r_batt);
             } else {
               w->reposition_node(c.node_id, cx, cy);
             }
 
-            if (w->mean_rssi(host_id, c.node_id) >= sens + ch.connect_margin_db) {
+            if (w->mean_rssi(parent_id, c.node_id) >= sens + ch.connect_margin_db) {
               placed = true;
+              backbone.push_back(c.node_id);
               break;
             }
           }
           if (!placed) {
-            uint16_t host_id = backbone[r() % backbone.size()];
-            auto h_info = w->get_node_info(host_id);
-            double close_dist = std::min(20.0, d_step * 0.3);
-            double cx = std::clamp(h_info.x + close_dist, 30.0, zone - 30.0);
-            double cy = std::clamp(h_info.y + close_dist, 30.0, zone - 30.0);
+            uint16_t parent_id = backbone.back();
+            auto p_info = w->get_node_info(parent_id);
+            double close_dist = std::min(25.0, d_step * 0.3);
+            double cx = std::clamp(p_info.x + close_dist, 30.0, zone - 30.0);
+            double cy = std::clamp(p_info.y + close_dist, 30.0, zone - 30.0);
             w->reposition_node(c.node_id, cx, cy);
+            backbone.push_back(c.node_id);
+          }
+        }
+
+        if (relays == 0) {
+          std::uniform_real_distribution<double> pos(100, zone);
+          for (int i = 0; i < survivors; i++) {
+            c.node_id = static_cast<uint16_t>(i + 1);
+            c.role = setu::Role::Survivor;
+            uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+            const double py = pos(r);
+            const double px = pos(r);
+            w->add_node(c, px, py, s_batt);
+          }
+        } else {
+          for (int i = 0; i < survivors; i++) {
+            c.node_id = static_cast<uint16_t>(i + 1);
+            c.role = setu::Role::Survivor;
+            uint8_t s_batt = initial_batteries.count(c.node_id) ? initial_batteries.at(c.node_id) : 100;
+
+            bool placed = false;
+            for (int k = 0; k < 30; k++) {
+              uint16_t host_id = backbone[r() % backbone.size()];
+              auto h_info = w->get_node_info(host_id);
+
+              std::uniform_real_distribution<double> angle_distr(0.0, 2.0 * M_PI);
+              std::uniform_real_distribution<double> dist_distr(std::min(15.0, d_step * 0.2), d_step);
+
+              double angle = angle_distr(r);
+              double dist = dist_distr(r);
+
+              double cx = std::clamp(h_info.x + dist * std::cos(angle), 30.0, zone - 30.0);
+              double cy = std::clamp(h_info.y + dist * std::sin(angle), 30.0, zone - 30.0);
+
+              if (k == 0) {
+                w->add_node(c, cx, cy, s_batt);
+              } else {
+                w->reposition_node(c.node_id, cx, cy);
+              }
+
+              if (w->mean_rssi(host_id, c.node_id) >= sens + ch.connect_margin_db) {
+                placed = true;
+                break;
+              }
+            }
+            if (!placed) {
+              uint16_t host_id = backbone[r() % backbone.size()];
+              auto h_info = w->get_node_info(host_id);
+              double close_dist = std::min(20.0, d_step * 0.3);
+              double cx = std::clamp(h_info.x + close_dist, 30.0, zone - 30.0);
+              double cy = std::clamp(h_info.y + close_dist, 30.0, zone - 30.0);
+              w->reposition_node(c.node_id, cx, cy);
+            }
           }
         }
       }

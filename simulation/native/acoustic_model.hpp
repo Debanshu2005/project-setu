@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <string>
 #include <algorithm>
-#include <random>
+#include <setu/setu_random.hpp>
 
 namespace sim {
 
@@ -70,7 +70,7 @@ struct Inmp441Parameters {
 class AcousticVoiceModel {
  public:
   AcousticVoiceModel(uint32_t seed = 42)
-      : rng_(seed), dist_(0.0, 1.0) {}
+      : prng_(seed) {}
 
   // Computes voice SPL at the wristband microphone given user voice effort and mouth-to-wrist distance
   // User normal speech is ~65 dB SPL at 1 meter, emergency shout is ~85 to 90 dB SPL at 1 meter
@@ -106,7 +106,7 @@ class AcousticVoiceModel {
     if (out_snr) *out_snr = snr;
 
     double p_detect = detection_probability(snr);
-    double roll = dist_(rng_);
+    double roll = prng_.next_u01();
     return roll < p_detect;
   }
 
@@ -125,8 +125,7 @@ class AcousticVoiceModel {
   static constexpr uint32_t kVoiceCommandWindowMs = 3500;
 
  private:
-  std::mt19937 rng_;
-  std::uniform_real_distribution<double> dist_;
+  setu::Xoshiro256PlusPlus prng_;
 };
 
 }  // namespace sim
