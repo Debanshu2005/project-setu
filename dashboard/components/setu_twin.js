@@ -10,7 +10,7 @@ let OrbitControls = null;
 
 async function getThree() {
   if (THREE && OrbitControls) return { THREE, OrbitControls };
-  if (typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined') {
+  if (typeof window !== 'undefined') {
     try {
       THREE = await import('three');
       const oc = await import('three/addons/OrbitControls.js');
@@ -32,7 +32,6 @@ export class SetuTwin3DViewer {
   constructor(containerId, options = {}) {
     this.container = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
     this.options = options;
-    this.destroyed = false;
 
     // Core WebGL / Three.js properties
     this.renderer = null;
@@ -139,27 +138,19 @@ export class SetuTwin3DViewer {
     const canvas2DEl = document.getElementById('setuTwinCanvas2D');
     if (canvas2DEl) this.canvas2D = canvas2DEl;
 
-    if (this.destroyed) return;
-
-    if (typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined' && this.mountPoint) {
-      try {
-        const { THREE: t, OrbitControls: oc } = await getThree();
-        if (this.destroyed) return;
-        if (t && oc) {
-          this.T = t;
-          this.initThree(t, oc);
-          this.isWebGL = true;
-        } else {
-          this.initFallback2D();
-        }
-      } catch (e) {
+    try {
+      const { THREE: t, OrbitControls: oc } = await getThree();
+      if (t && oc && typeof window !== 'undefined' && this.mountPoint && typeof window.WebGLRenderingContext !== 'undefined') {
+        this.T = t;
+        this.initThree(t, oc);
+        this.isWebGL = true;
+      } else {
         this.initFallback2D();
       }
-    } else {
+    } catch (e) {
       this.initFallback2D();
     }
 
-    if (this.destroyed) return;
     this.bindButtons();
     this.bindKeyboard();
     this.startRenderLoop();
@@ -333,7 +324,7 @@ export class SetuTwin3DViewer {
 
   bindKeyboard() {
     if (typeof window === 'undefined') return;
-    this._onKeyDown = (e) => {
+    window.addEventListener('keydown', (e) => {
       const k = e.key.toLowerCase();
       if (k === 'w') this.keys.w = true;
       if (k === 'a') this.keys.a = true;
@@ -341,8 +332,9 @@ export class SetuTwin3DViewer {
       if (k === 'd') this.keys.d = true;
       if (k === 'q') this.keys.q = true;
       if (k === 'e') this.keys.e = true;
-    };
-    this._onKeyUp = (e) => {
+    });
+
+    window.addEventListener('keyup', (e) => {
       const k = e.key.toLowerCase();
       if (k === 'w') this.keys.w = false;
       if (k === 'a') this.keys.a = false;
@@ -350,9 +342,7 @@ export class SetuTwin3DViewer {
       if (k === 'd') this.keys.d = false;
       if (k === 'q') this.keys.q = false;
       if (k === 'e') this.keys.e = false;
-    };
-    window.addEventListener('keydown', this._onKeyDown);
-    window.addEventListener('keyup', this._onKeyUp);
+    });
   }
 
   bindMouseControls2D() {
@@ -758,13 +748,11 @@ export class SetuTwin3DViewer {
   // --- Render Loop & Animation ---
 
   startRenderLoop() {
-    if (this.destroyed) return;
     let lastTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
     let frameCount = 0;
     let lastFpsUpdate = lastTime;
 
     const render = (now) => {
-      if (this.destroyed) return;
       const currentTime = now || ((typeof performance !== 'undefined') ? performance.now() : Date.now());
       const delta = (currentTime - lastTime) / 1000;
       lastTime = currentTime;
@@ -783,7 +771,6 @@ export class SetuTwin3DViewer {
         this.drawFallback2D();
       }
 
-      if (this.destroyed) return;
       if (typeof requestAnimationFrame === 'function') {
         this.animId = requestAnimationFrame(render);
       }
@@ -863,30 +850,6 @@ export class SetuTwin3DViewer {
       ctx.arc(sx, sy, node.role === 'hub' ? 10 : node.role === 'relay' ? 7 : 5, 0, Math.PI * 2);
       ctx.fillStyle = node.role === 'hub' ? '#38bdf8' : node.role === 'relay' ? '#f59e0b' : '#10b981';
       ctx.fill();
-    }
-  }
-
-  destroy() {
-    this.destroyed = true;
-    if (this.animId) {
-      if (typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(this.animId);
-      }
-      this.animId = null;
-    }
-    if (this.renderer && typeof this.renderer.dispose === 'function') {
-      this.renderer.dispose();
-    }
-    if (this.controls && typeof this.controls.dispose === 'function') {
-      this.controls.dispose();
-    }
-    if (this._onKeyDown && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-      window.removeEventListener('keydown', this._onKeyDown);
-      this._onKeyDown = null;
-    }
-    if (this._onKeyUp && typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
-      window.removeEventListener('keyup', this._onKeyUp);
-      this._onKeyUp = null;
     }
   }
 }

@@ -4,35 +4,13 @@
 // 1000 mAh LiPo pouch, tactile SOS button, OLED display, RGB status LED, and haptic vibration ripple.
 // Supports direct controls: button press, voice trigger, battery level, motion profile.
 
-let THREE = null;
-let OrbitControls = null;
-
-async function getThree() {
-  if (THREE && OrbitControls) return { THREE, OrbitControls };
-  if (typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined') {
-    try {
-      THREE = await import('three');
-      const oc = await import('three/addons/OrbitControls.js');
-      OrbitControls = oc.OrbitControls;
-    } catch (_) {
-      try {
-        THREE = await import('../vendor/three/three.module.js');
-        const oc = await import('../vendor/three/OrbitControls.js');
-        OrbitControls = oc.OrbitControls;
-      } catch (e) {
-        console.warn('[WristbandTwin] Could not load Three.js ES module:', e);
-      }
-    }
-  }
-  return { THREE, OrbitControls };
-}
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/OrbitControls.js';
 
 export class WristbandTwinComponent {
   constructor(containerId, options = {}) {
     this.container = typeof containerId === 'string' ? document.getElementById(containerId) : containerId;
     this.options = options;
-    this.destroyed = false;
-    this.T = null;
     this.currentNode = null;
     this.lossBudget = null;
     this.isPressed = false;
@@ -56,7 +34,7 @@ export class WristbandTwinComponent {
     }
   }
 
-  async init() {
+  init() {
     this.container.innerHTML = `
       <div class="wristband-twin-panel" style="display:flex; flex-direction:column; gap:12px; background:#0f172a; color:#f8fafc; border-radius:8px; padding:16px; border:1px solid #334155; font-family:sans-serif;">
         <div style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid #1e293b; padding-bottom:8px;">
@@ -147,44 +125,34 @@ export class WristbandTwinComponent {
     `;
 
     this.mountPoint = document.getElementById('wristband3dMount');
-    if (this.mountPoint && typeof window !== 'undefined' && typeof window.WebGLRenderingContext !== 'undefined') {
-      try {
-        const { THREE: t, OrbitControls: oc } = await getThree();
-        if (this.destroyed) return;
-        if (t && oc) {
-          this.initThree(t, oc);
-        }
-      } catch (e) {
-        console.warn('[WristbandTwin] WebGL init failed:', e);
-      }
+    if (this.mountPoint) {
+      this.initThree();
     }
 
-    if (this.destroyed) return;
     this.bindEvents();
   }
 
-  initThree(t, oc) {
-    this.T = t;
+  initThree() {
     const width = this.mountPoint.clientWidth || 340;
     const height = this.mountPoint.clientHeight || 220;
 
     // Renderer
-    this.renderer = new t.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2));
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = true;
     this.mountPoint.appendChild(this.renderer.domElement);
 
     // Scene
-    this.scene = new t.Scene();
-    this.scene.background = new t.Color(0x020617);
+    this.scene = new THREE.Scene();
+    this.scene.background = new THREE.Color(0x020617);
 
     // Camera
-    this.camera = new t.PerspectiveCamera(40, width / height, 0.1, 500);
+    this.camera = new THREE.PerspectiveCamera(40, width / height, 0.1, 500);
     this.camera.position.set(0, 45, 65);
 
     // Controls
-    this.controls = new oc(this.camera, this.renderer.domElement);
+    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
     this.controls.minDistance = 25;
@@ -192,14 +160,14 @@ export class WristbandTwinComponent {
     this.controls.target.set(0, 0, 0);
 
     // Lighting
-    const amb = new t.AmbientLight(0xffffff, 0.7);
+    const amb = new THREE.AmbientLight(0xffffff, 0.7);
     this.scene.add(amb);
 
-    const dirLight = new t.DirectionalLight(0xffffff, 1.2);
+    const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
     dirLight.position.set(30, 60, 40);
     this.scene.add(dirLight);
 
-    const backLight = new t.DirectionalLight(0x38bdf8, 0.5);
+    const backLight = new THREE.DirectionalLight(0x38bdf8, 0.5);
     backLight.position.set(-30, -20, -30);
     this.scene.add(backLight);
 
@@ -211,25 +179,23 @@ export class WristbandTwinComponent {
   }
 
   buildWristband() {
-    const t = this.T;
-    if (!t) return;
-    this.wristbandGroup = new t.Group();
+    this.wristbandGroup = new THREE.Group();
 
     // 1. Elastomer Strap (curved loop)
-    const strapGeo = new t.TorusGeometry(18, 4.5, 16, 48, Math.PI * 1.5);
-    const strapMat = new t.MeshStandardMaterial({
+    const strapGeo = new THREE.TorusGeometry(18, 4.5, 16, 48, Math.PI * 1.5);
+    const strapMat = new THREE.MeshStandardMaterial({
       color: 0x1e293b,
       roughness: 0.8,
       metalness: 0.1
     });
-    const strap = new t.Mesh(strapGeo, strapMat);
+    const strap = new THREE.Mesh(strapGeo, strapMat);
     strap.rotation.z = Math.PI / 4;
     strap.position.y = -6;
     this.wristbandGroup.add(strap);
 
     // 2. Ruggedized Polycarbonate Casing
-    const caseGeo = new t.BoxGeometry(26, 8, 30);
-    const caseMat = new t.MeshPhysicalMaterial({
+    const caseGeo = new THREE.BoxGeometry(26, 8, 30);
+    const caseMat = new THREE.MeshPhysicalMaterial({
       color: 0x0f172a,
       roughness: 0.4,
       metalness: 0.2,
@@ -237,64 +203,64 @@ export class WristbandTwinComponent {
       opacity: 0.88,
       transmission: 0.3
     });
-    const caseMesh = new t.Mesh(caseGeo, caseMat);
+    const caseMesh = new THREE.Mesh(caseGeo, caseMat);
     caseMesh.position.y = 4;
     this.wristbandGroup.add(caseMesh);
 
     // 3. Internal PCB Board
-    const pcbGeo = new t.BoxGeometry(22, 1, 26);
-    const pcbMat = new t.MeshStandardMaterial({ color: 0x065f46, roughness: 0.5 });
-    const pcb = new t.Mesh(pcbGeo, pcbMat);
+    const pcbGeo = new THREE.BoxGeometry(22, 1, 26);
+    const pcbMat = new THREE.MeshStandardMaterial({ color: 0x065f46, roughness: 0.5 });
+    const pcb = new THREE.Mesh(pcbGeo, pcbMat);
     pcb.position.y = 3;
     this.wristbandGroup.add(pcb);
 
     // 4. ESP32-S3 Microcontroller Chip
-    const mcuGeo = new t.BoxGeometry(7, 1.2, 7);
-    const mcuMat = new t.MeshStandardMaterial({ color: 0x111827, metalness: 0.7, roughness: 0.3 });
-    const mcu = new t.Mesh(mcuGeo, mcuMat);
+    const mcuGeo = new THREE.BoxGeometry(7, 1.2, 7);
+    const mcuMat = new THREE.MeshStandardMaterial({ color: 0x111827, metalness: 0.7, roughness: 0.3 });
+    const mcu = new THREE.Mesh(mcuGeo, mcuMat);
     mcu.position.set(-4, 4.2, -4);
     this.wristbandGroup.add(mcu);
 
     // 5. Semtech SX1262 LoRa Transceiver
-    const loraGeo = new t.BoxGeometry(6, 1.2, 6);
-    const loraMat = new t.MeshStandardMaterial({ color: 0x1e3a8a, metalness: 0.8, roughness: 0.2 });
-    const lora = new t.Mesh(loraGeo, loraMat);
+    const loraGeo = new THREE.BoxGeometry(6, 1.2, 6);
+    const loraMat = new THREE.MeshStandardMaterial({ color: 0x1e3a8a, metalness: 0.8, roughness: 0.2 });
+    const lora = new THREE.Mesh(loraGeo, loraMat);
     lora.position.set(4, 4.2, -4);
     this.wristbandGroup.add(lora);
 
     // 6. LiPo Battery Pouch (1000 mAh)
-    const battGeo = new t.BoxGeometry(18, 2.5, 11);
-    const battMat = new t.MeshStandardMaterial({ color: 0x64748b, metalness: 0.85, roughness: 0.3 });
-    const batt = new t.Mesh(battGeo, battMat);
+    const battGeo = new THREE.BoxGeometry(18, 2.5, 11);
+    const battMat = new THREE.MeshStandardMaterial({ color: 0x64748b, metalness: 0.85, roughness: 0.3 });
+    const batt = new THREE.Mesh(battGeo, battMat);
     batt.position.set(0, 2, 5);
     this.wristbandGroup.add(batt);
 
     // 7. Tactile SOS Button (depresses on click)
-    const btnGeo = new t.CylinderGeometry(4.5, 5, 3, 32);
-    const btnMat = new t.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 });
-    this.buttonMesh = new t.Mesh(btnGeo, btnMat);
+    const btnGeo = new THREE.CylinderGeometry(4.5, 5, 3, 32);
+    const btnMat = new THREE.MeshStandardMaterial({ color: 0xef4444, roughness: 0.3, metalness: 0.1 });
+    this.buttonMesh = new THREE.Mesh(btnGeo, btnMat);
     this.buttonMesh.position.set(0, 8.5, 0);
     this.wristbandGroup.add(this.buttonMesh);
 
     // 8. OLED Mini Display
-    const oledGeo = new t.PlaneGeometry(16, 7);
-    const oledMat = new t.MeshBasicMaterial({ color: 0x0284c7 });
-    this.oledMesh = new t.Mesh(oledGeo, oledMat);
+    const oledGeo = new THREE.PlaneGeometry(16, 7);
+    const oledMat = new THREE.MeshBasicMaterial({ color: 0x0284c7 });
+    this.oledMesh = new THREE.Mesh(oledGeo, oledMat);
     this.oledMesh.rotation.x = -Math.PI / 2;
     this.oledMesh.position.set(0, 8.1, -9);
     this.wristbandGroup.add(this.oledMesh);
 
     // 9. RGB Status LED
-    const ledGeo = new t.SphereGeometry(1.2, 16, 16);
-    const ledMat = new t.MeshBasicMaterial({ color: 0x10b981 });
-    this.ledMesh = new t.Mesh(ledGeo, ledMat);
+    const ledGeo = new THREE.SphereGeometry(1.2, 16, 16);
+    const ledMat = new THREE.MeshBasicMaterial({ color: 0x10b981 });
+    this.ledMesh = new THREE.Mesh(ledGeo, ledMat);
     this.ledMesh.position.set(-9, 8.2, 0);
     this.wristbandGroup.add(this.ledMesh);
 
     // 10. Microphone Port
-    const micGeo = new t.CylinderGeometry(0.8, 0.8, 1, 16);
-    const micMat = new t.MeshBasicMaterial({ color: 0x0f172a });
-    const mic = new t.Mesh(micGeo, micMat);
+    const micGeo = new THREE.CylinderGeometry(0.8, 0.8, 1, 16);
+    const micMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+    const mic = new THREE.Mesh(micGeo, micMat);
     mic.position.set(9, 8.1, 0);
     this.wristbandGroup.add(mic);
 
@@ -359,11 +325,10 @@ export class WristbandTwinComponent {
     if (ind) ind.style.opacity = '1';
 
     // Add haptic visual ripple ring
-    const t = this.T;
-    if (this.wristbandGroup && t) {
-      const rippleGeo = new t.RingGeometry(14, 15, 32);
-      const rippleMat = new t.MeshBasicMaterial({ color: 0xf59e0b, side: t.DoubleSide, transparent: true, opacity: 0.9 });
-      const ripple = new t.Mesh(rippleGeo, rippleMat);
+    if (this.wristbandGroup) {
+      const rippleGeo = new THREE.RingGeometry(14, 15, 32);
+      const rippleMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b, side: THREE.DoubleSide, transparent: true, opacity: 0.9 });
+      const ripple = new THREE.Mesh(rippleGeo, rippleMat);
       ripple.rotation.x = -Math.PI / 2;
       ripple.position.y = 4;
       this.wristbandGroup.add(ripple);
@@ -449,14 +414,11 @@ export class WristbandTwinComponent {
   }
 
   startRenderLoop() {
-    if (this.destroyed) return;
-    let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
+    let lastTime = performance.now();
 
     const render = (now) => {
-      if (this.destroyed) return;
-      const currentTime = now || (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const delta = (currentTime - lastTime) / 1000;
-      lastTime = currentTime;
+      const delta = (now - lastTime) / 1000;
+      lastTime = now;
 
       if (this.controls) {
         this.controls.update();
@@ -487,34 +449,9 @@ export class WristbandTwinComponent {
         this.renderer.render(this.scene, this.camera);
       }
 
-      if (this.destroyed) return;
-      if (typeof requestAnimationFrame === 'function') {
-        this.animId = requestAnimationFrame(render);
-      }
+      this.animId = requestAnimationFrame(render);
     };
 
-    if (typeof requestAnimationFrame === 'function') {
-      this.animId = requestAnimationFrame(render);
-    }
-  }
-
-  destroy() {
-    this.destroyed = true;
-    if (this.animId) {
-      if (typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(this.animId);
-      }
-      this.animId = null;
-    }
-    if (this.hapticTimer) {
-      clearTimeout(this.hapticTimer);
-      this.hapticTimer = null;
-    }
-    if (this.renderer && typeof this.renderer.dispose === 'function') {
-      this.renderer.dispose();
-    }
-    if (this.controls && typeof this.controls.dispose === 'function') {
-      this.controls.dispose();
-    }
+    this.animId = requestAnimationFrame(render);
   }
 }
