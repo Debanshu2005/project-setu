@@ -26,7 +26,8 @@
     "test:field_energy": "node tests/test_field_profile_energy.mjs",
     "test:mutation": "node tests/test_mutation_smoke.mjs",
     "test:parity": "node tests/test_engine_parity.mjs --optional",
-    "test:pdr": "node tests/test_pdr_sensitivity.mjs"
+    "test:pdr": "node tests/test_pdr_sensitivity.mjs",
+    "screenshots:gap": "node scripts/capture_gap_screenshots.mjs"
   },
   "keywords": [
     "disaster-response",
@@ -36,5 +37,8 @@
     "setu"
   ],
   "author": "Antigravity Engineering",
-  "license": "Apache-2.0"
+  "license": "Apache-2.0",
+  "devDependencies": {
+    "playwright": "^1.64.1"
+  }
 }
