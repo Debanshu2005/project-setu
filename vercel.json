@@ -15,6 +15,7 @@
     { "source": "/styles/(.*)", "destination": "/dashboard/styles/$1" },
     { "source": "/src/(.*)", "destination": "/dashboard/src/$1" },
     { "source": "/components/(.*)", "destination": "/dashboard/components/$1" },
+    { "source": "/vendor/(.*)", "destination": "/dashboard/vendor/$1" },
     { "source": "/scenarios/(.*)", "destination": "/scenarios/$1" },
     { "source": "/simulation/(.*)", "destination": "/simulation/$1" }
   ],
