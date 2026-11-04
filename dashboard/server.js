@@ -905,7 +905,8 @@ const MIME_TYPES = {
   '.jsonl': 'text/plain; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
-  '.ico': 'image/x-icon'
+  '.ico': 'image/x-icon',
+  '.wasm': 'application/wasm'
 };
 
 const DEFAULT_ALLOWED_ORIGINS = [
@@ -1128,7 +1129,7 @@ const server = http.createServer(async (req, res) => {
   // Decoupled Simulation Job Lifecycle API (Phases C, D, E, F)
   // ---------------------------------------------------------------------------
 
-  // POST /api/jobs — Submit an asynchronous simulation job
+  // POST /api/jobs : Submit an asynchronous simulation job
   if (req.method === 'POST' && pathname === '/api/jobs') {
     try {
       const body = await parseBody(req);
@@ -1157,13 +1158,13 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // GET /api/jobs — List recent simulation jobs
+  // GET /api/jobs : List recent simulation jobs
   if (req.method === 'GET' && pathname === '/api/jobs') {
     const limit = parseInt(reqUrl.searchParams.get('limit') || 20, 10);
     return sendJson(res, 200, jobManager.listJobs(limit), req);
   }
 
-  // GET /api/jobs/:id/events — Dedicated SSE Event Stream for a Job (with Reconnect Support)
+  // GET /api/jobs/:id/events : Dedicated SSE Event Stream for a Job (with Reconnect Support)
   if (req.method === 'GET' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/events')) {
     const rawId = pathname.replace('/api/jobs/', '').replace('/events', '');
     const jobId = decodeURIComponent(rawId);
@@ -1202,7 +1203,7 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  // GET /api/jobs/:id/results — Retrieve Completed Job Results
+  // GET /api/jobs/:id/results : Retrieve Completed Job Results
   if (req.method === 'GET' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/results')) {
     const rawId = pathname.replace('/api/jobs/', '').replace('/results', '');
     const jobId = decodeURIComponent(rawId);
@@ -1221,7 +1222,7 @@ const server = http.createServer(async (req, res) => {
     }, req);
   }
 
-  // POST /api/jobs/:id/cancel — Cancel a Running or Queued Job
+  // POST /api/jobs/:id/cancel : Cancel a Running or Queued Job
   if (req.method === 'POST' && pathname.startsWith('/api/jobs/') && pathname.endsWith('/cancel')) {
     const rawId = pathname.replace('/api/jobs/', '').replace('/cancel', '');
     const jobId = decodeURIComponent(rawId);
@@ -1232,7 +1233,7 @@ const server = http.createServer(async (req, res) => {
     return sendJson(res, 200, { success: true, jobId, message: 'Job cancellation requested' }, req);
   }
 
-  // GET /api/jobs/:id — Inspect Job Status & Snapshot
+  // GET /api/jobs/:id : Inspect Job Status & Snapshot
   if (req.method === 'GET' && pathname.startsWith('/api/jobs/')) {
     const rawId = pathname.replace('/api/jobs/', '');
     const jobId = decodeURIComponent(rawId);
@@ -1247,7 +1248,7 @@ const server = http.createServer(async (req, res) => {
   // Backward-Compatible Simulation Routes (Wrapped in Job Management)
   // ---------------------------------------------------------------------------
 
-  // POST /api/simulate — Backward-Compatible Simulation Endpoint
+  // POST /api/simulate : Backward-Compatible Simulation Endpoint
   if (req.method === 'POST' && pathname === '/api/simulate') {
     const simPath = findSimulator();
     if (!simPath) {
@@ -1281,7 +1282,7 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
-  // GET /api/simulate/stream — Backward-Compatible Simulation Event Stream
+  // GET /api/simulate/stream : Backward-Compatible Simulation Event Stream
   if (req.method === 'GET' && pathname === '/api/simulate/stream') {
     const simPath = findSimulator();
     if (!simPath) {

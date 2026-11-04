@@ -8,9 +8,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Job 1: Native C++ Build and Test on Linux (Ubuntu GCC/Clang)
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   build-and-test-linux:
     name: Native C++ Core (Linux GCC 13)
     runs-on: ubuntu-latest
@@ -38,9 +38,9 @@ jobs:
           cat sim_cli_out.jsonl
           grep -q '"cmd":"summary"' sim_cli_out.jsonl || (echo "Summary not found in CLI output" && exit 1)
 
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Job 2: Native C++ Build and Test on Windows (MSVC 2022)
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   build-and-test-windows:
     name: Native C++ Core (Windows MSVC)
     runs-on: windows-latest
@@ -95,9 +95,62 @@ jobs:
       - name: Verify Golden and Portable Baselines on Linux Clang
         run: node tests/test_golden_baselines.mjs
 
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  # Job 2c: WebAssembly Build and Native Parity Verification (Emscripten)
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+  build-and-test-wasm:
+    name: WebAssembly Simulation Core (Emscripten & Parity)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Setup Emscripten
+        uses: mymindstorm/setup-emsdk@v14
+        with:
+          version: 3.1.53
+
+      - name: Build native simulator for parity reference
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --config Release -j$(nproc)
+
+      - name: Configure and build WebAssembly simulator
+        run: |
+          emcmake cmake -B build-wasm -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-wasm --target setu_sim_wasm --config Release
+          mkdir -p dashboard/wasm
+          cp build-wasm/setu_sim_wasm.js dashboard/wasm/
+          cp build-wasm/setu_sim_wasm.wasm dashboard/wasm/
+
+      - name: Measure WebAssembly binary size
+        run: |
+          ls -la dashboard/wasm/
+          WASM_SIZE=$(stat -c %s dashboard/wasm/setu_sim_wasm.wasm)
+          WASM_KB=$(awk "BEGIN {printf \"%.2f\", $WASM_SIZE / 1024}")
+          echo "::notice title=WebAssembly Binary Size::$WASM_SIZE bytes (${WASM_KB} KB)"
+          echo "WASM_SIZE=$WASM_SIZE" >> $GITHUB_ENV
+          echo "WASM_KB=$WASM_KB" >> $GITHUB_ENV
+
+      - name: Verify line-by-line parity against native simulator
+        run: node tests/test_engine_parity.mjs
+
+      - name: Upload WebAssembly artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: setu-sim-wasm-artifacts
+          path: |
+            dashboard/wasm/setu_sim_wasm.js
+            dashboard/wasm/setu_sim_wasm.wasm
+
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Job 3: Docker Container Build & Healthcheck Verification
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   docker-validation:
     name: Docker Multi-Stage Build & Container Health
     runs-on: ubuntu-latest
@@ -122,9 +175,9 @@ jobs:
           docker stop setu-ci-container
           docker rm setu-ci-container
 
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Job 4: Node.js Backend & API Verification
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   backend-and-scenario-checks:
     name: All JavaScript Test Suites (Linux Node 20)
     runs-on: ubuntu-latest
@@ -167,9 +220,9 @@ jobs:
           tail -n 120 test_results.log >> $GITHUB_STEP_SUMMARY 2>&1 || true
           echo '```' >> $GITHUB_STEP_SUMMARY
 
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Job 5: ESP-IDF ESP32-S3 Target Firmware Build Verification
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   firmware-build-esp32s3:
     name: ESP-IDF ESP32-S3 Firmware Build
     runs-on: ubuntu-latest
@@ -186,9 +239,9 @@ jobs:
           idf.py set-target esp32s3
           idf.py build
 
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   # Job 6: PlatformIO ESP32-S3 Firmware Target Build Verification
-  # ----------------------------------------------------------------------------
+  # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
   firmware-build-platformio:
     name: PlatformIO ESP32-S3 Firmware Build
     runs-on: ubuntu-latest
