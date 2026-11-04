@@ -40,7 +40,7 @@ if(EMSCRIPTEN)
   target_link_libraries(setu_sim_wasm PRIVATE setu_world)
   set_target_properties(setu_sim_wasm PROPERTIES
     SUFFIX ".js"
-    LINK_FLAGS "-s WASM=1 -s EXPORTED_RUNTIME_METHODS=['ccall','cwrap'] -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createSetuSim' --bind"
+    LINK_FLAGS "-s WASM=1 -s ALLOW_MEMORY_GROWTH=1 -s MODULARIZE=1 -s EXPORT_NAME='createSetuSim' -s EXPORT_ES6=1 -s ENVIRONMENT='web,worker,node' --bind -O3"
   )
 endif()
 

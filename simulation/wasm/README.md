@@ -21,12 +21,13 @@ This guide documents the compilation of the authoritative C++ simulation engine 
 
 3. Build the WebAssembly module:
    ```bash
-   cmake --build build-wasm --target setu_sim_wasm
+   cmake --build build-wasm --target setu_sim_wasm --config Release
    ```
 
 4. Artifacts generated:
-   - `build-wasm/setu_sim_wasm.wasm`: Precompiled WebAssembly bytecode (approximately 180 KB).
-   - `build-wasm/setu_sim_wasm.js`: Emscripten module loader and runtime glue code.
+   - `build-wasm/setu_sim_wasm.wasm`: Precompiled WebAssembly bytecode. Verified and measured in CI build job. See `docs/CLAIMS.md` for exact measured binary size.
+   - `build-wasm/setu_sim_wasm.js`: Emscripten module loader and ES6 runtime wrapper.
+   - For browser delivery, artifacts are served via `dashboard/wasm/` and loaded by `dashboard/src/wasm_loader.js`.
 
 ## 3. JavaScript Integration
 
@@ -53,12 +54,15 @@ session.run_until(5000);
 // Query link margin and loss budget between Node 1 and Hub 0
 const lossBudget = JSON.parse(session.get_loss_budget_json(1, 0));
 console.log("Link margin dB:", lossBudget.link_margin_db);
-console.log("Obstacle loss:", lossBudget.obstacle_loss); // "not modeled yet"
+
+// Retrieve full state for 3D visualizer
+const state = JSON.parse(session.get_state_json());
+console.log("Node count:", state.nodes.length);
 ```
 
 ## 4. Architectural Guarantees
 
 - Exact physics parity: Compiles the exact same C++ sources (`world.cpp`, `node.cpp`, `button.cpp`).
+- Bit-level determinism: Uses portable `HashRandom` and `Xoshiro256PlusPlus` PRNG engines.
+- Continuous CI verification: Automated job in `.github/workflows/ci.yml` compiles the module and validates line-by-line trace equality against the native simulator binary via `tests/test_engine_parity.mjs`.
 - Zero npm runtime dependencies.
-- Deterministic trace generation across desktop, serverless, and browser execution.
-

@@ -1,3 +1,4 @@
+import { loadWasmSimulator, WasmSimulatorClient } from './wasm_loader.js';
 // Project Setu - Operations Dashboard Main Application Orchestrator
 
 import { SetuApi } from './api.js';
@@ -43,6 +44,7 @@ class SetuDashboardApp {
     // Header & status
     this.elStatusDot = document.getElementById('statusDot');
     this.elStatusText = document.getElementById('statusText');
+    this.elEngineBadge = document.getElementById('engineBadge');
     this.elScenarioSelect = document.getElementById('scenarioSelect');
     this.btnRunModal = document.getElementById('btnOpenRunModal');
     this.btnExportJson = document.getElementById('btnExportJson');
@@ -715,7 +717,7 @@ class SetuDashboardApp {
         lblBackendSource.textContent = `Source: ${String(src).toUpperCase()}${isOverride ? ' (Manual override active)' : ''}`;
       }
       if (lblEngineStatus) {
-        const base = SetuApi.getBaseUrl();
+                const base = SetuApi.getBaseUrl();
         lblEngineStatus.textContent = base ? `Active Target: ${base}` : 'No backend URL configured';
         lblEngineStatus.style.color = '#94a3b8';
       }

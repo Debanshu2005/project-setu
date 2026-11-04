@@ -20,6 +20,8 @@ export function findSimulator(customRootDir) {
     path.join(rootDir, 'setu_sim.exe'),
     path.join(rootDir, 'build', 'setu_sim'),
     path.join(rootDir, 'build', 'Release', 'setu_sim'),
+    path.join(rootDir, 'build-native', 'setu_sim'),
+    path.join(rootDir, 'build-native', 'Release', 'setu_sim'),
     path.join(rootDir, 'setu_sim')
   ];
   for (const c of candidates) {
