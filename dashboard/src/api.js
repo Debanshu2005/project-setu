@@ -436,6 +436,18 @@ export class SetuApi {
       }
     }
 
+    // Static fallback: direct scenario trace asset
+    if ((!res || !res.ok) && typeof window !== 'undefined' && window.location) {
+      try {
+        const staticRes = await this.fetchWithTimeout(`/scenarios/traces/${encodeURIComponent(filename)}`, {}, 5000);
+        if (staticRes.ok) {
+          res = staticRes;
+          fetchError = null;
+        }
+      } catch (err) {
+        if (!fetchError) fetchError = err;
+      }
+    }
     if (!res || !res.ok) {
       const statusMsg = res ? `HTTP ${res.status}` : (fetchError ? fetchError.message : 'Network error');
       throw new Error(`Failed to fetch trace "${filename}": ${statusMsg}`);

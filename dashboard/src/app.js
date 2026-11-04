@@ -18,6 +18,28 @@ import { LossWaterfallComponent } from '../components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../components/setu_twin.js';
 import { narrateEvent, explainFailure } from './narrator.js';
 
+const BUILTIN_SCENARIOS = [
+  { id: 'walkthrough_w1_subterranean', name: 'Walkthrough 1: Subterranean Collapse' },
+  { id: 'walkthrough_w2_storm', name: 'Walkthrough 2: Severe Storm Contention' },
+  { id: 'walkthrough_w3_flood', name: 'Walkthrough 3: Flash Flood Valley' },
+  { id: 'walkthrough_w4_pdr', name: 'Walkthrough 4: GPS-Denied Dead Reckoning' },
+  { id: 'walkthrough_w5_acoustic', name: 'Walkthrough 5: Acoustic WakeNet Trigger' },
+  { id: 'building_collapse', name: 'Building Collapse' },
+  { id: 'flash_flood_network', name: 'Flash Flood Network' },
+  { id: 'urban_earthquake', name: 'Urban Earthquake' },
+  { id: 'congested_disaster', name: 'Congested Disaster' },
+  { id: 'gps_denied_rescue', name: 'GPS-Denied Rescue' },
+  { id: 'basic_network', name: 'Basic Mesh Network' },
+  { id: 'multi_sos', name: 'Multiple SOS Broadcast' },
+  { id: 'single_sos', name: 'Single SOS Transmission' },
+  { id: 'ack_loss', name: 'ACK Loss & Retransmit' },
+  { id: 'relay_failure', name: 'Relay Failure Recovery' },
+  { id: 'network_partition', name: 'Network Partition' },
+  { id: 'weak_radio_conditions', name: 'Weak Radio Conditions' },
+  { id: 'recovery', name: 'Network Recovery' },
+  { id: 'long_duration_network', name: 'Long Duration Network' },
+  { id: 'all_survivors_sos', name: 'All Survivors SOS' }
+];
 class SetuDashboardApp {
   constructor() {
     this.sim = new SimulationEngine();
@@ -1731,18 +1753,40 @@ class SetuDashboardApp {
           }
         }
 
+        // 4. Fetch scenarios for selector with clear diagnostics
+        try {
+          this.scenarios = await SetuApi.getScenarios(6000);
+        } catch (err) {
+          console.warn('Could not load scenarios list:', err.message);
+          this.scenarios = [];
+        }
+
+        if (!this.scenarios || this.scenarios.length === 0) {
+          this.scenarios = BUILTIN_SCENARIOS;
+        }
+
+        if (this.elScenarioSelect) {
+          if (this.scenarios && this.scenarios.length > 0) {
+            this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
+              <option value="${sc.id}">${sc.name}</option>
+            `).join('');
+          } else {
+            this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
+          }
+        }
+
         if (status.status === 'online') {
           if (this.elStatusDot) this.elStatusDot.style.background = '#10b981';
           if (this.elStatusText) this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
 
-          // 2. Connect SSE live event stream (guarded so SSE failure never blocks state sync)
+          // Connect SSE live event stream (guarded so SSE failure never blocks state sync)
           try {
             this.initLiveEventStream();
           } catch (sseErr) {
             console.warn('SSE stream initialization notice:', sseErr);
           }
 
-          // 3. Sync live engine state from native C++ World
+          // Sync live engine state from native C++ World
           try {
             await this.syncLiveEngineState();
           } catch (syncErr) {
@@ -1759,23 +1803,6 @@ class SetuDashboardApp {
             }
           }
 
-          // 4. Fetch scenarios for selector with clear diagnostics
-          try {
-            this.scenarios = await SetuApi.getScenarios(6000);
-            if (this.elScenarioSelect) {
-              if (this.scenarios && this.scenarios.length > 0) {
-                this.elScenarioSelect.innerHTML = this.scenarios.map(sc => `
-                  <option value="${sc.id}">${sc.name}</option>
-                `).join('');
-              } else {
-                this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
-              }
-            }
-          } catch (err) {
-            console.warn('Could not load scenarios list:', err.message);
-            if (this.elScenarioSelect) this.elScenarioSelect.innerHTML = '<option value="">Scenarios unavailable</option>';
-          }
-
           if (this.elStatusText) {
             if (this.sim.nodes.size > 0) {
               this.elStatusText.textContent = `CORE C++ ENGINE ONLINE: ${this.sim.nodes.size} NODES ACTIVE (READY)`;
@@ -1784,14 +1811,25 @@ class SetuDashboardApp {
             }
           }
         } else {
-          if (this.elStatusDot) this.elStatusDot.style.background = '#ef4444';
-          if (this.elStatusText) {
-            this.elStatusText.textContent = status.status === 'unconfigured'
-              ? 'CONFIGURE BACKEND URL (Click ⚡ Backend)'
-              : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click ⚡ Backend to check URL or click here to retry.`;
+          // If offline or standby, preload default scenario into client simulation
+          if (this.sim.nodes.size === 0 && this.scenarios.length > 0) {
+            try {
+              await this.loadScenario(this.scenarios[0].id);
+            } catch (scLoadErr) {
+              console.warn('Default scenario preload notice:', scLoadErr.message);
+            }
           }
 
-          if (this.elScenarioSelect) this.elScenarioSelect.innerHTML = '<option value="">Backend offline - scenarios unavailable</option>';
+          if (this.elStatusDot) this.elStatusDot.style.background = '#f59e0b';
+          if (this.elStatusText) {
+            if (this.sim.nodes.size > 0) {
+              this.elStatusText.textContent = `SIMULATOR STANDBY: ${this.sim.nodes.size} NODES LOADED (CLIENT REPLAY). Click Backend to connect live core.`;
+            } else {
+              this.elStatusText.textContent = status.status === 'unconfigured'
+                ? 'CONFIGURE BACKEND URL (Click Backend)'
+                : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click Backend to check URL or click here to retry.`;
+            }
+          }
         }
 
         // Auto-inspect Node 1 if nodes exist
