@@ -37,13 +37,10 @@ async function testDashboardWebGL() {
 
     const errors = [];
     page.on('console', msg => {
-      console.log(`[Browser ${msg.type()}] ${msg.text()}`);
       if (msg.type() === 'error') errors.push(`[Console Error] ${msg.text()}`);
+      else console.log(`[Browser Console] ${msg.text()}`);
     });
-    page.on('pageerror', err => {
-      console.log(`[Browser PageError] ${err.message}`);
-      errors.push(`[Page Error] ${err.message}`);
-    });
+    page.on('pageerror', err => errors.push(`[Page Error] ${err.message}`));
     page.on('response', res => {
       if (res.status() >= 400) console.log(`[HTTP ${res.status()}] ${res.url()}`);
     });
