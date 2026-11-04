@@ -30,7 +30,7 @@ Three architecture options were evaluated to resolve this divergence:
 
 ### Option A: Compile C++ Engine to WebAssembly (Recommended)
 - Compile `simulation/native/world.cpp`, `shared/src/node.cpp`, and `shared/src/button.cpp` to WebAssembly using Emscripten.
-- Output: `build/wasm/setu_sim.wasm` (estimated size 180 KB compressed) and JavaScript glue code.
+- Output: `build/wasm/setu_sim.wasm` (measured: 278,879 bytes / 272.34 KB bytecode, 104,827 bytes / 102.37 KB ES6 loader) and JavaScript glue code.
 - Determinism: Guaranteed byte identical traces across Node.js server, native desktop CLI, and browser client.
 - Dependencies: Zero runtime npm dependencies. The browser loads the `.wasm` file via standard `WebAssembly.instantiate`.
 - Performance: Executes at 1.1x to 1.4x of native speed. A 30 second scenario executes in under 25 milliseconds.
@@ -47,10 +47,12 @@ Three architecture options were evaluated to resolve this divergence:
 - Mirror topology generation loops line by line.
 - Risk: Extremely brittle across V8, JavaScriptCore, and SpiderMonkey floating point engines. Does not provide long term maintainability as RF physics grows more sophisticated.
 
-## 4. Recommendation for Phase 1
+## 4. Implementation Status (Completed in Part A, Item A3)
 
-Adopt Option A (WebAssembly) as the core target for Phase 1:
-1. Build a CMake target for Emscripten (`setu_sim_wasm`).
-2. Provide a clean JSON-RPC interface through Emscripten bindings.
-3. Keep `simulation/js/simulator.js` with an explicit status label as an approximate fallback only.
+Option A (WebAssembly) is fully implemented and verified:
+1. CMake target `setu_sim_wasm` compiles authoritative C++ world and firmware directly via Emscripten in CI job `build-and-test-wasm`.
+2. Emscripten bindings (`simulation/wasm/setu_wasm_bindings.cpp`) expose full JSON-RPC methods (`init`, `step`, `run_until`, `get_state_json`, `get_loss_budget_json`, `trigger_button`, `trigger_voice`, `trigger_fall`).
+3. Automated regression suite `tests/test_engine_parity.mjs` verifies line-by-line event, coordinate, and physical parity between native C++ and WebAssembly engines.
+4. Dashboard loader (`dashboard/src/wasm_loader.js`) loads WebAssembly with persistent status badge: "Engine: WebAssembly (exact native parity)".
+5. `simulation/js/simulator.js` is strictly labeled as approximate JavaScript preview.
 

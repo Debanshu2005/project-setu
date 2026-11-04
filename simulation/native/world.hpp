@@ -19,6 +19,11 @@
 
 namespace sim {
 
+enum class DrMode : uint8_t {
+  StepAndHeading = 0,
+  Parametric = 1
+};
+
 enum class RealismProfile : uint8_t {
   Baseline = 0,
   Idealized = 1,
@@ -86,6 +91,7 @@ struct ChannelParams {
   FluidDriftField fluid_drift;         // kinematic flood drift field in meters per second
   double ambient_noise_spl = 55.0;     // ambient acoustic noise in dB SPL (disaster background)
   bool enable_fall_detection = true;   // automatic fall impact shock detection in Field profile
+  DrMode dr_mode = DrMode::StepAndHeading;
   // Configurable battery consumption simulation parameters
   double tx_energy_pct = 0.5;          // energy consumed per LoRa transmission (%)
   double rx_energy_pct = 0.1;          // energy consumed per packet reception (%)
@@ -128,6 +134,8 @@ struct SimNodeInfo {
   double pos_mae_m = -1.0;
   double pos_rmse_m = -1.0;
   double pos_max_error_m = -1.0;
+  uint32_t pdr_steps = 0;
+  double pdr_distance_m = 0.0;
   std::string motion_profile = "stationary";
   std::string gnss_status = "valid_fix";
   uint8_t battery = 100;
@@ -201,7 +209,10 @@ class World {
   SimNodeInfo get_node_info(uint16_t id) const;
   std::vector<SimNodeInfo> get_all_nodes_info() const;
   const PositionMetricsTracker* get_position_metrics(uint16_t id) const;
+  ChannelParams& channel_params() { return ch_; }
   const ChannelParams& channel_params() const { return ch_; }
+  void set_dr_mode(DrMode m) { ch_.dr_mode = m; }
+  DrMode dr_mode() const { return ch_.dr_mode; }
   const std::vector<AlertRecord>& alerts() const { return alerts_; }
   // time the node first played AckReceived at/after t0 (or -1)
   int64_t first_ack_ms(uint16_t id, uint32_t t0 = 0) const;

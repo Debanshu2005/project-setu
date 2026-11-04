@@ -142,6 +142,8 @@ void print_node_state(const World& w) {
               << ",\"retries\":" << inf.stats.retries
               << ",\"relay_suppressed\":" << inf.stats.relay_suppressed
               << ",\"duty_blocked\":" << inf.stats.duty_blocked
+              << ",\"pdr_steps\":" << inf.pdr_steps
+              << ",\"pdr_dist_m\":" << inf.pdr_distance_m
               << "}" << (i + 1 < infos.size() ? "," : "");
   }
   std::cout << "]}\n" << std::flush;
@@ -470,9 +472,20 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       else if (prof == "sudden_movement") p = MotionProfile::SuddenMovement;
       else if (prof == "fall_impact") p = MotionProfile::FallImpact;
       else if (prof == "irregular") p = MotionProfile::Irregular;
+      else if (prof == "crawling") p = MotionProfile::Crawling;
       w->set_motion_profile(id, p);
       initial_motion_profiles[id] = p;
       std::cout << "{\"ok\":true,\"cmd\":\"set_motion\",\"node\":" << id << ",\"profile\":\"" << motion_profile_str(p) << "\"}\n" << std::flush;
+    } else if (cmd == "set_dr_mode") {
+      std::string m = json_get_str(line, "mode");
+      if (m == "parametric") w->channel_params().dr_mode = DrMode::Parametric;
+      else if (m == "step_and_heading" || m == "pdr") w->channel_params().dr_mode = DrMode::StepAndHeading;
+      std::cout << "{\"ok\":true,\"cmd\":\"set_dr_mode\",\"mode\":\"" << m << "\"}\n" << std::flush;
+    } else if (cmd == "set_heading") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
+      double h = json_get_double(line, "heading_rad", 0.0);
+      w->set_node_heading(id, h);
+      std::cout << "{\"ok\":true,\"cmd\":\"set_heading\",\"node\":" << id << ",\"heading_rad\":" << h << "}\n" << std::flush;
     } else if (cmd == "schedule_gnss_outage") {
       uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
       uint32_t start_ms = static_cast<uint32_t>(json_get_int(line, "start_ms", 1000));
@@ -851,6 +864,7 @@ int main(int argc, char** argv) {
       else if (prof == "sudden_movement") p = MotionProfile::SuddenMovement;
       else if (prof == "fall_impact") p = MotionProfile::FallImpact;
       else if (prof == "irregular") p = MotionProfile::Irregular;
+      else if (prof == "crawling") p = MotionProfile::Crawling;
       if (t == 0) wp->set_motion_profile(id, p);
       else w->schedule(t, [wp, id, p] { wp->set_motion_profile(id, p); });
     } else if (m.first == "--battery") {
