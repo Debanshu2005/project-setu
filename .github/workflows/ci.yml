@@ -2,7 +2,7 @@ name: Project Setu CI & Quality Gate
 
 on:
   push:
-    branches: [ main, feature/** ]
+    branches: [ main, feature/**, fix/** ]
   pull_request:
     branches: [ main ]
   workflow_dispatch:
