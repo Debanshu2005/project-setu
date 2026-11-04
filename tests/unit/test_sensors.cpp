@@ -342,3 +342,59 @@ TEST(world_fall_impact_auto_sos_in_field_profile) {
   SimNodeInfo s1 = w.get_node_info(1);
   CHECK(s1.active || s1.acked);
 }
+
+TEST(mpu6050_crawling_profile_cadence_and_step_detection) {
+  Mpu6050SensorModel crawling_imu(77);
+  crawling_imu.set_profile(MotionProfile::Crawling);
+
+  CHECK(std::string(motion_profile_str(MotionProfile::Crawling)) == "crawling");
+
+  int crawl_steps = 0;
+  for (uint32_t t = 10; t <= 3000; t += 10) {
+    ImuSample sample = crawling_imu.update(t);
+    if (sample.step_detected) {
+      crawl_steps++;
+      CHECK(std::abs(sample.step_length_m - 0.40f) <= 0.05f);
+    }
+  }
+  // Human crawling cadence ~1.0 Hz for 3 seconds: 2 to 4 steps
+  CHECK(crawl_steps >= 2);
+  CHECK(crawl_steps <= 4);
+}
+
+TEST(pdr_estimator_step_and_heading_integration) {
+  PdrEstimator pdr;
+  CHECK(!pdr.has_fix());
+
+  int32_t lat0 = 0, lon0 = 0;
+  xy_to_e6(0.0, 0.0, lat0, lon0);
+  pdr.reset(0.0, 0.0, lat0, lon0, 0.0);
+  CHECK(pdr.has_fix());
+  CHECK_EQ(pdr.total_steps(), 0u);
+  CHECK_EQ(pdr.total_distance_m(), 0.0);
+
+  // 10 steps along heading 0.0 rad (due East)
+  ImuSample sample;
+  sample.step_detected = true;
+  sample.step_length_m = 0.72f;
+  sample.heading_rad = 0.0f;
+  for (int i = 0; i < 10; ++i) {
+    pdr.update_on_step(sample);
+  }
+
+  CHECK_EQ(pdr.total_steps(), 10u);
+  CHECK(std::abs(pdr.total_distance_m() - 7.2) < 0.01);
+  CHECK(std::abs(pdr.est_x() - 7.2) < 0.01);
+  CHECK(std::abs(pdr.est_y() - 0.0) < 0.01);
+
+  // Turn North (+90 deg = M_PI/2) and take 5 steps
+  sample.heading_rad = static_cast<float>(M_PI / 2.0);
+  for (int i = 0; i < 5; ++i) {
+    pdr.update_on_step(sample);
+  }
+
+  CHECK_EQ(pdr.total_steps(), 15u);
+  CHECK(std::abs(pdr.total_distance_m() - 10.8) < 0.01);
+  CHECK(std::abs(pdr.est_x() - 7.2) < 0.02);
+  CHECK(std::abs(pdr.est_y() - 3.6) < 0.02);
+}

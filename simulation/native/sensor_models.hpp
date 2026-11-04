@@ -22,6 +22,9 @@
 
 namespace sim {
 
+void xy_to_e6(double x, double y, int32_t& lat, int32_t& lon);
+void e6_to_xy(int32_t lat, int32_t lon, double& x, double& y);
+
 /**
  * Human-worn device motion profiles.
  * Used for experimental inertial sensing and dead-reckoning simulation.
@@ -33,7 +36,8 @@ enum class MotionProfile : uint8_t {
   Running = 3,
   SuddenMovement = 4,
   FallImpact = 5,
-  Irregular = 6
+  Irregular = 6,
+  Crawling = 7
 };
 
 inline const char* motion_profile_str(MotionProfile p) {
@@ -45,6 +49,7 @@ inline const char* motion_profile_str(MotionProfile p) {
     case MotionProfile::SuddenMovement: return "sudden_movement";
     case MotionProfile::FallImpact: return "fall_impact";
     case MotionProfile::Irregular: return "irregular";
+    case MotionProfile::Crawling: return "crawling";
     default: return "unknown";
   }
 }
@@ -203,6 +208,23 @@ class Mpu6050SensorModel {
         break;
       }
 
+      case MotionProfile::Crawling: {
+        // ~1.0 Hz cadence, deliberate hands-and-knees crawl, low vertical bounce
+        double f = 1.0;
+        double omega = 2.0 * M_PI * f;
+        dyn_az = 0.22 * kGravity * std::sin(phase_ * omega); // low vertical displacement
+        dyn_ay = 0.18 * kGravity * std::cos(phase_ * omega * 0.5); // lateral arm reach
+        dyn_ax = 0.25 * kGravity * std::sin(phase_ * omega); // forward body drag/surge
+        dyn_gz = 0.18 * std::sin(phase_ * omega * 0.5);      // yaw sway during reach
+
+        // Step interval ~1000 ms (cadence ~1 step per second)
+        if (now_ms - last_step_ms_ >= 1000) {
+          last_step_ms_ = now_ms;
+          step_event = true;
+          step_dist = 0.40f; // crawling stroke length ~40 cm
+        }
+        break;
+      }
       case MotionProfile::Irregular: {
         // Chaotic traversal over disaster rubble
         dyn_az = 0.6 * kGravity * std::sin(phase_ * 3.1) + 0.3 * kGravity * (is_baseline_ ? gauss_(rng_) : prng_.gaussian(0.0, 1.0));
@@ -267,6 +289,7 @@ class Mpu6050SensorModel {
       case MotionProfile::Walking: return 1.8;
       case MotionProfile::Running: return 2.8;
       case MotionProfile::Irregular: return 1.5;
+      case MotionProfile::Crawling: return 1.0;
       default: return 1.0;
     }
   }
@@ -505,6 +528,68 @@ class GnssSensorModel {
  * Computes geodesic distance, Mean Absolute Error (MAE), Root Mean Square Error (RMSE),
  * and drift during GNSS outages.
  */
+
+/**
+ * Step-and-Heading Pedestrian Dead Reckoning (PDR) Model.
+ * Accumulates displacement from discrete step events detected by MPU-6050
+ * and heading integrated from gyroscope Z-axis with sensor bias and noise,
+ * referenced from the last known GNSS anchor fix.
+ */
+class PdrEstimator {
+ public:
+  PdrEstimator() = default;
+
+  void reset(double x, double y, int32_t lat_e6, int32_t lon_e6, double heading_rad = 0.0) {
+    anchor_x_ = x;
+    anchor_y_ = y;
+    anchor_lat_e6_ = lat_e6;
+    anchor_lon_e6_ = lon_e6;
+    est_x_ = x;
+    est_y_ = y;
+    est_lat_e6_ = lat_e6;
+    est_lon_e6_ = lon_e6;
+    est_heading_rad_ = heading_rad;
+    has_fix_ = true;
+    total_steps_ = 0;
+    total_distance_m_ = 0.0;
+  }
+
+  void update_on_step(const ImuSample& s) {
+    if (!has_fix_) return;
+    est_heading_rad_ = s.heading_rad;
+    if (s.step_detected && s.step_length_m > 0.0f) {
+      double dx = s.step_length_m * std::cos(est_heading_rad_);
+      double dy = s.step_length_m * std::sin(est_heading_rad_);
+      est_x_ += dx;
+      est_y_ += dy;
+      xy_to_e6(est_x_, est_y_, est_lat_e6_, est_lon_e6_);
+      total_distance_m_ += s.step_length_m;
+      total_steps_++;
+    }
+  }
+
+  bool has_fix() const { return has_fix_; }
+  double est_x() const { return est_x_; }
+  double est_y() const { return est_y_; }
+  int32_t est_lat_e6() const { return est_lat_e6_; }
+  int32_t est_lon_e6() const { return est_lon_e6_; }
+  double est_heading_rad() const { return est_heading_rad_; }
+  uint32_t total_steps() const { return total_steps_; }
+  double total_distance_m() const { return total_distance_m_; }
+  double anchor_x() const { return anchor_x_; }
+  double anchor_y() const { return anchor_y_; }
+
+ private:
+  bool has_fix_ = false;
+  double anchor_x_ = 0.0, anchor_y_ = 0.0;
+  int32_t anchor_lat_e6_ = 0, anchor_lon_e6_ = 0;
+  double est_x_ = 0.0, est_y_ = 0.0;
+  int32_t est_lat_e6_ = 0, est_lon_e6_ = 0;
+  double est_heading_rad_ = 0.0;
+  uint32_t total_steps_ = 0;
+  double total_distance_m_ = 0.0;
+};
+
 class PositionMetricsTracker {
  public:
   static constexpr double kMPerDegLat = 111320.0;

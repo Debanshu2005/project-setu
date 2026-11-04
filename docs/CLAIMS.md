@@ -39,3 +39,8 @@ This document tracks technical claims, physical specifications, binary measureme
 - **Status:** `cited` (P.56 speech acoustics standards) and `assumed` (55.0 dB SPL collapsed building background).
 - **Verification Command:** `node tests/test_acceptance_scenarios.mjs`
 
+
+### 6. Pedestrian Dead Reckoning Subterranean Drift
+- **Claim:** Survivor pedestrian dead reckoning integrating MPU-6050 discrete step detection and gyroscope Z-axis heading under continuous GNSS denial limits search beacon drift to 13.05 meters mean at 5 minutes and 20.91 meters mean at 15 minutes during a straight walk (~1178 meters traveled), and 13.09 meters at 5 minutes and 20.91 meters at 15 minutes during a rubble crawl (~360 meters traveled).
+- **Status:** `measured`
+- **Verification Command:** `node tests/test_pdr_sensitivity.mjs`

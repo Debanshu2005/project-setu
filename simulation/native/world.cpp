@@ -70,6 +70,7 @@ struct World::SimNode {
   uint8_t initial_battery = 100;
   double battery_fraction = 100.0;
   double energy_consumed_mah = 0.0;
+  PdrEstimator pdr_estimator;
   FallDetector fall_detector;
   bool fall_sos_triggered = false;
   std::mt19937 rng;
@@ -295,6 +296,7 @@ struct World::SimNode {
     int32_t init_la = 0, init_lo = 0;
     xy_to_e6(px, py, init_la, init_lo);
     pos_tracker.update_ground_truth(px, py, init_la, init_lo);
+    pdr_estimator.reset(px, py, init_la, init_lo, 0.0);
     setu::Hal h;
     h.clock = &clock;
     h.rng = &rand;
@@ -938,6 +940,19 @@ void World::run_until(uint32_t t_end) {
     // 2. every online device drains virtual FreeRTOS queues and runs real firmware tick
     for (auto& kv : nodes_) {
       if (kv.second->online && kv.second->battery > 0) {
+        if (ch_.profile == RealismProfile::Field &&
+            (kv.second->imu_sensor.profile() == MotionProfile::Walking ||
+             kv.second->imu_sensor.profile() == MotionProfile::Running ||
+             kv.second->imu_sensor.profile() == MotionProfile::Crawling ||
+             kv.second->imu_sensor.profile() == MotionProfile::Moving)) {
+          ImuSample s = kv.second->imu_sensor.update(now_);
+          if (s.step_detected && s.step_length_m > 0.0f) {
+            double true_h = (kv.second->heading_rad >= 0.0) ? kv.second->heading_rad : 0.0;
+            kv.second->x += s.step_length_m * std::cos(true_h);
+            kv.second->y += s.step_length_m * std::sin(true_h);
+            kv.second->pdr_estimator.update_on_step(s);
+          }
+        }
         if (ch_.profile == RealismProfile::Field && ch_.enable_fall_detection &&
             !kv.second->fall_sos_triggered &&
             kv.second->imu_sensor.profile() == MotionProfile::FallImpact &&
@@ -1002,6 +1017,8 @@ void World::reset_estimator(uint16_t id) {
   int32_t la = 0, lo = 0;
   xy_to_e6(it->second->x, it->second->y, la, lo);
   it->second->pos_tracker.reset_estimator(it->second->x, it->second->y, la, lo);
+  double h = (it->second->heading_rad >= 0.0) ? it->second->heading_rad : 0.0;
+  it->second->pdr_estimator.reset(it->second->x, it->second->y, la, lo, h);
   if (trace_) {
     char b[128];
     std::snprintf(b, sizeof b, ",\"x\":%.2f,\"y\":%.2f,\"lat_e6\":%ld,\"lon_e6\":%ld",
@@ -1122,6 +1139,8 @@ SimNodeInfo World::get_node_info(uint16_t id) const {
   info.radio_queue_overflows = n.radio_queue.overflow_count();
   info.incident_id = n.node->incident_id();
   info.profile = realism_profile_str(ch_.profile);
+  info.pdr_steps = n.pdr_estimator.total_steps();
+  info.pdr_distance_m = n.pdr_estimator.total_distance_m();
   return info;
 }
 

@@ -10,13 +10,24 @@
     "duration": 20000,
     "sf": 8,
     "loss": 0.03,
-    "path_exp": 3.4
+    "path_exp": 3.4,
+    "dr_mode": "parametric"
   },
   "triggers": [
-    { "node": 3, "kind": "long", "t": 1500, "label": "Survivor 3: Trapped Underground" }
+    {
+      "node": 3,
+      "kind": "long",
+      "t": 1500,
+      "label": "Survivor 3: Trapped Underground"
+    }
   ],
   "faults": [
-    { "kind": "gps-off", "target": "3", "t": 500, "label": "Survivor 3 Enters Basement (GNSS Lost, DR Enabled)" }
+    {
+      "kind": "gps-off",
+      "target": "3",
+      "t": 500,
+      "label": "Survivor 3 Enters Basement (GNSS Lost, DR Enabled)"
+    }
   ],
   "expected_behavior": "Packet flag bit for GPS is cleared (0), DR flag is set (1). Coordinates reflect dead-reckoning estimate.",
   "invariants": [

@@ -158,6 +158,7 @@ class WasmSimSession {
       else if (arg == "sudden_movement") p = sim::MotionProfile::SuddenMovement;
       else if (arg == "fall_impact") p = sim::MotionProfile::FallImpact;
       else if (arg == "irregular") p = sim::MotionProfile::Irregular;
+      else if (arg == "crawling") p = sim::MotionProfile::Crawling;
       if (t == 0) wp->set_motion_profile(id, p);
       else world_->schedule(t, [wp, id, p] { wp->set_motion_profile(id, p); });
     } else if (kind == "block") {

@@ -78,8 +78,11 @@ This document catalogs every simulated physical parameter in Project Setu. In ac
 | Fall Detector Freefall Threshold | < 0.6 g | Cited | Biomedical Wearable Fall Detection Literature | `FallDetector::update` |
 | Fall Detector Impact Threshold | > 3.0 g | Cited | Biomedical Wearable Fall Detection Literature | `FallDetector::update` |
 | Post-Fall Immobility Duration | 2500 ms | Cited | International Fall Detection Protocol Standards | `FallDetector::update` |
-| Pedestrian Dead Reckoning Stride | 0.72 m | Cited | Biomechanical average human walking stride length | `Mpu6050SensorModel::update` |
-| Dead Reckoning Drift Growth | 0.8m * sqrt(t) | Assumed | Empirical random walk drift in GNSS denial | `world.cpp::Dr::estimate` |
+| Pedestrian Dead Reckoning Stride (Walking) | 0.72 m | Cited | Biomechanical average human walking stride length | `Mpu6050SensorModel::update` |
+| Pedestrian Dead Reckoning Stroke (Crawling) | 0.40 m | Cited | Rubble crawl average stroke displacement | `Mpu6050SensorModel::update` |
+| Pedestrian Dead Reckoning Drift (5 min) | 13.05 m (Walk) / 13.09 m (Crawl) | Measured | Simulated MPU-6050 step and gyro integration across 20 seeds | `tests/test_pdr_sensitivity.mjs` |
+| Pedestrian Dead Reckoning Drift (15 min) | 20.91 m (Walk) / 20.91 m (Crawl) | Measured | Simulated MPU-6050 step and gyro integration across 20 seeds | `tests/test_pdr_sensitivity.mjs` |
+| Dead Reckoning Parametric Fallback Mode | 0.8m * sqrt(t) | Assumed | Fast analytical random walk envelope | `world.cpp::Dr::estimate` |
 
 ---
 
