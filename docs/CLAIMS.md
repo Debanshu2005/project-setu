@@ -38,3 +38,4 @@ This document tracks technical claims, physical specifications, binary measureme
 - **Claim:** Survivor panic voice utterances produce ~75 to 85 dB SPL at 1 meter. Ambient disaster background noise model defaults to 55.0 dB SPL. Neural wake-word trigger requires minimum SNR margin above ambient noise.
 - **Status:** `cited` (P.56 speech acoustics standards) and `assumed` (55.0 dB SPL collapsed building background).
 - **Verification Command:** `node tests/test_acceptance_scenarios.mjs`
+

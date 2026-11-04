@@ -117,7 +117,11 @@ class WasmSimSession {
       world_->wake_word(id, t);
       world_->voice_command(id, t + 1500, 1, setu::Hazard::Trapped);
     } else if (kind == "fall") {
-      world_->fall_impact(id, t);
+      if (t == 0) world_->set_motion_profile(id, sim::MotionProfile::FallImpact);
+      else {
+        sim::World* wp = world_.get();
+        world_->schedule(t, [wp, id] { wp->set_motion_profile(id, sim::MotionProfile::FallImpact); });
+      }
     }
   }
 
@@ -231,7 +235,7 @@ class WasmSimSession {
 
   bool trigger_fall(uint16_t id) {
     if (!world_) return false;
-    world_->fall_impact(id, world_->now());
+    world_->set_motion_profile(id, sim::MotionProfile::FallImpact);
     return true;
   }
 
