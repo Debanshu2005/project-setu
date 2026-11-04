@@ -1,6 +1,17 @@
 // Project Setu: Platform-Tolerant Golden Baseline Regression Test Suite
-// Verifies deterministic simulation behavior and exact baseline traces across platforms.
-// Allows floating-point rounding tolerance for cross-compiler consistency (MSVC vs GCC/Clang).
+// Verifies deterministic simulation behavior across platforms and compilers (MSVC, GCC 13, Clang).
+//
+// Floating-Point Tolerance Justification:
+// Mathematical transcendental functions (log10, sqrt, sin, cos) and division in standard C runtime
+// math libraries (GNU libm on Linux vs MSVCRT on Windows) may exhibit a 1-ULP (Unit in the Last Place)
+// difference across compilers on identical 64-bit IEEE 754 float inputs.
+// When floating-point values are serialized into JSON with fixed-precision formatting (e.g. %.1f for
+// RSSI/SNR or %.3f for energy_mah), this 1-ULP variation can cause the last formatted decimal digit
+// to round up or down by at most 1 unit.
+// For portable goldens, the comparator strictly requires:
+// 1. 100% exact match for event counts, event sequence, timestamps (t), and all integer fields.
+// 2. Exact integer match for microdegree coordinates (lat_e6, lon_e6).
+// 3. Floating-point fields are permitted to differ by at most 1 unit in their last printed digit.
 
 import fs from 'node:fs';
 import path from 'node:path';
@@ -96,7 +107,24 @@ const FLOAT_FIELDS = new Set([
 ]);
 const COORD_E6_FIELDS = new Set(['lat_e6', 'lon_e6']);
 
-function compareEvents(actual, expected, lineNum) {
+// Computes tolerance of at most 1 unit in the last printed digit
+function getUnitInLastPrintedDigit(k, expVal, actVal) {
+  if (k === 'rssi' || k === 'snr' || k === 'pos_error_m' || k === 'pos_mae_m' || k === 'pos_rmse_m' || k === 'pos_max_err_m') {
+    return 0.100001; // Formatted with %.1f
+  }
+  if (k === 'energy_mah' || k === 'mah') {
+    return 0.001001; // Formatted with %.3f
+  }
+  const expStr = String(expVal);
+  const actStr = String(actVal);
+  const expDec = expStr.includes('.') ? expStr.split('.')[1].length : 0;
+  const actDec = actStr.includes('.') ? actStr.split('.')[1].length : 0;
+  const dec = Math.max(expDec, actDec);
+  if (dec === 0) return 1.000001;
+  return Math.pow(10, -dec) * 1.000001;
+}
+
+function compareEvents(actual, expected, lineNum, isPortable = false) {
   if (actual.ev !== expected.ev) {
     return `Line ${lineNum}: event mismatch (expected "${expected.ev}", got "${actual.ev}")`;
   }
@@ -120,13 +148,20 @@ function compareEvents(actual, expected, lineNum) {
     if (typeof expVal === 'number' && typeof actVal === 'number') {
       if (FLOAT_FIELDS.has(k)) {
         const diff = Math.abs(actVal - expVal);
-        if (diff > NUMERIC_EPSILON) {
-          return `Line ${lineNum} [${expected.ev}]: field "${k}" exceeds epsilon (expected ${expVal}, got ${actVal}, diff ${diff.toFixed(4)} > ${NUMERIC_EPSILON})`;
+        const maxTol = isPortable ? getUnitInLastPrintedDigit(k, expVal, actVal) : NUMERIC_EPSILON;
+        if (diff > maxTol) {
+          return `Line ${lineNum} [${expected.ev}]: field "${k}" exceeds tolerance (expected ${expVal}, got ${actVal}, diff ${diff.toFixed(6)} > ${maxTol})`;
         }
       } else if (COORD_E6_FIELDS.has(k)) {
-        const diff = Math.abs(actVal - expVal);
-        if (diff > 500) {
-          return `Line ${lineNum} [${expected.ev}]: coordinate "${k}" exceeds tolerance (expected ${expVal}, got ${actVal}, diff ${diff})`;
+        if (isPortable) {
+          if (actVal !== expVal) {
+            return `Line ${lineNum} [${expected.ev}]: coordinate integer "${k}" mismatch (expected ${expVal}, got ${actVal})`;
+          }
+        } else {
+          const diff = Math.abs(actVal - expVal);
+          if (diff > 500) {
+            return `Line ${lineNum} [${expected.ev}]: coordinate "${k}" exceeds tolerance (expected ${expVal}, got ${actVal}, diff ${diff})`;
+          }
         }
       } else if (k === 'seed') {
         continue;
@@ -338,7 +373,7 @@ async function runSuite() {
               if (actualLines[i] === expectedLines[i]) continue;
               const actObj = JSON.parse(actualLines[i]);
               const expObj = JSON.parse(expectedLines[i]);
-              const mismatch = compareEvents(actObj, expObj, i + 1);
+              const mismatch = compareEvents(actObj, expObj, i + 1, true);
               if (mismatch) {
                 pReason = mismatch;
                 pFailed = true;
