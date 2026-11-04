@@ -14,7 +14,7 @@ This document tracks technical claims, physical specifications, binary measureme
 - **Claim:** The authoritative C++ simulation engine compiles to WebAssembly via Emscripten, producing exact line-by-line event and physical parity with the native desktop engine.
 - **Status:** `measured`
 - **Verification Command:** `node tests/test_engine_parity.mjs`
-- **Measured WebAssembly Binary Size:** Recorded during Emscripten compilation in CI job `build-wasm`. Target bytecode artifact `setu_sim_wasm.wasm` is measured directly by `stat -c %s build-wasm/setu_sim_wasm.wasm`.
+- **Measured WebAssembly Binary Size:** 278,879 bytes (272.34 KB) for `setu_sim_wasm.wasm` bytecode, and 104,827 bytes (102.37 KB) for `setu_sim_wasm.js` modular ES6 loader, measured directly in CI job `build-and-test-wasm`.
 - **Runtime Dependencies:** Zero npm dependencies in `dashboard/server.js` and `dashboard/src/wasm_loader.js`.
 
 ### 2. Cross-Platform Determinism
