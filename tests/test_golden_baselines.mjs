@@ -91,7 +91,8 @@ function buildScenarioArgs(sc, outPath, profile = 'baseline') {
 
 const FLOAT_FIELDS = new Set([
   'rssi', 'dist', 'snr', 'x', 'y', 'path_exp', 'mah', 'energy_mah',
-  'pos_error_m', 'pos_mae_m', 'pos_rmse_m', 'pos_max_err_m'
+  'pos_error_m', 'pos_mae_m', 'pos_rmse_m', 'pos_max_err_m',
+  'path_loss', 'shadow', 'link_margin'
 ]);
 const COORD_E6_FIELDS = new Set(['lat_e6', 'lon_e6']);
 
@@ -168,45 +169,44 @@ async function runSuite() {
     throw new Error('No scenario files found in scenarios directory');
   }
 
-  if (isRecordMode || isRecordPortable) {
-    if (isRecordMode) {
-      console.log(`Recording golden traces for platform ${platformSubdir}...`);
-      for (const file of scenarioFiles) {
-        const baseName = path.basename(file, '.json');
-        const scPath = path.join(SCENARIOS_DIR, file);
-        const targetGoldenPath = path.join(platformGoldenDir, `${baseName}.jsonl`);
-        const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
-        const args = buildScenarioArgs(sc, targetGoldenPath, 'baseline');
-        const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
-        if (res.status !== 0) {
-          console.error(`  [ FAIL ] Recording failed for ${file}: ${res.stderr}`);
-          process.exit(1);
-        }
-        console.log(`  [ RECORDED ] ${baseName}.jsonl (${fs.statSync(targetGoldenPath).size} bytes)`);
-      }
+  if (isRecordPortable) {
+    console.log('Recording portable field goldens...');
+    if (!fs.existsSync(portableGoldenDir)) {
+      fs.mkdirSync(portableGoldenDir, { recursive: true });
     }
-
-    if (isRecordPortable) {
-      console.log('Recording portable field goldens...');
-      if (!fs.existsSync(portableGoldenDir)) {
-        fs.mkdirSync(portableGoldenDir, { recursive: true });
+    const portableScenarios = ['basic_network.json', 'single_sos.json', 'ack_loss.json'];
+    for (const file of portableScenarios) {
+      const baseName = path.basename(file, '.json');
+      const scPath = path.join(SCENARIOS_DIR, file);
+      const targetGoldenPath = path.join(portableGoldenDir, `${baseName}_field.jsonl`);
+      const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
+      const args = buildScenarioArgs(sc, targetGoldenPath, 'field');
+      const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
+      if (res.status !== 0) {
+        console.error(`  [ FAIL ] Portable recording failed for ${file}: ${res.stderr}`);
+        process.exit(1);
       }
-      const portableScenarios = ['basic_network.json', 'single_sos.json', 'ack_loss.json'];
-      for (const file of portableScenarios) {
-        const baseName = path.basename(file, '.json');
-        const scPath = path.join(SCENARIOS_DIR, file);
-        const targetGoldenPath = path.join(portableGoldenDir, `${baseName}_field.jsonl`);
-        const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
-        const args = buildScenarioArgs(sc, targetGoldenPath, 'field');
-        const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
-        if (res.status !== 0) {
-          console.error(`  [ FAIL ] Portable recording failed for ${file}: ${res.stderr}`);
-          process.exit(1);
-        }
-        console.log(`  [ RECORDED PORTABLE ] ${baseName}_field.jsonl (${fs.statSync(targetGoldenPath).size} bytes)`);
-      }
+      console.log(`  [ RECORDED PORTABLE ] ${baseName}_field.jsonl (${fs.statSync(targetGoldenPath).size} bytes)`);
     }
+    console.log('Portable recording complete.');
+    if (!isRecordMode) return;
+  }
 
+  if (isRecordMode) {
+    console.log(`Recording golden traces for platform ${platformSubdir}...`);
+    for (const file of scenarioFiles) {
+      const baseName = path.basename(file, '.json');
+      const scPath = path.join(SCENARIOS_DIR, file);
+      const targetGoldenPath = path.join(platformGoldenDir, `${baseName}.jsonl`);
+      const sc = JSON.parse(fs.readFileSync(scPath, 'utf8'));
+      const args = buildScenarioArgs(sc, targetGoldenPath, 'baseline');
+      const res = spawnSync(simPath, args, { cwd: ROOT_DIR, encoding: 'utf8' });
+      if (res.status !== 0) {
+        console.error(`  [ FAIL ] Recording failed for ${file}: ${res.stderr}`);
+        process.exit(1);
+      }
+      console.log(`  [ RECORDED ] ${baseName}.jsonl (${fs.statSync(targetGoldenPath).size} bytes)`);
+    }
     console.log('Recording complete.');
     return;
   }

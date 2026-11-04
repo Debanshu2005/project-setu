@@ -614,10 +614,16 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
   const double d = std::max(1.0, std::hypot(na.x - nb.x, na.y - nb.y));
   lb.path_loss_db = 10.0 * ch_.path_exp * std::log10(d);
 
-  std::mt19937 lr(seed_ ^ (k.first * 65537u + k.second * 2246822519u));
-  lb.shadow_loss_db = (ch_.shadow_sigma_db > 0.0)
-                          ? std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr)
-                          : 0.0;
+  if (ch_.shadow_sigma_db > 0.0) {
+    if (ch_.profile == RealismProfile::Baseline) {
+      std::mt19937 lr(seed_ ^ (k.first * 65537u + k.second * 2246822519u));
+      lb.shadow_loss_db = std::normal_distribution<double>(0.0, ch_.shadow_sigma_db)(lr);
+    } else {
+      lb.shadow_loss_db = setu::HashRandom::link_gaussian(seed_, k.first, k.second, 0.0, ch_.shadow_sigma_db);
+    }
+  } else {
+    lb.shadow_loss_db = 0.0;
+  }
   lb.fading_loss_db = 0.0;
 
   double obs_loss = 0.0;

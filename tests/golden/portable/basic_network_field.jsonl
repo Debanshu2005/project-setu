@@ -2,9 +2,9 @@
 {"t":0,"ev":"node_init","id":0,"role":"hub","x":60,"y":60,"lat_e6":22573139,"lon_e6":88434384,"battery":100,"online":true}
 {"t":0,"ev":"node_init","id":1,"role":"survivor","x":410.559,"y":321.586,"lat_e6":22575489,"lon_e6":88437794,"battery":100,"online":true}
 {"t":0,"ev":"node_init","id":100,"role":"relay","x":236.79,"y":276.098,"lat_e6":22575080,"lon_e6":88436104,"battery":100,"online":true}
-{"t":0,"ev":"link_init","a":0,"b":1,"rssi":-95.0632,"dist":437.4,"path_loss":66.022,"shadow":3.24782,"link_margin":21.5302,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
-{"t":0,"ev":"link_init","a":0,"b":100,"rssi":-94.6383,"dist":279.201,"path_loss":61.1479,"shadow":-0.0951101,"link_margin":29.7472,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
-{"t":0,"ev":"link_init","a":1,"b":100,"rssi":-86.0509,"dist":179.624,"path_loss":56.3591,"shadow":-0.392143,"link_margin":34.833,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":1,"rssi":-95.0632,"dist":437.4,"path_loss":66.022,"shadow":-3.1588,"link_margin":27.9368,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":0,"b":100,"rssi":-94.6383,"dist":279.201,"path_loss":61.1479,"shadow":1.29042,"link_margin":28.3617,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
+{"t":0,"ev":"link_init","a":1,"b":100,"rssi":-86.0509,"dist":179.624,"path_loss":56.3591,"shadow":-2.50821,"link_margin":36.9491,"obstacle":"0.0 dB (line of sight)","body":"0.0 dB (unshadowed)"}
 {"t":1000,"ev":"button_down","node":1}
 {"t":1000,"ev":"gpio_btn_isr","node":1,"edge":1,"queue_depth":1}
 {"t":1000,"ev":"haptic","node":1,"pattern":0}
