@@ -48,7 +48,7 @@ export class SetuApi {
       }
       if (isLocal) {
         const port = window.location.port;
-        return (port === '3000' || port === '') ? window.location.origin.replace(/\/+$/, '') : 'http://localhost:3000';
+        return (port === '5173') ? 'http://localhost:3000' : window.location.origin.replace(/\/+$/, '');
       }
       // On remote hosts (e.g. Vercel), predictable default matches resolveBaseUrl
       return this.DEFAULT_PROD_BACKEND;
@@ -195,7 +195,7 @@ export class SetuApi {
       if (port === '3000' || port === '') {
         this.baseUrl = window.location.origin.replace(/\/+$/, '');
       } else {
-        this.baseUrl = 'http://localhost:3000';
+        this.baseUrl = window.location.origin.replace(/\/+$/, '');
       }
       this.configSource = 'local';
       this.configError = null;

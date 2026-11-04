@@ -1,0 +1,28 @@
+{
+  "id": "walkthrough_w3_flood",
+  "name": "Walkthrough 3: Flash Flood Valley (Dynamic Wash-Out)",
+  "description": "Mountain river valley with rising water plane. Relay 2 on low riverbank washes out at t=20s, demonstrating dynamic mesh self-healing and rerouting via mountain ridge relay.",
+  "params": {
+    "survivors": 15,
+    "relays": 5,
+    "zone": 1000,
+    "seed": 404,
+    "duration": 30000,
+    "sf": 8,
+    "loss": 0.01,
+    "path_exp": 3.0,
+    "profile": "field",
+    "dr_mode": "step_and_heading"
+  },
+  "obstacles": [
+    { "id": 1, "label": "riverbed_basin", "material": "water", "x1": 200, "y1": 500, "x2": 800, "y2": 500, "thickness_m": 8.0, "attenuation_db": 30.0, "floor_index": 0, "height_m": 1.0, "tilt_deg": 0.0 }
+  ],
+  "triggers": [
+    { "node": 2, "kind": "short", "t": 2000, "label": "Survivor 2: Riverbank SOS" },
+    { "node": 6, "kind": "voice-medical", "t": 10000, "label": "Survivor 6: Flood Surge Warning" },
+    { "node": 11, "kind": "long", "t": 22000, "label": "Survivor 11: Trapped Post-Washout" }
+  ],
+  "faults": [
+    { "kind": "kill", "target": "101", "t": 20000, "label": "Relay 101: Submerged and Washed Out by Flash Flood" }
+  ]
+}

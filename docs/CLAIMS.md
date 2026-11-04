@@ -44,3 +44,14 @@ This document tracks technical claims, physical specifications, binary measureme
 - **Claim:** Survivor pedestrian dead reckoning integrating MPU-6050 discrete step detection and gyroscope Z-axis heading under continuous GNSS denial limits search beacon drift to 13.05 meters mean at 5 minutes and 20.91 meters mean at 15 minutes during a straight walk (~1178 meters traveled), and 13.09 meters at 5 minutes and 20.91 meters at 15 minutes during a rubble crawl (~360 meters traveled).
 - **Status:** `measured`
 - **Verification Command:** `node tests/test_pdr_sensitivity.mjs`
+
+
+### 7. Setu Twin v2 Real WebGL 3D Disaster World Visualizer
+- **Claim:** The dashboard provides a genuine Three.js WebGL 3D navigable disaster environment rendering physical floor slabs, rubble obstacles, low-poly survivor avatars (standing, crawling, trapped under slab), elevated relay towers, rescue command hub, 3D radio link tubes colored by link margin, expanding airtime rings, collision sparks, dynamic flood water planes, and multiple camera modes (Orbit, Top-Down, AirSim Free-Fly, Follow Node) with zero npm runtime dependencies.
+- **Status:** `measured`
+- **Verification Command:** `node tests/test_three_import.mjs && node tests/test_three_dashboard.mjs`
+
+### 8. Inspectable 3D Wristband Twin and Disaster Walkthroughs
+- **Claim:** The dashboard features an interactive 3D digital twin of the Setu wristband hardware (elastomer strap, polycarbonate casing, ESP32-S3 MCU, SX1262 LoRa transceiver, 1000 mAh LiPo pouch, tactile SOS button with press animation, OLED display, RGB status LED, and haptic vibration feedback) with direct operational controls, live current draw telemetry, and 5 dedicated disaster walkthrough scenarios (W1 Subterranean Collapse, W2 High-Congestion RF Storm, W3 Dynamic Flash Flood, W4 GPS-Denied PDR Rescue, W5 Acoustic Trigger in Machinery Noise).
+- **Status:** `measured`
+- **Verification Command:** `node tests/test_acceptance_scenarios.mjs && node tests/test_three_dashboard.mjs`
