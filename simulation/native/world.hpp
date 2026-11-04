@@ -35,10 +35,10 @@ inline const char* realism_profile_str(RealismProfile p) {
 
 inline const char* realism_profile_label(RealismProfile p) {
   switch (p) {
-    case RealismProfile::Baseline: return "baseline (legacy)";
+    case RealismProfile::Baseline: return "baseline (legacy, not for battery conclusions)";
     case RealismProfile::Idealized: return "idealized";
     case RealismProfile::Field: return "field";
-    default: return "baseline (legacy)";
+    default: return "baseline (legacy, not for battery conclusions)";
   }
 }
 
@@ -64,7 +64,7 @@ struct LossBudget {
 };
 
 struct ChannelParams {
-  RealismProfile profile = RealismProfile::Baseline;
+  RealismProfile profile = RealismProfile::Field;
   bool wake_word_always_on = true;
   bool gnss_continuous = false;        // true = continuous 45mA NEO-6M drain; false = on-demand
   bool priority_bypass_duty = true;    // scenario option: whether originating SOS and ACKs bypass duty limits

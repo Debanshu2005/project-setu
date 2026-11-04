@@ -348,6 +348,14 @@
         </p>
 
         <div class="form-group-grid">
+          <div class="form-group" style="grid-column: span 2;">
+            <label class="form-label"><span>Realism Profile:</span></label>
+            <select class="form-input" id="simProfile">
+              <option value="field" selected>Field Realism (Recommended: physical obstacles, calibrated energy)</option>
+              <option value="idealized">Idealized (Line of sight, no obstacles)</option>
+              <option value="baseline">Baseline (Legacy, not for battery conclusions)</option>
+            </select>
+          </div>
           <div class="form-group">
             <label class="form-label"><span>Survivors Count:</span></label>
             <input type="number" class="form-input" id="simSurvivors" value="20" min="1" max="100" />

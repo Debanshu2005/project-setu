@@ -1916,6 +1916,8 @@ class SetuDashboardApp {
     const zone = zoneEl ? (parseFloat(zoneEl.value) || 1200) : 1200;
     const allowDiscEl = document.getElementById('simAllowDisconnected');
     const allowDisconnected = allowDiscEl ? Boolean(allowDiscEl.checked) : false;
+    const profileEl = document.getElementById('simProfile');
+    const profile = profileEl ? profileEl.value : 'field';
 
     const faults = [];
     if (this.sim && this.sim.nodes) {
@@ -1957,7 +1959,8 @@ class SetuDashboardApp {
         loss,
         path_exp: pathExp,
         zone,
-        allow_disconnected: allowDisconnected
+        allow_disconnected: allowDisconnected,
+        profile
       },
       triggers: [
         { node: 1, kind: 'short', t: 1000 },

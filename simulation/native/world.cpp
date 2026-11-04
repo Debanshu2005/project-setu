@@ -851,7 +851,9 @@ void World::finish_tx(const Tx& tx) {
       continue;
     }
     counters_.delivered++;
-    kv.second->consume_energy(ch_.rx_energy_pct, "rx");
+    if (ch_.profile != RealismProfile::Field) {
+      kv.second->consume_energy(ch_.rx_energy_pct, "rx");
+    }
     const double snr = std::clamp(rssi - noise_floor, -20.0, 15.0);
     std::snprintf(b, sizeof b, ",\"from\":%u,\"rssi\":%.1f,\"snr\":%.1f,\"battery\":%u,\"energy_mah\":%.3f",
                   tx.from, rssi, snr, kv.second->battery, kv.second->energy_consumed_mah);
