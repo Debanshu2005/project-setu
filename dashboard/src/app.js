@@ -19,6 +19,7 @@ import { SetuTwin3DViewer } from '../components/setu_twin.js';
 import { narrateEvent, explainFailure } from './narrator.js';
 
 const BUILTIN_SCENARIOS = [
+  { id: 'collapse_site_demo', name: 'Earthquake Collapse Site (Compact Demo)' },
   { id: 'walkthrough_w1_subterranean', name: 'Walkthrough 1: Subterranean Collapse' },
   { id: 'walkthrough_w2_storm', name: 'Walkthrough 2: Severe Storm Contention' },
   { id: 'walkthrough_w3_flood', name: 'Walkthrough 3: Flash Flood Valley' },
@@ -532,21 +533,45 @@ class SetuDashboardApp {
       if (this.setuTwin) {
         this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
         if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
-        const recentEv = (this.sim.events && this.sim.events.length > 0)
-          ? this.sim.events.slice().reverse().find(e => e.t <= this.sim.currentTime)
-          : null;
-        if (recentEv) {
-          const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
-          if (narration) this.setuTwin.setNarratorText(narration);
-          if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
-            const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
-            this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+
+        const curT = this.sim.currentTime;
+        const isJump = this._lastProcessedSimTime === undefined || type === 'load' || type === 'seek' || Math.abs(curT - (this._lastProcessedSimTime || 0)) > 300;
+        if (isJump) {
+          this.setuTwin.clearTransientRadioVisuals();
+          this._lastProcessedSimTime = curT - 1;
+        }
+
+        if (this.sim.events && this.sim.events.length > 0) {
+          const prevT = this._lastProcessedSimTime;
+          if (type !== 'seek') {
+            const newEvents = this.sim.events.filter(e => e.t > prevT && e.t <= curT);
+            for (const ev of newEvents) {
+              if (ev.ev === 'tx') {
+                this.setuTwin.triggerPacketPulse(ev.node, ev.target, ev.hazard, ev.hop, ev.air);
+              } else if (ev.ev === 'drop') {
+                this.setuTwin.triggerDropFlash(ev.node, ev.reason || 'weak');
+              } else if (ev.ev === 'haptic' && this.wristbandTwin) {
+                this.wristbandTwin.triggerHaptic();
+              }
+            }
+          } else {
+            if (this.sim.activePackets && this.sim.activePackets.length > 0) {
+              for (const ev of this.sim.activePackets) {
+                this.setuTwin.triggerPacketPulse(ev.node, ev.target, ev.hazard, ev.hop, ev.air);
+              }
+            }
           }
-          if (recentEv.ev === 'tx') {
-            this.setuTwin.triggerPacketPulse(recentEv.node, recentEv.hazard, recentEv.hop);
-          }
-          if (recentEv.ev === 'haptic' && this.wristbandTwin) {
-            this.wristbandTwin.triggerHaptic();
+
+          this._lastProcessedSimTime = curT;
+
+          const recentEv = this.sim.events.slice().reverse().find(e => e.t <= curT);
+          if (recentEv) {
+            const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
+            if (narration) this.setuTwin.setNarratorText(narration);
+            if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
+              const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
+              this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+            }
           }
         }
       }
@@ -917,7 +942,11 @@ class SetuDashboardApp {
 
     if (isTwin && this.setuTwin) {
       this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
-      this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
+      const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
+      this.setuTwin.setObstacles(sc ? (sc.obstacles || []) : []);
+      if (sc && sc.environment) {
+        this.setuTwin.setEnvironment(sc.environment);
+      }
       this.setuTwin.setLinks(this.sim.links || []);
       this.setuTwin.resizeCanvas();
     }
@@ -1775,9 +1804,19 @@ class SetuDashboardApp {
           }
         }
 
+        // Decision 2: Default landing scenario is collapse_site_demo
+        const defaultLandingSc = (this.scenarios && this.scenarios.find(s => s.id === 'collapse_site_demo')) || (this.scenarios && this.scenarios[0]);
+        if (defaultLandingSc) {
+          try {
+            await this.loadScenario(defaultLandingSc.id);
+            if (this.elScenarioSelect) this.elScenarioSelect.value = defaultLandingSc.id;
+          } catch (loadErr) {
+            console.warn('Default landing scenario preload notice:', loadErr.message);
+          }
+        }
+
         if (status.status === 'online') {
           if (this.elStatusDot) this.elStatusDot.style.background = '#10b981';
-          if (this.elStatusText) this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
 
           // Connect SSE live event stream (guarded so SSE failure never blocks state sync)
           try {
@@ -1786,49 +1825,14 @@ class SetuDashboardApp {
             console.warn('SSE stream initialization notice:', sseErr);
           }
 
-          // Sync live engine state from native C++ World
-          try {
-            await this.syncLiveEngineState();
-          } catch (syncErr) {
-            console.warn('Initial live engine state sync notice:', syncErr);
-          }
-
-          // If native engine currently has 0 nodes (uninitialized), initialize valid session with native engine
-          if (this.sim.nodes.size === 0) {
-            try {
-              await SetuApi.initControl({ survivors: 20, relays: 5, zone: 1200, seed: 7 }, 8000);
-              await this.syncLiveEngineState();
-            } catch (initErr) {
-              console.warn('Initial session initialization notice:', initErr);
-            }
-          }
-
           if (this.elStatusText) {
-            if (this.sim.nodes.size > 0) {
-              this.elStatusText.textContent = `CORE C++ ENGINE ONLINE: ${this.sim.nodes.size} NODES ACTIVE (READY)`;
-            } else {
-              this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE: 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
-            }
+            const scName = defaultLandingSc ? defaultLandingSc.name : 'Earthquake Collapse Site';
+            this.elStatusText.textContent = `CORE C++ ENGINE ONLINE: ${this.sim.nodes.size} NODES (${scName})`;
           }
         } else {
-          // If offline or standby, preload default scenario into client simulation
-          if (this.sim.nodes.size === 0 && this.scenarios.length > 0) {
-            try {
-              await this.loadScenario(this.scenarios[0].id);
-            } catch (scLoadErr) {
-              console.warn('Default scenario preload notice:', scLoadErr.message);
-            }
-          }
-
           if (this.elStatusDot) this.elStatusDot.style.background = '#f59e0b';
           if (this.elStatusText) {
-            if (this.sim.nodes.size > 0) {
-              this.elStatusText.textContent = `SIMULATOR STANDBY: ${this.sim.nodes.size} NODES LOADED (CLIENT REPLAY). Click Backend to connect live core.`;
-            } else {
-              this.elStatusText.textContent = status.status === 'unconfigured'
-                ? 'CONFIGURE BACKEND URL (Click Backend)'
-                : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click Backend to check URL or click here to retry.`;
-            }
+            this.elStatusText.textContent = `SIMULATOR STANDBY: ${this.sim.nodes.size} NODES LOADED (CLIENT REPLAY). Click Backend to connect live core.`;
           }
         }
 
@@ -1881,6 +1885,34 @@ class SetuDashboardApp {
         status: 'ready'
       };
       this.sim.loadTrace(events, null, sessionInfo);
+
+      // Recalculate scenario mesh links so inspector links table reflects current active scenario nodes
+      const links = [];
+      const nodeList = Array.from(this.sim.nodes.values());
+      for (let i = 0; i < nodeList.length; ++i) {
+        for (let j = i + 1; j < nodeList.length; ++j) {
+          const na = nodeList[i];
+          const nb = nodeList[j];
+          const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
+          const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, dist) / 10.0));
+          if (rssi >= -120.0) {
+            links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(dist * 10) / 10, blocked: false });
+          }
+        }
+      }
+      this.sim.links = links;
+
+      this.updateMetrics();
+      this.currentScenario = this.scenarios ? this.scenarios.find(s => s.id === scenarioId) : null;
+      if (this.setuTwin) {
+        this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+        this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
+        if (this.currentScenario && this.currentScenario.environment) {
+          this.setuTwin.setEnvironment(this.currentScenario.environment);
+        }
+        if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
+        this.setuTwin.fitCameraToScene();
+      }
       this.timeline.setEvents();
       if (this.analyticsWorkspace) {
         this.analyticsWorkspace.refresh();
@@ -1888,7 +1920,8 @@ class SetuDashboardApp {
       this.renderSidebarQuickChart();
 
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `TRACE LOADED: ${events.length} EVENTS (${scenarioId})`;
+      const scDisplayName = this.currentScenario ? this.currentScenario.name : scenarioId;
+      this.elStatusText.textContent = `TRACE LOADED: ${events.length} EVENTS (${this.sim.nodes.size} NODES) (${scDisplayName})`;
 
       const def = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
       if (def && this.inspector) {
@@ -1929,7 +1962,17 @@ class SetuDashboardApp {
         scenarioId: sc.id,
         status: 'completed'
       };
+      this.currentScenario = sc;
       this.sim.loadTrace(events, result.summary, sessionInfo);
+      if (this.setuTwin) {
+        this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+        this.setuTwin.setObstacles(sc.obstacles || []);
+        if (sc.environment) {
+          this.setuTwin.setEnvironment(sc.environment);
+        }
+        if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
+        this.setuTwin.fitCameraToScene();
+      }
       this.timeline.setEvents();
       if (this.analyticsWorkspace) {
         this.analyticsWorkspace.refresh();

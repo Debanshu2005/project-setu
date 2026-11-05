@@ -770,6 +770,13 @@ export class SetuApi {
     return await res.json();
   }
 
+  static async getCoverage(nodeId = 1, radius = 250, step = 25, timeoutMs = 8000) {
+    const base = this.getBaseUrl();
+    const res = await this.fetchWithTimeout(`${base}/api/control/coverage?node=${encodeURIComponent(nodeId)}&radius=${encodeURIComponent(radius)}&step=${encodeURIComponent(step)}`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from /api/control/coverage`);
+    return await res.json();
+  }
+
   static async getControlStatus(timeoutMs = 6000) {
     await this.ensureResolved();
     const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/status`, {}, timeoutMs);

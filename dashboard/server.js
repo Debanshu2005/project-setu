@@ -1690,6 +1690,20 @@ const server = http.createServer(async (req, res) => {
     }
   }
 
+  // GET /api/control/coverage?node=1&radius=250&step=25
+  if (req.method === 'GET' && pathname === '/api/control/coverage') {
+    try {
+      await simManager.ensureStarted();
+      const node = Math.max(0, parseInt(reqUrl.searchParams.get('node') || 1, 10));
+      const radius = Math.min(1000, Math.max(50, parseFloat(reqUrl.searchParams.get('radius') || 250)));
+      const step = Math.min(100, Math.max(10, parseFloat(reqUrl.searchParams.get('step') || 25)));
+      const result = await simManager.sendCommand({ cmd: 'get_coverage', node, radius, step });
+      return sendJson(res, 200, result, req);
+    } catch (err) {
+      return sendError(res, errorStatus(err), err.message, req);
+    }
+  }
+
   // POST /api/control/add-obstacle
   if (req.method === 'POST' && pathname === '/api/control/add-obstacle') {
     try {
@@ -1820,6 +1834,11 @@ const server = http.createServer(async (req, res) => {
           return null;
         }
       }).filter(Boolean);
+      list.sort((a, b) => {
+        if (a.id === 'collapse_site_demo') return -1;
+        if (b.id === 'collapse_site_demo') return 1;
+        return (a.name || a.id).localeCompare(b.name || b.id);
+      });
       return sendJson(res, 200, list, req);
     } catch (err) {
       return sendError(res, errorStatus(err), err.message, req);

@@ -220,9 +220,9 @@ export class SimulationEngine {
       }
     }
 
-    // Ensure any node referenced in events has a record even if node_init was absent
+    // Ensure any node referenced in events has a record even if node_init was absent (excluding broadcast 65535)
     for (const ev of this.events) {
-      const candidateIds = [ev.node, ev.target, ev.to, ev.from].filter(x => typeof x === 'number' && !isNaN(x));
+      const candidateIds = [ev.node, ev.target, ev.to, ev.from].filter(x => typeof x === 'number' && !isNaN(x) && x !== 65535);
       for (const cid of candidateIds) {
         if (!this.nodes.has(cid)) {
           const prev = preservedConfigs.get(cid);

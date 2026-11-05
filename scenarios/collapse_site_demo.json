@@ -1,0 +1,164 @@
+{
+  "id": "collapse_site_demo",
+  "name": "Earthquake Collapse Site (Compact Demo)",
+  "description": "250m x 250m collapsed municipal building site. Demonstrates multi-storey pancaked slabs, rubble mounds, standing concrete shear walls, multi-hop relay bypass, and link budget failure analysis.",
+  "params": {
+    "survivors": 12,
+    "relays": 3,
+    "zone": 250,
+    "seed": 42,
+    "duration": 60000,
+    "sf": 8,
+    "loss": 0.02,
+    "path_exp": 3.8,
+    "profile": "field",
+    "dr_mode": "step_and_heading"
+  },
+  "environment": {
+    "bounds": { "min_x": 0, "min_y": 0, "max_x": 250, "max_y": 250 },
+    "ground_type": "urban_debris",
+    "street": { "x1": 35, "y1": 10, "x2": 75, "y2": 240, "name": "Access Boulevard" },
+    "command_post": { "x": 60, "y": 60, "label": "Incident Command Hub Tent" },
+    "rubble_volumes": [
+      { "id": 201, "x": 135, "y": 140, "z": 0, "radius_m": 8.0, "height_m": 2.6, "material": "concrete_rubble", "attenuation_db": 12.0 },
+      { "id": 202, "x": 195, "y": 175, "z": 0, "radius_m": 10.5, "height_m": 3.4, "material": "concrete_rubble", "attenuation_db": 15.0 },
+      { "id": 203, "x": 120, "y": 210, "z": 0, "radius_m": 7.0, "height_m": 2.2, "material": "brick_rubble", "attenuation_db": 9.0 }
+    ]
+  },
+  "obstacles": [
+    {
+      "id": 1,
+      "label": "exterior_west_shear_wall",
+      "material": "concrete",
+      "x1": 95.0,
+      "y1": 110.0,
+      "x2": 95.0,
+      "y2": 225.0,
+      "thickness_m": 0.35,
+      "attenuation_db": 22.0,
+      "height_m": 6.0,
+      "floor_index": 0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": 2,
+      "label": "exterior_south_shear_wall",
+      "material": "concrete",
+      "x1": 95.0,
+      "y1": 110.0,
+      "x2": 245.0,
+      "y2": 110.0,
+      "thickness_m": 0.35,
+      "attenuation_db": 22.0,
+      "height_m": 5.0,
+      "floor_index": 0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": 3,
+      "label": "interior_corridor_partition",
+      "material": "concrete",
+      "x1": 150.0,
+      "y1": 115.0,
+      "x2": 150.0,
+      "y2": 175.0,
+      "thickness_m": 0.25,
+      "attenuation_db": 20.0,
+      "height_m": 3.6,
+      "floor_index": 0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": 4,
+      "label": "exterior_north_brick_wall",
+      "material": "brick",
+      "x1": 95.0,
+      "y1": 225.0,
+      "x2": 245.0,
+      "y2": 225.0,
+      "thickness_m": 0.25,
+      "attenuation_db": 14.0,
+      "height_m": 4.0,
+      "floor_index": 0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": 5,
+      "label": "exterior_east_perimeter_wall",
+      "material": "brick",
+      "x1": 245.0,
+      "y1": 110.0,
+      "x2": 245.0,
+      "y2": 225.0,
+      "thickness_m": 0.25,
+      "attenuation_db": 14.0,
+      "height_m": 4.0,
+      "floor_index": 0,
+      "tilt_deg": 0.0
+    },
+    {
+      "id": 6,
+      "label": "collapsed_floor_slab_level1",
+      "material": "concrete",
+      "x1": 160.0,
+      "y1": 115.0,
+      "x2": 235.0,
+      "y2": 165.0,
+      "thickness_m": 0.30,
+      "attenuation_db": 22.0,
+      "height_m": 3.2,
+      "floor_index": 1,
+      "tilt_deg": 9.0
+    },
+    {
+      "id": 7,
+      "label": "collapsed_floor_slab_level2",
+      "material": "concrete",
+      "x1": 155.0,
+      "y1": 170.0,
+      "x2": 235.0,
+      "y2": 215.0,
+      "thickness_m": 0.30,
+      "attenuation_db": 22.0,
+      "height_m": 3.2,
+      "floor_index": 2,
+      "tilt_deg": 14.0
+    }
+  ],
+  "triggers": [
+    {
+      "node": 1,
+      "kind": "long",
+      "t": 1500,
+      "label": "Survivor 1: Trapped SOS (Button Hold 1.6s)"
+    },
+    {
+      "node": 7,
+      "kind": "short",
+      "t": 8000,
+      "label": "Survivor 7: General SOS Alert"
+    }
+  ],
+  "faults": [
+    {
+      "kind": "gps-off",
+      "target": "1",
+      "t": 50,
+      "label": "Survivor 1: Structural GNSS Loss"
+    },
+    {
+      "kind": "motion",
+      "target": "1",
+      "profile": "fall_impact",
+      "t": 100,
+      "label": "Survivor 1: Impact Shock & Entrapment"
+    },
+    {
+      "kind": "gps-off",
+      "target": "7",
+      "t": 50,
+      "label": "Survivor 7: Interior Wall GNSS Denial"
+    }
+  ]
+}
+
