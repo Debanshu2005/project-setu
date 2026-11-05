@@ -32,7 +32,19 @@ async function testDashboardWebGL() {
     if (!ready) throw new Error('Dashboard server failed to bind port');
 
     console.log('Launching headless browser...');
-    const browser = await chromium.launch({ channel: 'chrome', headless: true });
+    let browser;
+    try {
+      browser = await chromium.launch({
+        channel: 'chrome',
+        headless: true,
+        args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-webgl']
+      });
+    } catch (e) {
+      browser = await chromium.launch({
+        headless: true,
+        args: ['--use-gl=angle', '--use-angle=swiftshader', '--enable-webgl']
+      });
+    }
     const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 
     const errors = [];

@@ -109,6 +109,9 @@ body {
 }
 
 .system-status-indicator {
+  max-width: 340px;
+  overflow: hidden;
+  white-space: nowrap;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -415,4 +418,49 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--text-dim);
+}
+
+
+#statusText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+}
+
+@media (max-width: 900px) {
+  .app-header {
+    height: auto !important;
+    min-height: 48px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    gap: 6px;
+  }
+  .brand-section {
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .header-actions {
+    flex-wrap: wrap;
+    gap: 4px;
+    width: 100%;
+  }
+  .system-status-indicator {
+    max-width: 200px;
+  }
+  .main-layout {
+    display: flex !important;
+    flex-direction: column !important;
+    overflow-y: auto !important;
+    height: calc(100vh - 48px) !important;
+  }
+  .center-viewport {
+    min-height: 380px !important;
+    height: 52vh !important;
+    order: -1 !important;
+  }
+  .sidebar-left, .sidebar-right {
+    width: 100% !important;
+    max-width: 100% !important;
+  }
 }

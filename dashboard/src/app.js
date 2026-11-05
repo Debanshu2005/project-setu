@@ -19,6 +19,7 @@ import { SetuTwin3DViewer } from '../components/setu_twin.js';
 import { narrateEvent, explainFailure } from './narrator.js';
 
 const BUILTIN_SCENARIOS = [
+  { id: 'collapse_site_demo', name: 'Earthquake Collapse Site (Compact Demo)' },
   { id: 'walkthrough_w1_subterranean', name: 'Walkthrough 1: Subterranean Collapse' },
   { id: 'walkthrough_w2_storm', name: 'Walkthrough 2: Severe Storm Contention' },
   { id: 'walkthrough_w3_flood', name: 'Walkthrough 3: Flash Flood Valley' },
@@ -917,7 +918,11 @@ class SetuDashboardApp {
 
     if (isTwin && this.setuTwin) {
       this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
-      this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
+      const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
+      this.setuTwin.setObstacles(sc ? (sc.obstacles || []) : []);
+      if (sc && sc.environment) {
+        this.setuTwin.setEnvironment(sc.environment);
+      }
       this.setuTwin.setLinks(this.sim.links || []);
       this.setuTwin.resizeCanvas();
     }
@@ -1814,7 +1819,9 @@ class SetuDashboardApp {
           // If offline or standby, preload default scenario into client simulation
           if (this.sim.nodes.size === 0 && this.scenarios.length > 0) {
             try {
-              await this.loadScenario(this.scenarios[0].id);
+              const defSc = this.scenarios.find(s => s.id === 'collapse_site_demo') || this.scenarios[0];
+              await this.loadScenario(defSc.id);
+              if (this.elScenarioSelect) this.elScenarioSelect.value = defSc.id;
             } catch (scLoadErr) {
               console.warn('Default scenario preload notice:', scLoadErr.message);
             }
@@ -1881,6 +1888,16 @@ class SetuDashboardApp {
         status: 'ready'
       };
       this.sim.loadTrace(events, null, sessionInfo);
+      this.currentScenario = this.scenarios ? this.scenarios.find(s => s.id === scenarioId) : null;
+      if (this.setuTwin) {
+        this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+        this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
+        if (this.currentScenario && this.currentScenario.environment) {
+          this.setuTwin.setEnvironment(this.currentScenario.environment);
+        }
+        if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
+        this.setuTwin.fitCameraToScene();
+      }
       this.timeline.setEvents();
       if (this.analyticsWorkspace) {
         this.analyticsWorkspace.refresh();
@@ -1929,7 +1946,17 @@ class SetuDashboardApp {
         scenarioId: sc.id,
         status: 'completed'
       };
+      this.currentScenario = sc;
       this.sim.loadTrace(events, result.summary, sessionInfo);
+      if (this.setuTwin) {
+        this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+        this.setuTwin.setObstacles(sc.obstacles || []);
+        if (sc.environment) {
+          this.setuTwin.setEnvironment(sc.environment);
+        }
+        if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
+        this.setuTwin.fitCameraToScene();
+      }
       this.timeline.setEvents();
       if (this.analyticsWorkspace) {
         this.analyticsWorkspace.refresh();

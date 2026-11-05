@@ -13,6 +13,60 @@
     "path_exp": 3.4,
     "dr_mode": "parametric"
   },
+  "environment": {
+    "subterranean": true,
+    "depth_m": 12.0,
+    "levels": [
+      { "level": 0, "name": "Ground Surface", "elevation_m": 0.0 },
+      { "level": -1, "name": "Underground Parking Concourse", "elevation_m": -6.0 },
+      { "level": -2, "name": "Deep Transit Tunnel B2", "elevation_m": -12.0 }
+    ],
+    "cutaway_opening": { "x1": 210, "y1": 820, "x2": 330, "y2": 960, "depth_m": 12.0 }
+  },
+  "obstacles": [
+    {
+      "id": 1,
+      "label": "subterranean_transit_tunnel_north_wall",
+      "material": "concrete",
+      "x1": 200.0,
+      "y1": 840.0,
+      "x2": 340.0,
+      "y2": 840.0,
+      "thickness_m": 0.40,
+      "attenuation_db": 24.0,
+      "floor_index": -1,
+      "height_m": 4.5,
+      "depth_m": 8.0
+    },
+    {
+      "id": 2,
+      "label": "subterranean_transit_tunnel_south_wall",
+      "material": "concrete",
+      "x1": 200.0,
+      "y1": 940.0,
+      "x2": 340.0,
+      "y2": 940.0,
+      "thickness_m": 0.40,
+      "attenuation_db": 24.0,
+      "floor_index": -1,
+      "height_m": 4.5,
+      "depth_m": 8.0
+    },
+    {
+      "id": 3,
+      "label": "collapsed_subterranean_floor_slab",
+      "material": "concrete",
+      "x1": 220.0,
+      "y1": 860.0,
+      "x2": 310.0,
+      "y2": 920.0,
+      "thickness_m": 0.35,
+      "attenuation_db": 22.0,
+      "floor_index": -1,
+      "height_m": 3.0,
+      "tilt_deg": 12.0
+    }
+  ],
   "triggers": [
     {
       "node": 3,

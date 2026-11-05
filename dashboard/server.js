@@ -1820,6 +1820,11 @@ const server = http.createServer(async (req, res) => {
           return null;
         }
       }).filter(Boolean);
+      list.sort((a, b) => {
+        if (a.id === 'collapse_site_demo') return -1;
+        if (b.id === 'collapse_site_demo') return 1;
+        return (a.name || a.id).localeCompare(b.name || b.id);
+      });
       return sendJson(res, 200, list, req);
     } catch (err) {
       return sendError(res, errorStatus(err), err.message, req);

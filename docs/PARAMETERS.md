@@ -31,8 +31,11 @@ This document catalogs every simulated physical parameter in Project Setu. In ac
 | SX1262 Co-Channel Capture (SF12) | 10.5 dB | Cited | Semtech Application Note AN1200.22 | `sim::capture_threshold_db` |
 | Inter-SF Isolation (Delta SF = 1) | 16.0 dB | Cited | LoRa Alliance Physical Layer Specifications | `sim::inter_sf_isolation_db` |
 | Inter-SF Isolation (Delta SF >= 3) | 20.0 dB | Cited | LoRa Alliance Physical Layer Specifications | `sim::inter_sf_isolation_db` |
-| Concrete Floor Slab Loss (200mm) | 22.0 dB | Cited | ITU-R P.1238-11 Building Penetration (868 MHz) | `sim::material_default_attenuation_db` |
-| Brick Masonry Wall Loss (200mm) | 10.0 dB | Cited | ITU-R P.1238-11 Building Penetration (868 MHz) | `sim::material_default_attenuation_db` |
+| Concrete Floor Slab Loss (200mm) | 22.0 dB | Assumed | Reinforced concrete floor slab modeled as 2D boundary segment across floor boundary | sim::material_default_attenuation_db |
+| Concrete Shear Wall (200-250mm) | 22.0 dB | Assumed | Heavy reinforced concrete exterior shear wall in collapse site | scenarios/collapse_site_demo.json |
+| Interior Corridor Partition Wall | 20.0 dB | Assumed | Dense internal concrete partition wall in collapse building | scenarios/collapse_site_demo.json |
+| Brick Masonry Wall Loss (150-200mm) | 14.0 dB | Assumed | Exterior brick masonry perimeter wall in collapse site | scenarios/collapse_site_demo.json |
+| Brick Masonry Standard Loss (100mm) | 10.0 dB | Cited | ITU-R P.1238-11 Building Penetration (868 MHz) | sim::material_default_attenuation_db |
 | Structural Metal Sheet Loss | 35.0 dB | Cited | ITU-R P.1238 Metallic Barrier Reflection & Absorption | `sim::material_default_attenuation_db` |
 | Water Penetration Loss | 50.0 dB / m | Cited | Permittivity and Loss Tangent of Flood Water | `sim::material_default_attenuation_db` |
 | Soil / Rubble Absorption | 15.0 dB / m | Cited | NIST Subterranean Rubble Propagation Studies | `sim::material_default_attenuation_db` |
@@ -42,6 +45,11 @@ This document catalogs every simulated physical parameter in Project Setu. In ac
 | Field Log-Normal Shadowing Sigma | 6.0 dB | Cited | ITU-R P.1411 Obstructed Urban Path Shadowing | `ChannelParams::shadow_sigma_db` |
 | Path Loss Exponent (Baseline) | 3.0 | Assumed | Generic suburban propagation profile | `ChannelParams::path_exp` |
 | Path Loss Exponent (Collapse Rubble) | 3.8 to 4.2 | Cited | S. Y. Seidel and T. S. Rappaport, 914 MHz Penetration | `scenarios/building_collapse_deep.json` |
+
+---
+
+### Structural Obstacle and Elevation Modeling Note
+The C++ RF propagation engine operates on 2D ray-obstacle intersection projection (x, y). Horizontal floor slabs and subterranean ceiling levels are projected onto 2D attenuation boundary segments across the structural zone so that RF links crossing between vertical structural zones or floors incur the 22 dB slab penetration loss. 3D depth and elevation (z) in the viewer represent structural verticality and subterranean elevation for human spatial comprehension, while the RF engine evaluates penetration via the 2D projected boundary.
 
 ---
 

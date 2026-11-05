@@ -199,6 +199,11 @@ jobs:
             node -e "JSON.parse(fs.readFileSync('$f', 'utf8'))" || (echo "Invalid JSON: $f" && exit 1)
           done
 
+      - name: Install dependencies and Playwright Chromium
+        run: |
+          npm ci || npm install
+          npx playwright install --with-deps chromium
+
       - name: Build native simulator for backend tests
         run: |
           cmake -B build -DCMAKE_BUILD_TYPE=Release
