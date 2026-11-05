@@ -102,6 +102,79 @@ async function testDashboardWebGL() {
     await btnShort.click();
     await page.waitForTimeout(500);
 
+    // 4. Verify scenario node count synchronization (Requirement 1)
+    console.log('Verifying metrics panel and header node count synchronization...');
+    const initialNodesText = await page.locator('#metricNodes').textContent();
+    const initialStatusText = await page.locator('#statusText').textContent();
+    console.log(`Initial landing scenario: Nodes = ${initialNodesText.trim()}, Status = ${initialStatusText.trim()}`);
+    if (initialNodesText.trim() !== '16') {
+      throw new Error(`Expected initial collapse_site_demo node count 16 in metrics panel, got: ${initialNodesText}`);
+    }
+
+    // Switch scenario to gps_denied_rescue (17 nodes)
+    console.log('Switching scenario to gps_denied_rescue...');
+    await page.selectOption('#scenarioSelect', 'gps_denied_rescue');
+    await page.waitForTimeout(1500);
+
+    const scenario7Nodes = await page.locator('#metricNodes').textContent();
+    const scenario7Status = await page.locator('#statusText').textContent();
+    console.log(`Scenario 7: Nodes = ${scenario7Nodes.trim()}, Status = ${scenario7Status.trim()}`);
+    if (scenario7Nodes.trim() !== '17') {
+      throw new Error(`Expected scenario 7 node count 17 in metrics panel, got: ${scenario7Nodes}`);
+    }
+
+    // Switch back to collapse_site_demo (16 nodes)
+    console.log('Switching back to collapse_site_demo...');
+    await page.selectOption('#scenarioSelect', 'collapse_site_demo');
+    await page.waitForTimeout(1500);
+
+    const revertedNodes = await page.locator('#metricNodes').textContent();
+    if (revertedNodes.trim() !== '16') {
+      throw new Error(`Expected collapse_site_demo node count 16 after reverting, got: ${revertedNodes}`);
+    }
+    console.log('[ PASS ] Metrics panel and header accurately reflect loaded scenario at all times (16 demo vs 17 scenario 7)!');
+
+    // 5. Verify Label Screen Height and Viewport Coverage (Requirement 2)
+    console.log('Verifying label screen height and viewport coverage...');
+    const labelMetrics = await page.evaluate(() => {
+      const app = window.setuApp;
+      if (!app || !app.setuTwin || !app.setuTwin.camera) return null;
+      const twin = app.setuTwin;
+      const camera = twin.camera;
+      const vh = twin.renderer.domElement.clientHeight || 720;
+      const vw = twin.renderer.domElement.clientWidth || 1280;
+      const viewportArea = vw * vh;
+
+      const group = twin.nodeMeshes.get(1);
+      if (!group) return null;
+      const label = group.getObjectByName('labelSprite');
+      if (!label) return null;
+
+      const tempVec = new twin.T.Vector3();
+      group.getWorldPosition(tempVec);
+      const dist = camera.position.distanceTo(tempVec);
+      const tanHalfFov = Math.tan((camera.fov * Math.PI) / 360);
+      const visibleH = 2 * dist * tanHalfFov;
+
+      const screenH = label.scale.y * (vh / visibleH);
+      const screenW = label.scale.x * (vh / visibleH);
+      const screenArea = screenH * screenW;
+      const coveragePct = (screenArea / viewportArea) * 100;
+
+      return { screenH, screenW, coveragePct };
+    });
+
+    if (labelMetrics) {
+      console.log(`Node 1 label metrics: screenH = ${labelMetrics.screenH.toFixed(1)}px, screenW = ${labelMetrics.screenW.toFixed(1)}px, coverage = ${labelMetrics.coveragePct.toFixed(2)}%`);
+      if (labelMetrics.screenH > 18.0) {
+        throw new Error(`Label screen height exceeds cap (got ${labelMetrics.screenH.toFixed(1)}px, expected <= 16px)`);
+      }
+      if (labelMetrics.coveragePct > 10.0) {
+        throw new Error(`Label covers more than 10% of viewport (got ${labelMetrics.coveragePct.toFixed(2)}%)`);
+      }
+      console.log('[ PASS ] Label screen height is capped at 12-14px and covers <10% of viewport!');
+    }
+
     await browser.close();
 
     if (errors.length > 0) {

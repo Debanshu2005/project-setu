@@ -1817,7 +1817,6 @@ class SetuDashboardApp {
 
         if (status.status === 'online') {
           if (this.elStatusDot) this.elStatusDot.style.background = '#10b981';
-          if (this.elStatusText) this.elStatusText.textContent = `CORE C++ ENGINE ONLINE (${status.simulatorPath || 'BUILD READY'})`;
 
           // Connect SSE live event stream (guarded so SSE failure never blocks state sync)
           try {
@@ -1826,51 +1825,14 @@ class SetuDashboardApp {
             console.warn('SSE stream initialization notice:', sseErr);
           }
 
-          // Sync live engine state from native C++ World
-          try {
-            await this.syncLiveEngineState();
-          } catch (syncErr) {
-            console.warn('Initial live engine state sync notice:', syncErr);
-          }
-
-          // If native engine currently has 0 nodes (uninitialized), initialize valid session with native engine
-          if (this.sim.nodes.size === 0) {
-            try {
-              await SetuApi.initControl({ survivors: 20, relays: 5, zone: 1200, seed: 7 }, 8000);
-              await this.syncLiveEngineState();
-            } catch (initErr) {
-              console.warn('Initial session initialization notice:', initErr);
-            }
-          }
-
           if (this.elStatusText) {
-            if (this.sim.nodes.size > 0) {
-              this.elStatusText.textContent = `CORE C++ ENGINE ONLINE: ${this.sim.nodes.size} NODES ACTIVE (READY)`;
-            } else {
-              this.elStatusText.textContent = 'CORE C++ ENGINE ONLINE: 0 NODES ACTIVE. SELECT SCENARIO OR RUN SIMULATION.';
-            }
+            const scName = defaultLandingSc ? defaultLandingSc.name : 'Earthquake Collapse Site';
+            this.elStatusText.textContent = `CORE C++ ENGINE ONLINE: ${this.sim.nodes.size} NODES (${scName})`;
           }
         } else {
-          // If offline or standby, preload default scenario into client simulation
-          if (this.sim.nodes.size === 0 && this.scenarios.length > 0) {
-            try {
-              const defSc = this.scenarios.find(s => s.id === 'collapse_site_demo') || this.scenarios[0];
-              await this.loadScenario(defSc.id);
-              if (this.elScenarioSelect) this.elScenarioSelect.value = defSc.id;
-            } catch (scLoadErr) {
-              console.warn('Default scenario preload notice:', scLoadErr.message);
-            }
-          }
-
           if (this.elStatusDot) this.elStatusDot.style.background = '#f59e0b';
           if (this.elStatusText) {
-            if (this.sim.nodes.size > 0) {
-              this.elStatusText.textContent = `SIMULATOR STANDBY: ${this.sim.nodes.size} NODES LOADED (CLIENT REPLAY). Click Backend to connect live core.`;
-            } else {
-              this.elStatusText.textContent = status.status === 'unconfigured'
-                ? 'CONFIGURE BACKEND URL (Click Backend)'
-                : `SIMULATOR OFFLINE (${status.error || 'Connection Failed'}). Click Backend to check URL or click here to retry.`;
-            }
+            this.elStatusText.textContent = `SIMULATOR STANDBY: ${this.sim.nodes.size} NODES LOADED (CLIENT REPLAY). Click Backend to connect live core.`;
           }
         }
 
@@ -1923,6 +1885,24 @@ class SetuDashboardApp {
         status: 'ready'
       };
       this.sim.loadTrace(events, null, sessionInfo);
+
+      // Recalculate scenario mesh links so inspector links table reflects current active scenario nodes
+      const links = [];
+      const nodeList = Array.from(this.sim.nodes.values());
+      for (let i = 0; i < nodeList.length; ++i) {
+        for (let j = i + 1; j < nodeList.length; ++j) {
+          const na = nodeList[i];
+          const nb = nodeList[j];
+          const dist = Math.hypot(na.x - nb.x, na.y - nb.y);
+          const rssi = 14.0 - (55.0 + 35.0 * Math.log10(Math.max(10.0, dist) / 10.0));
+          if (rssi >= -120.0) {
+            links.push({ a: na.id, b: nb.id, rssi: Math.round(rssi * 10) / 10, dist: Math.round(dist * 10) / 10, blocked: false });
+          }
+        }
+      }
+      this.sim.links = links;
+
+      this.updateMetrics();
       this.currentScenario = this.scenarios ? this.scenarios.find(s => s.id === scenarioId) : null;
       if (this.setuTwin) {
         this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
@@ -1940,7 +1920,8 @@ class SetuDashboardApp {
       this.renderSidebarQuickChart();
 
       this.elStatusDot.classList.remove('simulating');
-      this.elStatusText.textContent = `TRACE LOADED: ${events.length} EVENTS (${scenarioId})`;
+      const scDisplayName = this.currentScenario ? this.currentScenario.name : scenarioId;
+      this.elStatusText.textContent = `TRACE LOADED: ${events.length} EVENTS (${this.sim.nodes.size} NODES) (${scDisplayName})`;
 
       const def = this.sim.nodes.get(1) || (this.sim.nodes.size > 0 ? this.sim.nodes.values().next().value : null);
       if (def && this.inspector) {

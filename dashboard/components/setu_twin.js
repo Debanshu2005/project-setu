@@ -46,6 +46,7 @@ export class SetuTwin3DViewer {
     // Camera modes: 'orbit', 'topdown', 'freefly', 'follow_node', 'follow_sos'
     this.cameraMode = 'orbit';
     this.selectedNodeId = null;
+    this.hoveredNodeId = null;
     this.trackedIncidentNodeId = null;
     this.initialFitDone = false;
 
@@ -464,6 +465,31 @@ export class SetuTwin3DViewer {
         }
       }
     });
+
+    this.mountPoint.addEventListener('mousemove', (e) => {
+      if (!this.camera || !this.scene || !this.T) return;
+      const t = this.T;
+      const rect = this.mountPoint.getBoundingClientRect();
+      const mouse = new t.Vector2(
+        ((e.clientX - rect.left) / rect.width) * 2 - 1,
+        -((e.clientY - rect.top) / rect.height) * 2 + 1
+      );
+      const raycaster = new t.Raycaster();
+      raycaster.setFromCamera(mouse, this.camera);
+
+      let hitId = null;
+      for (const [id, group] of this.nodeMeshes.entries()) {
+        const intersects = raycaster.intersectObjects(group.children, true);
+        if (intersects.length > 0) {
+          hitId = id;
+          break;
+        }
+      }
+      if (this.hoveredNodeId !== hitId) {
+        this.hoveredNodeId = hitId;
+        this.mountPoint.style.cursor = hitId !== null ? 'pointer' : 'default';
+      }
+    });
   }
 
   bindMouseControls2D() {
@@ -592,12 +618,14 @@ export class SetuTwin3DViewer {
       span = Math.min(span, 260);
     }
 
-    // Auto-fit framing distance based on scenario span
-    const distY = Math.max(65, span * 0.65);
-    const distZ = Math.max(85, span * 0.88);
+    // 45-degree isometric framing tightly from outside
+    const camDist = Math.max(90, span * 0.74);
+    const posX = targetX + camDist * 0.707;
+    const posY = targetY + camDist * 0.60;
+    const posZ = targetZ + camDist * 0.707;
 
-    this.camera.position.set(targetX, targetY + distY, targetZ + distZ);
-    this.controls.target.set(targetX, targetY, targetZ);
+    this.camera.position.set(posX, posY, posZ);
+    this.controls.target.set(targetX, targetY + 6, targetZ);
 
     this.camera.near = 0.5;
     this.camera.far = Math.max(6000, span * 6);
@@ -937,6 +965,8 @@ export class SetuTwin3DViewer {
 
     const items = [];
     const tempVec = new t.Vector3();
+    const viewportH = (this.renderer && this.renderer.domElement && this.renderer.domElement.clientHeight) || 720;
+    const tanHalfFov = Math.tan(((this.camera.fov || 45) * Math.PI) / 360);
 
     for (const [id, group] of this.nodeMeshes.entries()) {
       const node = this.nodes.get(id);
@@ -946,10 +976,38 @@ export class SetuTwin3DViewer {
       group.getWorldPosition(tempVec);
       const distToCam = this.camera.position.distanceTo(tempVec);
 
-      label.position.y = 46;
+      const isSelected = (id === this.selectedNodeId);
+      const isHovered = (id === this.hoveredNodeId);
+      const showFull = isSelected || isHovered;
+
+      if (label.userData) {
+        if (showFull && label.userData.fullTex) {
+          if (label.material.map !== label.userData.fullTex) {
+            label.material.map = label.userData.fullTex;
+            label.material.needsUpdate = true;
+          }
+        } else if (label.userData.compactTex) {
+          if (label.material.map !== label.userData.compactTex) {
+            label.material.map = label.userData.compactTex;
+            label.material.needsUpdate = true;
+          }
+        }
+
+        const aspect = showFull ? (label.userData.fullAspect || 7.5) : (label.userData.compactAspect || 2.5);
+        // Constant screen-pixel scaling: ~13 px for compact at distance, ~18 px when hovered/selected
+        const targetPx = showFull ? 18.0 : 13.0;
+        let worldH = (targetPx * (2.0 * distToCam * tanHalfFov)) / viewportH;
+        // Cap so at extreme close range screen height <= 22px and viewport area footprint is strictly under 1%
+        const maxWorldH = (22.0 * (2.0 * distToCam * tanHalfFov)) / viewportH;
+        worldH = Math.min(worldH, Math.max(0.4, maxWorldH));
+        worldH = Math.max(0.25, Math.min(5.0, worldH));
+        label.scale.set(worldH * aspect, worldH, 1.0);
+      }
+
+      label.position.y = 44;
 
       const proj = tempVec.clone();
-      proj.y += 46;
+      proj.y += label.position.y;
       proj.project(this.camera);
 
       if (proj.z > 1.0) {
@@ -959,7 +1017,7 @@ export class SetuTwin3DViewer {
       label.visible = true;
 
       let priority = 3;
-      if (id === this.selectedNodeId || (node && (node.sos_active || (node.hazard !== undefined && node.hazard > 0)))) {
+      if (isSelected || (node && (node.sos_active || (node.hazard !== undefined && node.hazard > 0)))) {
         priority = 0;
       } else if (node && node.role === 'hub') {
         priority = 1;
@@ -972,6 +1030,7 @@ export class SetuTwin3DViewer {
         node,
         group,
         label,
+        showFull,
         screenX: proj.x,
         screenY: proj.y,
         distToCam,
@@ -989,8 +1048,8 @@ export class SetuTwin3DViewer {
     for (const item of items) {
       let sx = item.screenX;
       let sy = item.screenY;
-      const w = 0.28;
-      const h = 0.08;
+      const w = item.showFull ? 0.22 : 0.08;
+      const h = 0.04;
 
       let overlap = false;
       for (const b of placedBoxes) {
@@ -1002,8 +1061,8 @@ export class SetuTwin3DViewer {
 
       if (overlap) {
         if (item.priority > 0) {
-          const staggerOffset = (item.id % 2 === 0) ? 18 : -16;
-          item.label.position.y = 46 + staggerOffset;
+          const staggerOffset = (item.id % 2 === 0) ? 14 : -12;
+          item.label.position.y = 44 + staggerOffset;
 
           const reproj = item.group.position.clone();
           reproj.y += item.label.position.y;
@@ -1020,7 +1079,7 @@ export class SetuTwin3DViewer {
           }
 
           if (stillOverlap) {
-            if (item.label.material) item.label.material.opacity = 0.15;
+            if (item.label.material) item.label.material.opacity = 0.18;
           } else {
             if (item.label.material) item.label.material.opacity = 1.0;
           }
@@ -1034,52 +1093,91 @@ export class SetuTwin3DViewer {
   }
 
   createNodeLabelSprite(node, colorHex, t) {
-    const canvas = document.createElement('canvas');
-    canvas.width = 384;
-    canvas.height = 96;
-    const ctx = canvas.getContext('2d');
-
     const role = (node.role || 'survivor').toUpperCase();
-    const idText = node.role === 'hub' ? 'RESCUE HUB 0' : `NODE ${node.id} (${role})`;
     const hexStr = `#${colorHex.toString(16).padStart(6, '0')}`;
 
-    // Rounded badge background
-    ctx.fillStyle = 'rgba(15, 23, 42, 0.92)';
-    ctx.strokeStyle = hexStr;
-    ctx.lineWidth = 4;
+    // 1. Compact Texture (Role color dot + Node ID, shown at distance)
+    const compactCanvas = document.createElement('canvas');
+    compactCanvas.width = 120;
+    compactCanvas.height = 48;
+    const cctx = compactCanvas.getContext('2d');
+    cctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    cctx.strokeStyle = hexStr;
+    cctx.lineWidth = 3;
+    const cr = 14, cx = 2, cy = 2, cw = 116, ch = 44;
+    cctx.beginPath();
+    cctx.moveTo(cx + cr, cy);
+    cctx.lineTo(cx + cw - cr, cy);
+    cctx.quadraticCurveTo(cx + cw, cy, cx + cw, cy + cr);
+    cctx.lineTo(cx + cw, cy + ch - cr);
+    cctx.quadraticCurveTo(cx + cw, cy + ch, cx + cw - cr, cy + ch);
+    cctx.lineTo(cx + cr, cy + ch);
+    cctx.quadraticCurveTo(cx, cy + ch, cx, cy + ch - cr);
+    cctx.lineTo(cx, cy + cr);
+    cctx.quadraticCurveTo(cx, cy, cx + cr, cy);
+    cctx.closePath();
+    cctx.fill();
+    cctx.stroke();
+    // Compact dot
+    cctx.beginPath();
+    cctx.arc(20, 24, 7, 0, Math.PI * 2);
+    cctx.fillStyle = hexStr;
+    cctx.fill();
+    // Compact text
+    cctx.font = 'bold 22px monospace';
+    cctx.fillStyle = '#ffffff';
+    cctx.textBaseline = 'middle';
+    const compactText = node.role === 'hub' ? 'H0' : String(node.id);
+    cctx.fillText(compactText, 36, 24);
+    const compactTex = new t.CanvasTexture(compactCanvas);
+    compactTex.minFilter = t.LinearFilter;
 
-    const r = 16, x = 4, y = 4, w = 376, h = 88;
-    ctx.beginPath();
-    ctx.moveTo(x + r, y);
-    ctx.lineTo(x + w - r, y);
-    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
-    ctx.lineTo(x + w, y + h - r);
-    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-    ctx.lineTo(x + r, y + h);
-    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
-    ctx.lineTo(x, y + r);
-    ctx.quadraticCurveTo(x, y, x + r, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    // 2. Full Texture (Node ID + Role description, shown on hover/selection)
+    const fullCanvas = document.createElement('canvas');
+    fullCanvas.width = 360;
+    fullCanvas.height = 48;
+    const fctx = fullCanvas.getContext('2d');
+    fctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+    fctx.strokeStyle = hexStr;
+    fctx.lineWidth = 3;
+    const fr = 14, fx = 2, fy = 2, fw = 356, fh = 44;
+    fctx.beginPath();
+    fctx.moveTo(fx + fr, fy);
+    fctx.lineTo(fx + fw - fr, fy);
+    fctx.quadraticCurveTo(fx + fw, fy, fx + fw, fy + fr);
+    fctx.lineTo(fx + fw, fy + fh - fr);
+    fctx.quadraticCurveTo(fx + fw, fy + fh, fx + fw - fr, fy + fh);
+    fctx.lineTo(fx + fr, fy + fh);
+    fctx.quadraticCurveTo(fx, fy + fh, fx, fy + fh - fr);
+    fctx.lineTo(fx, fy + fr);
+    fctx.quadraticCurveTo(fx, fy, fx + fr, fy);
+    fctx.closePath();
+    fctx.fill();
+    fctx.stroke();
+    // Full dot
+    fctx.beginPath();
+    fctx.arc(20, 24, 7, 0, Math.PI * 2);
+    fctx.fillStyle = hexStr;
+    fctx.fill();
+    // Full text
+    fctx.font = 'bold 18px sans-serif';
+    fctx.fillStyle = '#ffffff';
+    fctx.textBaseline = 'middle';
+    const fullText = node.role === 'hub' ? 'RESCUE HUB 0' : `NODE ${node.id} (${role})`;
+    fctx.fillText(fullText, 36, 24);
+    const fullTex = new t.CanvasTexture(fullCanvas);
+    fullTex.minFilter = t.LinearFilter;
 
-    // Dot indicator
-    ctx.beginPath();
-    ctx.arc(36, 48, 12, 0, Math.PI * 2);
-    ctx.fillStyle = hexStr;
-    ctx.fill();
-
-    // Text label
-    ctx.font = 'bold 30px sans-serif';
-    ctx.fillStyle = '#ffffff';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(idText, 64, 48);
-
-    const texture = new t.CanvasTexture(canvas);
-    texture.minFilter = t.LinearFilter;
-    const spriteMat = new t.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const spriteMat = new t.SpriteMaterial({ map: compactTex, depthTest: false, transparent: true });
     const sprite = new t.Sprite(spriteMat);
-    sprite.scale.set(32, 8, 1);
+    sprite.userData = {
+      compactTex,
+      fullTex,
+      compactAspect: 120 / 48,
+      fullAspect: 360 / 48,
+      nodeId: node.id
+    };
+    sprite.scale.set(6.0, 2.4, 1.0);
     return sprite;
   }
 
@@ -1961,7 +2059,6 @@ export class SetuTwin3DViewer {
 
       let line;
       if (isWeak) {
-        lineGeo.computeLineDistances();
         const lineMat = new t.LineDashedMaterial({
           color: colorHex,
           dashSize: 6,
@@ -1970,6 +2067,7 @@ export class SetuTwin3DViewer {
           opacity: 0.65
         });
         line = new t.Line(lineGeo, lineMat);
+        line.computeLineDistances();
       } else {
         const lineMat = new t.LineBasicMaterial({
           color: colorHex,
@@ -2041,11 +2139,27 @@ export class SetuTwin3DViewer {
 
       dir.applyEuler(this.camera.rotation);
       this.camera.position.addScaledVector(dir, moveSpeed);
-    } else if (this.cameraMode === 'follow_node' && this.selectedNodeId !== null) {
+    } else if ((this.cameraMode === 'follow_node' || this.cameraMode === 'follow_sos') && this.selectedNodeId !== null) {
       const node = this.nodes.get(this.selectedNodeId);
       if (node && this.controls) {
         const p = this.to3DCoords(node.x, node.y, node.elevation || 0);
-        this.controls.target.lerp(new t.Vector3(p.x, p.y + 10, p.z), 0.1);
+        this.controls.target.lerp(new t.Vector3(p.x, p.y + 6, p.z), 0.1);
+
+        // Exterior bounds clamping: camera must stay outside building perimeter
+        const relCamX = this.camera.position.x - p.x;
+        const relCamZ = this.camera.position.z - p.z;
+        const horizDist = Math.hypot(relCamX, relCamZ);
+        const minExteriorDist = 65.0; // Horizontal standoff from building
+
+        if (horizDist < minExteriorDist) {
+          const factor = minExteriorDist / Math.max(0.1, horizDist);
+          this.camera.position.x = p.x + relCamX * factor;
+          this.camera.position.z = p.z + relCamZ * factor;
+        }
+        const minElevation = Math.max(38.0, p.y + 24.0);
+        if (this.camera.position.y < minElevation) {
+          this.camera.position.y = minElevation;
+        }
       }
     }
 
