@@ -1,7 +1,7 @@
 // Project Setu: Setu Twin Viewer, Narrator, and Loss Budget Unit & DOM Tests
 // Validates plain-English narration, link-margin waterfall decomposition, and 3D projection.
 
-import { narrateEvent, narrateIncidentStory, HAZARD_NAMES, SENSITIVITY_BY_SF } from '../dashboard/src/narrator.js';
+import { narrateEvent, narrateIncidentStory, computeLossBudget, formatTimestamp, findCrossedObstacles, HAZARD_NAMES, SENSITIVITY_BY_SF } from '../dashboard/src/narrator.js';
 import { LossWaterfallComponent } from '../dashboard/components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../dashboard/components/setu_twin.js';
 import fs from 'node:fs';
@@ -173,6 +173,58 @@ async function runTests() {
 
   const badgeEl = document.getElementById('lwViableBadge');
   assert(badgeEl && badgeEl.textContent.length > 0, 'Viability badge rendered with margin');
+
+  // Test computeLossBudget for wall-blocked link
+  console.log('Testing computeLossBudget for wall-blocked link...');
+  const node1 = { id: 1, role: 'survivor', x: 190.768, y: 118.803, hazard: 2, motion_profile: 'stationary' };
+  const node0 = { id: 0, role: 'hub', x: 60.0, y: 60.0 };
+  const mockObstacles = [
+    { id: 1, name: 'exterior_west_shear_wall', material: 'reinforced_concrete', x1: 130.0, y1: 50.0, x2: 130.0, y2: 160.0, loss_db: 22.0 },
+    { id: 2, name: 'interior_corridor_partition', material: 'reinforced_concrete', x1: 150.0, y1: 80.0, x2: 150.0, y2: 140.0, loss_db: 20.0 }
+  ];
+
+  const wallBudget = computeLossBudget(node1, node0, {
+    obstacles: mockObstacles,
+    sf: 7,
+    rssi: -127.9
+  });
+
+  assert(wallBudget.crossedWalls.length === 2, `Ray intersects both walls (Got: ${wallBudget.crossedWalls.length})`);
+  assert(wallBudget.totalWallLoss === 42.0, `Total wall attenuation equals 42 dB (Got: ${wallBudget.totalWallLoss})`);
+  assert(wallBudget.viable === false, 'Wall-blocked link is unviable');
+  assert(wallBudget.link_margin_db === -4.9, `Link margin matches -4.9 dB deficit (Got: ${wallBudget.link_margin_db})`);
+  assert(wallBudget.verdict.includes('exterior_west_shear_wall') && wallBudget.verdict.includes('reduced signal below receiver sensitivity'), 'Verdict explicitly names the 22 dB shear wall');
+
+  // Test computeLossBudget for distance-blocked link
+  console.log('Testing computeLossBudget for distance-blocked link...');
+  const distantNode = { id: 104, role: 'survivor', x: 910.0, y: 60.0 };
+  const distanceBudget = computeLossBudget(distantNode, node0, {
+    obstacles: [],
+    sf: 7,
+    rssi: -124.4
+  });
+
+  assert(distanceBudget.crossedWalls.length === 0, 'Distance link has 0 crossed walls');
+  assert(distanceBudget.viable === false, 'Distance-blocked link is unviable');
+  assert(distanceBudget.verdict.includes('distance path loss') && distanceBudget.verdict.includes('reduced signal below receiver sensitivity'), 'Verdict explicitly names distance path loss');
+
+  // Test Plain English Disaster Story Narration
+  console.log('Testing narrative timeline disaster story formatting...');
+  const storyTx = narrateEvent({ t: 3100, ev: 'originate', node: 1, hazard: 2 }, { story: true });
+  assert(storyTx.includes('00:03.1') && storyTx.includes('Node 1 transmits SOS') && storyTx.includes('Radio pulse emitted'), 'Narrates initial SOS transmission with timestamp');
+
+  const storyDrop = narrateEvent({ t: 3200, ev: 'drop', node: 0, from: 1, rssi: -127.9, why: 'weak' }, { story: true });
+  assert(storyDrop.includes('00:03.2') && storyDrop.includes('West shear wall attenuates signal') && storyDrop.includes('Dropped'), 'Narrates wall attenuation drop at Hub');
+
+  const storyRelay = narrateEvent({ t: 8200, ev: 'rx', node: 101, from: 1, rssi: -105.7 }, { story: true });
+  assert(storyRelay.includes('00:08.2') && storyRelay.includes('Relay 101 on street hears Node 1') && storyRelay.includes('Forwarding'), 'Narrates relay reception and forwarding');
+
+  const storyAck = narrateEvent({ t: 9600, ev: 'haptic', node: 1 }, { story: true });
+  assert(storyAck.includes('00:09.6') && storyAck.includes('Survivor 1 receives ACK') && storyAck.includes('Wristband vibrates'), 'Narrates ACK arrival and wristband buzz');
+
+  // Test Stop Crying Wolf
+  const storySuppressed = narrateEvent({ t: 8500, ev: 'relay_suppressed', node: 3, origin: 1, seq: 1 }, { story: true });
+  assert(!storySuppressed.includes('FAILED') && !storySuppressed.includes('Error') && storySuppressed.includes('Mesh airtime saved'), 'Suppression narrated as normal airtime optimization without failure alarm');
 
   // -------------------------------------------------------------
   // Test Suite 4: Setu Twin 3D Projection & Coordinates

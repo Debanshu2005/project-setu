@@ -16,7 +16,7 @@ import { calculateTheoreticalRssi, calculateEcdf } from './scientific_metrics.js
 import { WristbandTwinComponent } from '../components/wristband_twin.js';
 import { LossWaterfallComponent } from '../components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../components/setu_twin.js';
-import { narrateEvent, explainFailure } from './narrator.js';
+import { narrateEvent, explainFailure, computeLossBudget } from './narrator.js';
 
 const BUILTIN_SCENARIOS = [
   { id: 'collapse_site_demo', name: 'Earthquake Collapse Site (Compact Demo)' },
@@ -566,11 +566,28 @@ class SetuDashboardApp {
 
           const recentEv = this.sim.events.slice().reverse().find(e => e.t <= curT);
           if (recentEv) {
-            const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
+            const narration = narrateEvent(recentEv, {
+              sf: this.sim.meta.sf || 7,
+              story: true,
+              nodes: this.sim.nodes,
+              obstacles: this.currentScenario ? this.currentScenario.obstacles : []
+            });
             if (narration) this.setuTwin.setNarratorText(narration);
+
             if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
-              const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
-              this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+              const fromNode = this.sim.nodes.get(recentEv.from);
+              const toNode = this.sim.nodes.get(recentEv.node);
+              const lossData = computeLossBudget(fromNode, toNode, {
+                obstacles: this.currentScenario ? this.currentScenario.obstacles : [],
+                sf: this.sim.meta.sf || 7,
+                rssi: recentEv.rssi,
+                why: recentEv.why
+              });
+              this.setuTwin.setFailureData(lossData);
+              this.setuTwin.showFailureButton(true);
+            } else {
+              // STOP CRYING WOLF: Hide failure button on normal events like duplicate suppression
+              this.setuTwin.showFailureButton(false);
             }
           }
         }
@@ -654,6 +671,25 @@ class SetuDashboardApp {
 
     // Ensure Backend Modal registration
     this.initBackendModal();
+
+    // Listen for link loss budget inspection events
+    window.addEventListener('setu:inspect-loss-budget', (e) => {
+      const { from, to } = e.detail || {};
+      if (from !== undefined && to !== undefined) {
+        const fromNode = this.sim.nodes.get(from);
+        const toNode = this.sim.nodes.get(to);
+        const lossData = computeLossBudget(fromNode, toNode, {
+          obstacles: this.currentScenario ? this.currentScenario.obstacles : [],
+          sf: this.sim.meta.sf || 7
+        });
+        if (this.setuTwin) {
+          this.setuTwin.showFailureExplanation(`RF Loss Budget: Node ${from} -> Node ${to}`, lossData);
+        }
+        if (this.lossWaterfall) {
+          this.lossWaterfall.update(lossData);
+        }
+      }
+    });
 
     // View mode switching: Topology vs Setu Twin 3D vs Scientific Analytics
     if (this.btnModeTopology) {

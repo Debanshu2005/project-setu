@@ -269,10 +269,11 @@ export class InspectorComponent {
                     <td class="field-val">${l.dist}m</td>
                     <td class="field-val" style="color: ${l.rssi >= -90 ? '#10b981' : l.rssi >= -110 ? '#f59e0b' : '#ef4444'}">${l.rssi} dBm</td>
                     <td class="field-val" style="color: ${isBlocked ? '#ef4444' : '#10b981'}; font-weight: 700;">${isBlocked ? 'BLOCKED' : 'ACTIVE'}</td>
-                    <td>
+                    <td style="white-space:nowrap;">
                       <button class="btn btn-toggle-link" data-peer="${peerId}" data-blocked="${isBlocked}" style="padding: 2px 6px; font-size: 9px; background: ${isBlocked ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${isBlocked ? '#10b981' : '#ef4444'}; color: ${isBlocked ? '#34d399' : '#fca5a5'};">
                         ${isBlocked ? 'Restore' : 'Block'}
                       </button>
+                      <button class="btn btn-inspect-loss" data-from="${n.id}" data-to="${peerId}" style="padding: 2px 6px; font-size: 9px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #38bdf8; margin-left: 4px;" title="View RF loss budget waterfall">Budget</button>
                     </td>
                   </tr>
                 `;

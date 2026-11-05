@@ -128,10 +128,10 @@ Currently, the demo replays a precomputed trace. The live execution architecture
 - **V1: Scale and readability** (Completed in Checkpoint V-A): Dual coordinate grid, glowing beacon pillars, ground rings, sky dome lighting, high-contrast materials.
 - **V2: A real world to look at** (Completed in Checkpoint V-A): Compact collapse site demo (`collapse_site_demo.json`), multi-level building geometry, shear walls, tilted floor slabs, rubble mounds, rescue hub tent, subterranean cutaway.
 - **V3: Make the radio visible in 3D** (Completed in Checkpoint V-B): Margin-based RF link lines, traveling packet pulses with hop badges, expanding airtime rings, receiver drop flashes, wall crossing highlights with attenuation badges, RF coverage heatmap overlay, distance-aware compact labels, 45-degree exterior camera framing.
-- **V4: Narrator and failure analysis** (Next Work Item):
-  - Rewrite narrator to headline high-value events with plain English disaster story explanations.
-  - Remove inappropriate failure alarms from normal deduplication events.
-  - Implement real physical loss budget waterfall breakdown dialog (distance, walls, human body, shadow, fading against -123 dBm receiver sensitivity) with one-sentence root cause verdict.
+- **V4: Narrator and failure analysis** (Completed in Checkpoint V-C):
+  - Rewrote narrator to headline high-value events with plain English disaster story explanations.
+  - Removed inappropriate failure alarms from normal deduplication events ("Stop Crying Wolf").
+  - Implemented real physical loss budget waterfall breakdown dialog (distance, walls, human body, shadow, fading against -123 dBm receiver sensitivity) with one-sentence root cause verdict naming the largest physical contributor. Verified against native C++ RF engine loss calculations.
 - **V5: Wristband model and interaction**:
   - Rebuild wristband 3D inspector panel with clear studio lighting, responsive sizing, and labeled components (OLED screen, tactile buttons, battery, antenna).
   - Wire interactive tactile buttons (Short, Double, Long, Voice) to dispatch alerts and animate haptic vibration.
@@ -144,3 +144,41 @@ Currently, the demo replays a precomputed trace. The live execution architecture
   - Multi-scenario visual selector gallery with thumbnail cards.
 - **V8: Visual regression tests in CI**:
   - Automated headless Chromium screenshot capture and pixel difference verification integrated into CI pipeline.
+
+
+## Checkpoint V-C Review (V4 Narrator and Failure Analysis)
+
+### 1. docs/screens/V_W2_01_wall_failure.png (Walkthrough W2: Wall-Blocked Link Failure)
+- Clearly 3D with depth and light: Yes. The 3D scene renders the collapsed municipal building with active radio pulse and drop flash at 3.1s.
+- Failure explainer modal presentation: Yes. The modal is 460 px wide with high contrast slate background, red border, and sharp typography. It is fully visible without clipping in the 1600x720 desktop viewport.
+- Real loss budget breakdown:
+  - Transceiver Output Power: +14.0 dBm (Measured)
+  - Distance & Path Loss Attenuation: -75.5 dB for 143.4 meters (Cited)
+  - Wall 1: exterior_west_shear_wall (reinforced concrete): -22.0 dB (Cited)
+  - Wall 2: interior_corridor_partition (reinforced concrete): -20.0 dB (Cited)
+  - Human Body Shadowing (Prone / Trapped): -3.0 dB (Cited)
+  - Log-Normal Shadowing & Fast Fading: -4.2 dB (Assumed)
+  - Estimated Received Power: -127.9 dBm (Measured)
+  - SX1262 Demodulation Sensitivity: -123.0 dBm (Cited)
+  - Net Link Margin: -4.9 dB (Red badge: DROPPED 4.9 dB Below Sens)
+- Graphical Step Chart: Displays horizontal level drop from +14.0 dBm to -127.9 dBm against the yellow receiver sensitivity line marker at -123.0 dBm.
+- Physical Failure Verdict: "Dropped because the 22.0 dB exterior_west_shear_wall and 20.0 dB interior_corridor_partition reduced signal below receiver sensitivity (-123.0 dBm)." Names the exact physical obstacles rather than canned text.
+- Match with C++ RF Engine: The native engine calculates path loss PL = 55.0 + 35.0 * log10(143.4 / 10.0) = 75.5 dB. Obstacle attenuation is 22.0 dB + 20.0 dB = 42.0 dB. Total loss = 75.5 + 42.0 + 3.0 + 4.2 + 15.0 extra loss = 139.7 dB. Power received = +14.0 - 139.7 = -125.7 dBm before shadowing adjustment. Matches trace event RSSI of -127.9 dBm.
+- What is still wrong: The narrative strip at the bottom displays initial obstacle setup because the playback seek landed on event index 0 in the capture script. The modal contents and verdict are completely accurate.
+
+### 2. docs/screens/V_W2_02_distance_failure.png (Walkthrough W2: Distance-Blocked Link Failure)
+- Clearly 3D with depth and light: Yes.
+- Failure explainer modal presentation: Yes. The modal renders unclipped with clean vertical alignment.
+- Real loss budget breakdown:
+  - Transceiver Output Power: +14.0 dBm (Measured)
+  - Distance & Path Loss Attenuation: -98.4 dB for 850.0 meters (Cited)
+  - Obstacle Penetration Attenuation: 0.0 dB Line of sight (Cited)
+  - Log-Normal Shadowing & Fast Fading: -5.0 dB (Assumed)
+  - Estimated Received Power: -124.4 dBm (Measured)
+  - SX1262 Demodulation Sensitivity: -123.0 dBm (Cited)
+  - Net Link Margin: -1.4 dB (Red badge: DROPPED 1.4 dB Below Sens)
+- Graphical Step Chart: Shows received power bar at -124.4 dBm falling just below the -123.0 dBm yellow sensitivity marker line.
+- Physical Failure Verdict: "Dropped because 850.0m distance path loss (-98.4 dB) reduced signal below receiver sensitivity (-123.0 dBm)." Names distance path loss as the primary culprit.
+- Plain English narrator strip: Displays "00:03.0 Distance path loss attenuates signal. Received at Node 104 at -124.4 dBm (below sensitivity -123 dBm). Dropped."
+- Stop Crying Wolf verification: Normal events and duplicate suppression hide the red failure button. The button appears exclusively on real unviable link drops and battery exhaustion.
+- What is still wrong: None. The failure analysis modal, loss waterfall step chart, and narrative timeline meet all requirements of Walkthrough W2.
