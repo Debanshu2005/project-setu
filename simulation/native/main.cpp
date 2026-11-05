@@ -555,6 +555,46 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
                 << ",\"sensitivity_dbm\":" << lb.sensitivity_dbm
                 << ",\"link_margin_db\":" << lb.link_margin_db
                 << ",\"viable\":" << (lb.viable ? "true" : "false") << "}\n" << std::flush;
+    } else if (cmd == "get_coverage") {
+      uint16_t id = static_cast<uint16_t>(json_get_int(line, "node", 1));
+      double radius = json_get_double(line, "radius", 250.0);
+      double step = json_get_double(line, "step", 25.0);
+      SimNodeInfo info = w->get_node_info(id);
+      if (info.id != id && id != 0) {
+        std::cout << "{\"ok\":false,\"error\":\"node not found\"}\n" << std::flush;
+      } else {
+        const double tx_x = info.x;
+        const double tx_y = info.y;
+        const double tx_power = w->channel_params().tx_dbm;
+        const double sens = setu::lora_sensitivity_dbm(w->channel_params().sf);
+        const double ref_loss = w->channel_params().ref_loss_db;
+        const double path_exp = w->channel_params().path_exp;
+        const double extra_loss = w->channel_params().extra_loss_db;
+        const auto& obss = w->obstacles();
+
+        std::cout << "{\"ok\":true,\"cmd\":\"get_coverage\",\"node\":" << id
+                  << ",\"tx_x\":" << tx_x << ",\"tx_y\":" << tx_y
+                  << ",\"radius\":" << radius << ",\"points\":[";
+        bool first = true;
+        for (double dy = -radius; dy <= radius; dy += step) {
+          for (double dx = -radius; dx <= radius; dx += step) {
+            double dist = std::hypot(dx, dy);
+            if (dist > radius || dist < 1.0) continue;
+            double gx = tx_x + dx;
+            double gy = tx_y + dy;
+            double d_m = std::max(1.0, dist);
+            double pl = ref_loss + 10.0 * path_exp * std::log10(d_m / 1.0);
+            double obs_loss = calculate_obstacle_attenuation(tx_x, tx_y, gx, gy, obss);
+            double rx_dbm = tx_power - pl - obs_loss - extra_loss;
+            double margin = rx_dbm - sens;
+            if (!first) std::cout << ",";
+            first = false;
+            std::cout << "{\"x\":" << gx << ",\"y\":" << gy
+                      << ",\"rx\":" << rx_dbm << ",\"margin\":" << margin << "}";
+          }
+        }
+        std::cout << "]}\n" << std::flush;
+      }
     } else if (cmd == "add_obstacle") {
       Obstacle obs;
       obs.id = static_cast<uint16_t>(json_get_int(line, "id", 1));

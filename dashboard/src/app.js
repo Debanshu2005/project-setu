@@ -533,21 +533,45 @@ class SetuDashboardApp {
       if (this.setuTwin) {
         this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
         if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
-        const recentEv = (this.sim.events && this.sim.events.length > 0)
-          ? this.sim.events.slice().reverse().find(e => e.t <= this.sim.currentTime)
-          : null;
-        if (recentEv) {
-          const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
-          if (narration) this.setuTwin.setNarratorText(narration);
-          if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
-            const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
-            this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+
+        const curT = this.sim.currentTime;
+        const isJump = this._lastProcessedSimTime === undefined || type === 'load' || type === 'seek' || Math.abs(curT - (this._lastProcessedSimTime || 0)) > 300;
+        if (isJump) {
+          this.setuTwin.clearTransientRadioVisuals();
+          this._lastProcessedSimTime = curT - 1;
+        }
+
+        if (this.sim.events && this.sim.events.length > 0) {
+          const prevT = this._lastProcessedSimTime;
+          if (type !== 'seek') {
+            const newEvents = this.sim.events.filter(e => e.t > prevT && e.t <= curT);
+            for (const ev of newEvents) {
+              if (ev.ev === 'tx') {
+                this.setuTwin.triggerPacketPulse(ev.node, ev.target, ev.hazard, ev.hop, ev.air);
+              } else if (ev.ev === 'drop') {
+                this.setuTwin.triggerDropFlash(ev.node, ev.reason || 'weak');
+              } else if (ev.ev === 'haptic' && this.wristbandTwin) {
+                this.wristbandTwin.triggerHaptic();
+              }
+            }
+          } else {
+            if (this.sim.activePackets && this.sim.activePackets.length > 0) {
+              for (const ev of this.sim.activePackets) {
+                this.setuTwin.triggerPacketPulse(ev.node, ev.target, ev.hazard, ev.hop, ev.air);
+              }
+            }
           }
-          if (recentEv.ev === 'tx') {
-            this.setuTwin.triggerPacketPulse(recentEv.node, recentEv.hazard, recentEv.hop);
-          }
-          if (recentEv.ev === 'haptic' && this.wristbandTwin) {
-            this.wristbandTwin.triggerHaptic();
+
+          this._lastProcessedSimTime = curT;
+
+          const recentEv = this.sim.events.slice().reverse().find(e => e.t <= curT);
+          if (recentEv) {
+            const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
+            if (narration) this.setuTwin.setNarratorText(narration);
+            if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
+              const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
+              this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+            }
           }
         }
       }
@@ -1777,6 +1801,17 @@ class SetuDashboardApp {
             `).join('');
           } else {
             this.elScenarioSelect.innerHTML = '<option value="">No scenarios available</option>';
+          }
+        }
+
+        // Decision 2: Default landing scenario is collapse_site_demo
+        const defaultLandingSc = (this.scenarios && this.scenarios.find(s => s.id === 'collapse_site_demo')) || (this.scenarios && this.scenarios[0]);
+        if (defaultLandingSc) {
+          try {
+            await this.loadScenario(defaultLandingSc.id);
+            if (this.elScenarioSelect) this.elScenarioSelect.value = defaultLandingSc.id;
+          } catch (loadErr) {
+            console.warn('Default landing scenario preload notice:', loadErr.message);
           }
         }
 

@@ -63,8 +63,13 @@ export class SetuTwin3DViewer {
     this.environmentMeshes = [];
     this.links = [];
     this.linkObjects = [];
-    this.activePulses = [];
+        this.activePulses = [];
     this.airtimeRings = [];
+    this.dropFlashes = [];
+    this.wallHighlights = [];
+    this.heatmapGroup = null;
+    this.showHeatmap = false;
+    this.lastProcessedEventTime = -1;
     this.sparks = [];
     this.waterPlane = null;
     this.waterLevel = 0;
@@ -99,20 +104,20 @@ export class SetuTwin3DViewer {
     this.container.innerHTML = `
       <div class="setu-twin-container" style="position:relative; width:100%; height:100%; min-height:500px; background:#0b1329; border-radius:8px; overflow:hidden; border:1px solid #1e293b; font-family:sans-serif;">
         <!-- Top Toolbar / Camera Controls -->
-        <div style="position:absolute; top:12px; left:12px; z-index:10; display:flex; gap:6px; background:rgba(15,23,42,0.9); padding:6px; border-radius:6px; border:1px solid #334155; backdrop-filter:blur(6px); box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-          <button id="stBtnOrbit" style="background:#0284c7; color:white; border:none; padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;">Orbit</button>
-          <button id="stBtnTopdown" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer;">Top-Down</button>
-          <button id="stBtnFreefly" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer;">AirSim Free-Fly</button>
-          <button id="stBtnFollow" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer;">Follow Node</button>
-          <button id="stBtnReset" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 12px; border-radius:4px; font-size:11px; cursor:pointer;">Fit View</button>
+        <div style="position:absolute; top:12px; left:12px; z-index:10; display:flex; gap:5px; background:rgba(15,23,42,0.92); padding:5px 8px; border-radius:6px; border:1px solid #334155; backdrop-filter:blur(6px); box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+          <button id="stBtnOrbit" style="background:#0284c7; color:white; border:none; padding:5px 10px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;">Orbit</button>
+          <button id="stBtnTopdown" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Top-Down</button>
+          <button id="stBtnFreefly" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Free-Fly</button>
+          <button id="stBtnFollow" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Follow</button>
+          <button id="stBtnReset" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Fit View</button>
+          <button id="stBtnHeatmap" style="background:#1e293b; color:#94a3b8; border:none; padding:5px 10px; border-radius:4px; font-size:11px; cursor:pointer;">Toggle Heatmap</button>
         </div>
 
         <!-- Mode, Terrain & FPS Badge -->
-        <div style="position:absolute; top:12px; right:12px; z-index:10; background:rgba(15,23,42,0.9); padding:6px 14px; border-radius:6px; border:1px solid #334155; font-size:11px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; gap:12px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-          <span id="stObstacleBadge" style="background:rgba(56,189,248,0.15); color:#7dd3fc; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600;">Open Terrain Model</span>
-          <div>Engine: <span id="stFidelityLabel" style="color:#10b981; font-weight:bold;">Three.js WebGL 3D</span></div>
-          <div id="stFpsCounter" style="color:#38bdf8; font-family:monospace; font-weight:600;">60 FPS</div>
-          <div id="stControlsHint" style="font-size:10px; color:#94a3b8;">Drag to orbit | Wheel to zoom</div>
+        <div style="position:absolute; top:12px; right:12px; z-index:10; background:rgba(15,23,42,0.92); padding:5px 10px; border-radius:6px; border:1px solid #334155; font-size:11px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; gap:10px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+          <span id="stObstacleBadge" style="background:rgba(56,189,248,0.15); color:#7dd3fc; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600;">Open Terrain</span>
+          <div style="font-size:10px; color:#10b981; font-weight:bold;">WebGL 3D</div>
+          <div id="stFpsCounter" style="color:#38bdf8; font-family:monospace; font-weight:600; font-size:10px;">60 FPS</div>
         </div>
 
         <!-- 3D Canvas Mount Point -->
@@ -122,15 +127,18 @@ export class SetuTwin3DViewer {
         <canvas id="setuTwinCanvas2D" style="display:none; width:100%; height:100%;"></canvas>
 
         <!-- Radio & Role Legend Overlay -->
-        <div style="position:absolute; bottom:56px; left:12px; z-index:10; background:rgba(15,23,42,0.9); padding:6px 12px; border-radius:6px; border:1px solid #334155; font-size:10px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; flex-wrap:wrap; gap:12px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+        <div style="position:absolute; bottom:56px; left:12px; z-index:10; background:rgba(15,23,42,0.92); padding:6px 14px; border-radius:6px; border:1px solid #334155; font-size:10px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; flex-wrap:wrap; gap:12px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#00f0ff; box-shadow:0 0 6px #00f0ff;"></span> Survivor (Cyan)</div>
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b; box-shadow:0 0 6px #f59e0b;"></span> Relay (Amber)</div>
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; box-shadow:0 0 6px #10b981;"></span> Hub (Green)</div>
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#ef4444; box-shadow:0 0 8px #ef4444;"></span> Active SOS (Red)</div>
-          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:3px; background:#38bdf8; border-radius:2px;"></span> Strong (>15 dB)</div>
-          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:3px; background:#f59e0b; border-radius:2px;"></span> Medium (5-15 dB)</div>
-          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:12px; height:3px; background:#ef4444; border-radius:2px; border-top:1px dashed #ef4444;"></span> Weak (<5 dB)</div>
-          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#94a3b8;"></span> Concrete / Slab</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:14px; height:3px; background:#38bdf8; border-radius:2px;"></span> Strong (>15 dB)</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:14px; height:3px; background:#f59e0b; border-radius:2px;"></span> Medium (5-15 dB)</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:14px; height:3px; border-bottom:2px dashed #ef4444;"></span> Weak (<5 dB)</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#a855f7; box-shadow:0 0 6px #a855f7;"></span> Packet Pulse</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:10px; height:10px; border-radius:50%; border:1px solid #38bdf8;"></span> Airtime Ring</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#f59e0b;"></span> Obstacle (-N dB)</div>
+          <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:2px; background:#ef4444;"></span> Drop Flash</div>
         </div>
 
         <!-- Plain-English Incident Narrator Strip -->
@@ -330,6 +338,12 @@ export class SetuTwin3DViewer {
     const btnFreefly = document.getElementById('stBtnFreefly');
     const btnFollow = document.getElementById('stBtnFollow');
     const btnReset = document.getElementById('stBtnReset');
+    const btnHeatmap = document.getElementById('stBtnHeatmap');
+    if (btnHeatmap) {
+      btnHeatmap.addEventListener('click', () => {
+        this.toggleCoverageHeatmap();
+      });
+    }
     const btnWhyFail = document.getElementById('stBtnWhyFail');
     const btnCloseFailModal = document.getElementById('stBtnCloseFailModal');
     const failModal = document.getElementById('stFailModal');
@@ -720,35 +734,7 @@ export class SetuTwin3DViewer {
     }
   }
 
-  triggerPacketPulse(fromId, hazard = 0, hop = 1) {
-    const n = this.nodes.get(fromId);
-    if (!n) return;
-    const worldPos = this.to3DCoords(n.x, n.y, n.elevation || 0);
 
-    const pulseColor = hazard === 1 ? 0xef4444 : hazard === 2 ? 0xa855f7 : 0x00f0ff;
-
-    this.airtimeRings.push({
-      x: worldPos.x,
-      y: worldPos.y + 0.8,
-      z: worldPos.z,
-      radius: 4,
-      maxRadius: 180,
-      alpha: 0.85,
-      color: pulseColor
-    });
-
-    this.activePulses.push({
-      fromId,
-      x: worldPos.x,
-      y: worldPos.y,
-      z: worldPos.z,
-      hazard,
-      hop,
-      radius: 4,
-      maxRadius: 200,
-      alpha: 1.0
-    });
-  }
 
   // --- 3D Scene Graph Synchronization ---
 
@@ -1003,12 +989,12 @@ export class SetuTwin3DViewer {
     for (const item of items) {
       let sx = item.screenX;
       let sy = item.screenY;
-      const w = 0.15;
-      const h = 0.055;
+      const w = 0.28;
+      const h = 0.08;
 
       let overlap = false;
       for (const b of placedBoxes) {
-        if (Math.abs(sx - b.x) < (w + b.w) * 0.48 && Math.abs(sy - b.y) < (h + b.h) * 0.48) {
+        if (Math.abs(sx - b.x) < (w + b.w) * 0.45 && Math.abs(sy - b.y) < (h + b.h) * 0.45) {
           overlap = true;
           break;
         }
@@ -1016,7 +1002,7 @@ export class SetuTwin3DViewer {
 
       if (overlap) {
         if (item.priority > 0) {
-          const staggerOffset = (item.id % 2 === 0) ? 12 : -10;
+          const staggerOffset = (item.id % 2 === 0) ? 18 : -16;
           item.label.position.y = 46 + staggerOffset;
 
           const reproj = item.group.position.clone();
@@ -1027,14 +1013,14 @@ export class SetuTwin3DViewer {
 
           let stillOverlap = false;
           for (const b of placedBoxes) {
-            if (Math.abs(sx - b.x) < (w + b.w) * 0.48 && Math.abs(sy - b.y) < (h + b.h) * 0.48) {
+            if (Math.abs(sx - b.x) < (w + b.w) * 0.45 && Math.abs(sy - b.y) < (h + b.h) * 0.45) {
               stillOverlap = true;
               break;
             }
           }
 
           if (stillOverlap) {
-            if (item.label.material) item.label.material.opacity = 0.35;
+            if (item.label.material) item.label.material.opacity = 0.15;
           } else {
             if (item.label.material) item.label.material.opacity = 1.0;
           }
@@ -1480,6 +1466,429 @@ export class SetuTwin3DViewer {
     }
   }
 
+  // 2D Line Segment Intersection Helper matching C++ engine rf_environment.hpp
+  static segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+    const r_x = bx - ax;
+    const r_y = by - ay;
+    const s_x = dx - cx;
+    const s_y = dy - cy;
+    const rxs = r_x * s_y - r_y * s_x;
+    if (Math.abs(rxs) < 1e-9) return false;
+    const qp_x = cx - ax;
+    const qp_y = cy - ay;
+    const t = (qp_x * s_y - qp_y * s_x) / rxs;
+    const u = (qp_x * r_y - qp_y * r_x) / rxs;
+    return t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0;
+  }
+
+  createHopBadge(text, colorHex, t) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 160;
+    canvas.height = 48;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+    ctx.strokeStyle = typeof colorHex === 'string' ? colorHex : ('#' + colorHex.toString(16).padStart(6, '0'));
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(2, 2, 156, 44, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 80, 24);
+
+    const texture = new t.CanvasTexture(canvas);
+    const spriteMat = new t.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new t.Sprite(spriteMat);
+    sprite.scale.set(12, 3.6, 1);
+    return sprite;
+  }
+
+  createMinusDbBadge(text, colorHex, t) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 180;
+    canvas.height = 48;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(220, 38, 38, 0.90)';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(2, 2, 176, 44, 6);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = 'bold 20px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 90, 24);
+
+    const texture = new t.CanvasTexture(canvas);
+    const spriteMat = new t.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new t.Sprite(spriteMat);
+    sprite.scale.set(16, 4.2, 1);
+    return sprite;
+  }
+
+  createDropCauseBadge(text, colorHex, t) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 280;
+    canvas.height = 54;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = 'rgba(239, 68, 68, 0.92)';
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.roundRect(2, 2, 276, 50, 8);
+    ctx.fill();
+    ctx.stroke();
+
+    ctx.font = 'bold 18px monospace';
+    ctx.fillStyle = '#ffffff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 140, 27);
+
+    const texture = new t.CanvasTexture(canvas);
+    const spriteMat = new t.SpriteMaterial({ map: texture, depthTest: false, transparent: true });
+    const sprite = new t.Sprite(spriteMat);
+    sprite.scale.set(24, 4.6, 1);
+    return sprite;
+  }
+
+  clearTransientRadioVisuals() {
+    if (!this.scene) return;
+    for (const p of this.activePulses) {
+      if (p.mesh) this.scene.remove(p.mesh);
+      if (p.badge) this.scene.remove(p.badge);
+    }
+    this.activePulses = [];
+
+    for (const r of this.airtimeRings) {
+      if (r.mesh) this.scene.remove(r.mesh);
+    }
+    this.airtimeRings = [];
+
+    for (const f of this.dropFlashes) {
+      if (f.mesh) this.scene.remove(f.mesh);
+      if (f.badge) this.scene.remove(f.badge);
+    }
+    this.dropFlashes = [];
+
+    for (const wh of this.wallHighlights) {
+      if (wh.wallMesh) {
+        wh.wallMesh.traverse(child => {
+          if (child.isMesh && child.material && child.material.emissive) {
+            child.material.emissive.setHex(0x000000);
+          }
+        });
+      }
+      if (wh.badge) this.scene.remove(wh.badge);
+    }
+    this.wallHighlights = [];
+  }
+
+  triggerDropFlash(nodeId, reason = 'weak') {
+    if (!this.scene || !this.T) return;
+    const t = this.T;
+    const n = this.nodes.get(nodeId);
+    if (!n) return;
+    const p = this.to3DCoords(n.x, n.y, (n.role === 'relay' ? 18 : 6));
+
+    const flashGeo = new t.RingGeometry(2.0, 8.0, 32);
+    const flashMat = new t.MeshBasicMaterial({
+      color: 0xef4444,
+      side: t.DoubleSide,
+      transparent: true,
+      opacity: 0.95
+    });
+    const flashMesh = new t.Mesh(flashGeo, flashMat);
+    flashMesh.rotation.x = -Math.PI / 2;
+    flashMesh.position.set(p.x, 0.6, p.z);
+    this.scene.add(flashMesh);
+
+    let causeText = 'DROP: WEAK SIGNAL';
+    if (reason === 'collision') causeText = 'DROP: COLLISION';
+    else if (reason === 'halfduplex') causeText = 'DROP: HALF-DUPLEX';
+    else if (reason === 'blocked') causeText = 'DROP: BLOCKED';
+
+    const causeBadge = this.createDropCauseBadge(causeText, '#ef4444', t);
+    causeBadge.position.set(p.x, p.y + 10.0, p.z);
+    this.scene.add(causeBadge);
+
+    if (this.dropFlashes.length >= 3) {
+      const oldest = this.dropFlashes.shift();
+      if (oldest.mesh) this.scene.remove(oldest.mesh);
+      if (oldest.badge) this.scene.remove(oldest.badge);
+    }
+    this.dropFlashes.push({
+      mesh: flashMesh,
+      badge: causeBadge,
+      alpha: 1.0,
+      radius: 4.0
+    });
+  }
+
+  checkAndHighlightObstacles(tx_x, tx_y, rx_x, rx_y) {
+    if (!this.obstacles || this.obstacles.length === 0 || !this.T) return;
+    const t = this.T;
+
+    for (const obs of this.obstacles) {
+      if (SetuTwin3DViewer.segmentsIntersect(tx_x, tx_y, rx_x, rx_y, obs.x1, obs.y1, obs.x2, obs.y2)) {
+        const wallMesh = (Array.isArray(this.obstacleMeshes) ? this.obstacleMeshes.find(m => m.userData && m.userData.id === obs.id) : null) || this.scene.getObjectByName(`obs_${obs.id}`);
+        if (wallMesh) {
+          wallMesh.traverse(child => {
+            if (child.isMesh && child.material && child.material.emissive) {
+              child.material.emissive.setHex(0xf59e0b);
+              child.material.emissiveIntensity = 1.0;
+            }
+          });
+        }
+
+        const midX = (obs.x1 + obs.x2) / 2;
+        const midY = (obs.y1 + obs.y2) / 2;
+        const mid3D = this.to3DCoords(midX, midY, obs.height_m ? obs.height_m * 3.5 : 12);
+        const lossDb = Math.round(obs.attenuation_db || 22);
+
+        const badge = this.createMinusDbBadge(`-${lossDb} dB`, '#f59e0b', t);
+        badge.position.set(mid3D.x, mid3D.y + 6.0, mid3D.z);
+        this.scene.add(badge);
+
+        if (this.wallHighlights.length >= 4) {
+          const oldest = this.wallHighlights.shift();
+          if (oldest.wallMesh) {
+            oldest.wallMesh.traverse(child => {
+              if (child.isMesh && child.material && child.material.emissive) {
+                child.material.emissive.setHex(0x000000);
+              }
+            });
+          }
+          if (oldest.badge) this.scene.remove(oldest.badge);
+        }
+        this.wallHighlights.push({
+          obsId: obs.id,
+          wallMesh,
+          badge,
+          timer: 2.5
+        });
+      }
+    }
+  }
+
+  spawnAirtimeRing(x, z, colorHex, airtimeMs = 62) {
+    if (!this.scene || !this.T) return;
+    const t = this.T;
+    const ringGeo = new t.RingGeometry(1.0, 3.5, 32);
+    const ringMat = new t.MeshBasicMaterial({
+      color: colorHex,
+      side: t.DoubleSide,
+      transparent: true,
+      opacity: 0.85
+    });
+    const ringMesh = new t.Mesh(ringGeo, ringMat);
+    ringMesh.rotation.x = -Math.PI / 2;
+    ringMesh.position.set(x, 0.4, z);
+    this.scene.add(ringMesh);
+
+    this.airtimeRings.push({
+      mesh: ringMesh,
+      radius: 2.0,
+      maxRadius: Math.max(50, Math.min(180, (airtimeMs || 62) * 1.6)),
+      expansionSpeed: Math.max(70, (airtimeMs || 62) * 1.5),
+      alpha: 0.85
+    });
+  }
+
+  triggerPacketPulse(fromId, toId = null, hazard = 0, hop = 1, airtimeMs = 62) {
+    if (!this.scene || !this.T) return;
+    const t = this.T;
+    const n1 = this.nodes.get(fromId);
+    if (!n1) return;
+    const p1 = this.to3DCoords(n1.x, n1.y, (n1.role === 'relay' ? 18 : 6));
+
+    let pulseColor = 0x00f0ff; // Hazard 0: Cyan General SOS
+    if (hazard === 1) pulseColor = 0xf59e0b; // Medical: Amber
+    else if (hazard === 2) pulseColor = 0xa855f7; // Trapped: Purple
+    else if (hazard === 3 || toId === 0) pulseColor = 0x10b981; // ACK: Green
+
+    this.spawnAirtimeRing(p1.x, p1.z, pulseColor, airtimeMs);
+
+    // Target endpoints
+    let targets = [];
+    if (toId !== null && toId !== 65535 && this.nodes.has(toId)) {
+      targets.push(toId);
+    } else {
+      // Prioritize primary relays and hub within decode range, max 3 targets
+      for (const link of this.links) {
+        const a = link.a !== undefined ? link.a : link.from;
+        const b = link.b !== undefined ? link.b : link.to;
+        const targetId = (a === fromId) ? b : (b === fromId) ? a : null;
+        if (targetId !== null && this.nodes.has(targetId)) {
+          const targetNode = this.nodes.get(targetId);
+          if (targetNode.role === 'hub' || targetNode.role === 'relay') {
+            if (!targets.includes(targetId)) targets.push(targetId);
+            if (targets.length >= 3) break;
+          }
+        }
+      }
+      if (targets.length === 0) {
+        let nearest = null;
+        let minDist = 9999;
+        for (const [id, n] of this.nodes) {
+          if (id !== fromId) {
+            const d = Math.hypot(n.x - n1.x, n.y - n1.y);
+            if (d < minDist && d < 250) {
+              minDist = d;
+              nearest = id;
+            }
+          }
+        }
+        if (nearest !== null) targets.push(nearest);
+      }
+    }
+
+    for (const tid of targets) {
+      const n2 = this.nodes.get(tid);
+      if (!n2) continue;
+      const p2 = this.to3DCoords(n2.x, n2.y, (n2.role === 'relay' ? 18 : 6));
+
+      this.checkAndHighlightObstacles(n1.x, n1.y, n2.x, n2.y);
+
+      const pulseGeo = new t.SphereGeometry(2.2, 16, 16);
+      const pulseMat = new t.MeshBasicMaterial({ color: pulseColor });
+      const pulseMesh = new t.Mesh(pulseGeo, pulseMat);
+      pulseMesh.position.set(p1.x, p1.y, p1.z);
+      this.scene.add(pulseMesh);
+
+      const hopBadge = this.createHopBadge(`HOP ${hop || 1}`, pulseColor, t);
+      hopBadge.position.set(p1.x, p1.y + 4.5, p1.z);
+      this.scene.add(hopBadge);
+
+      if (this.activePulses.length >= 6) {
+        const oldest = this.activePulses.shift();
+        if (oldest.mesh) this.scene.remove(oldest.mesh);
+        if (oldest.badge) this.scene.remove(oldest.badge);
+      }
+      this.activePulses.push({
+        fromId,
+        toId: tid,
+        p1,
+        p2,
+        progress: 0.0,
+        speed: 0.45,
+        mesh: pulseMesh,
+        badge: hopBadge
+      });
+    }
+  }
+
+  async toggleCoverageHeatmap() {
+    this.showHeatmap = !this.showHeatmap;
+    const btn = document.getElementById('stBtnHeatmap');
+    if (btn) {
+      btn.style.background = this.showHeatmap ? '#0284c7' : '#1e293b';
+      btn.style.color = this.showHeatmap ? '#ffffff' : '#94a3b8';
+      btn.style.fontWeight = this.showHeatmap ? 'bold' : 'normal';
+    }
+
+    if (!this.showHeatmap) {
+      if (this.heatmapGroup) {
+        this.scene.remove(this.heatmapGroup);
+        this.heatmapGroup = null;
+      }
+      return;
+    }
+
+    const txId = this.selectedNodeId !== null ? this.selectedNodeId : 1;
+    await this.renderCoverageHeatmap(txId);
+  }
+
+  async renderCoverageHeatmap(txId) {
+    if (!this.scene || !this.T) return;
+    const t = this.T;
+
+    if (this.heatmapGroup) {
+      this.scene.remove(this.heatmapGroup);
+      this.heatmapGroup = null;
+    }
+
+    const node = this.nodes.get(txId);
+    if (!node) return;
+
+    this.heatmapGroup = new t.Group();
+    this.heatmapGroup.name = 'coverageHeatmap';
+
+    let points = [];
+    try {
+      if (typeof SetuApi !== 'undefined' && SetuApi.getCoverage) {
+        const res = await SetuApi.getCoverage(txId, 220, 20);
+        if (res && res.points) points = res.points;
+      }
+    } catch (e) {
+      console.warn('Native coverage API offline, computing from engine formula:', e.message);
+    }
+
+    if (points.length === 0) {
+      const tx_x = node.x;
+      const tx_y = node.y;
+      const tx_power = 14.0;
+      const sens = -123.0;
+      const ref_loss = 31.2;
+      const path_exp = 3.8;
+      const extra_loss = 15.0;
+
+      for (let dy = -200; dy <= 200; dy += 20) {
+        for (let dx = -200; dx <= 200; dx += 20) {
+          const dist = Math.hypot(dx, dy);
+          if (dist > 200 || dist < 1.0) continue;
+          const gx = tx_x + dx;
+          const gy = tx_y + dy;
+          const d_m = Math.max(1.0, dist);
+          const pl = ref_loss + 10.0 * path_exp * Math.log10(d_m / 1.0);
+          let obs_loss = 0.0;
+          for (const obs of this.obstacles) {
+            if (SetuTwin3DViewer.segmentsIntersect(tx_x, tx_y, gx, gy, obs.x1, obs.y1, obs.x2, obs.y2)) {
+              obs_loss += (obs.attenuation_db || 22.0);
+            }
+          }
+          const rx_dbm = tx_power - pl - obs_loss - extra_loss;
+          const margin = rx_dbm - sens;
+          points.push({ x: gx, y: gy, rx: rx_dbm, margin });
+        }
+      }
+    }
+
+    for (const pt of points) {
+      const p = this.to3DCoords(pt.x, pt.y);
+      let col = 0x38bdf8;
+      let alpha = 0.35;
+      if (pt.margin < 0.0) {
+        col = 0xef4444;
+        alpha = 0.40;
+      } else if (pt.margin < 10.0) {
+        col = 0xf59e0b;
+        alpha = 0.35;
+      }
+
+      const tileGeo = new t.PlaneGeometry(18, 18);
+      const tileMat = new t.MeshBasicMaterial({
+        color: col,
+        transparent: true,
+        opacity: alpha,
+        side: t.DoubleSide
+      });
+      const tile = new t.Mesh(tileGeo, tileMat);
+      tile.rotation.x = -Math.PI / 2;
+      tile.position.set(p.x, 0.15, p.z);
+      this.heatmapGroup.add(tile);
+    }
+
+    this.scene.add(this.heatmapGroup);
+  }
+
   syncLinkObjects() {
     if (!this.scene || !this.T) return;
     const t = this.T;
@@ -1489,31 +1898,87 @@ export class SetuTwin3DViewer {
     }
     this.linkObjects = [];
 
+    // Avoid scene hairball: compute best link per node
+    const bestLinks = new Set();
+    for (const [id, node] of this.nodes) {
+      let best = null;
+      let bestMargin = -999;
+      for (const l of this.links) {
+        const fromId = l.a !== undefined ? l.a : l.from;
+        const toId = l.b !== undefined ? l.b : l.to;
+        if (fromId === id || toId === id) {
+          const m = typeof l.margin_db === 'number' ? l.margin_db : (typeof l.rssi === 'number' ? l.rssi - (-123.0) : 10.0);
+          if (m > bestMargin) {
+            bestMargin = m;
+            best = l;
+          }
+        }
+      }
+      if (best) bestLinks.add(best);
+    }
+
     for (const link of this.links) {
-      const n1 = this.nodes.get(link.from);
-      const n2 = this.nodes.get(link.to);
+      const fromId = link.a !== undefined ? link.a : link.from;
+      const toId = link.b !== undefined ? link.b : link.to;
+      const n1 = this.nodes.get(fromId);
+      const n2 = this.nodes.get(toId);
       if (!n1 || !n2) continue;
+
+      let margin = 12.0;
+      if (typeof link.margin_db === 'number') margin = link.margin_db;
+      else if (typeof link.rssi === 'number') margin = link.rssi - (-123.0);
+
+      // Only draw links where decode is possible
+      if (margin < -6.0) continue;
+
+      // Filter out redundant criss-crossing lines unless backbone, selected, best, or carrying packet
+      const isBackbone = (fromId === 0 && n2.role === 'relay') || (toId === 0 && n1.role === 'relay') || (n1.role === 'relay' && n2.role === 'relay');
+      const isSelected = this.selectedNodeId !== null && (fromId === this.selectedNodeId || toId === this.selectedNodeId);
+      const isBest = bestLinks.has(link);
+      const isCarryingPacket = this.activePulses.some(p => (p.fromId === fromId && p.toId === toId) || (p.fromId === toId && p.toId === fromId));
+
+      if (!isBackbone && !isSelected && !isBest && !isCarryingPacket) {
+        continue;
+      }
 
       const p1 = this.to3DCoords(n1.x, n1.y, (n1.role === 'relay' ? 18 : 6));
       const p2 = this.to3DCoords(n2.x, n2.y, (n2.role === 'relay' ? 18 : 6));
 
-      const margin = typeof link.margin_db === 'number' ? link.margin_db : 12.0;
       let colorHex = 0x38bdf8;
-      if (margin < 5.0) colorHex = 0xef4444;
-      else if (margin < 15.0) colorHex = 0xf59e0b;
+      let isWeak = false;
+      if (margin < 5.0) {
+        colorHex = 0xef4444;
+        isWeak = true;
+      } else if (margin < 15.0) {
+        colorHex = 0xf59e0b;
+      }
 
       const points = [
         new t.Vector3(p1.x, p1.y, p1.z),
         new t.Vector3(p2.x, p2.y, p2.z)
       ];
       const lineGeo = new t.BufferGeometry().setFromPoints(points);
-      const lineMat = new t.LineBasicMaterial({
-        color: colorHex,
-        linewidth: margin < 5.0 ? 1 : 2,
-        transparent: true,
-        opacity: 0.75
-      });
-      const line = new t.Line(lineGeo, lineMat);
+
+      let line;
+      if (isWeak) {
+        lineGeo.computeLineDistances();
+        const lineMat = new t.LineDashedMaterial({
+          color: colorHex,
+          dashSize: 6,
+          gapSize: 4,
+          transparent: true,
+          opacity: 0.65
+        });
+        line = new t.Line(lineGeo, lineMat);
+      } else {
+        const lineMat = new t.LineBasicMaterial({
+          color: colorHex,
+          linewidth: margin >= 15.0 ? 3 : 2,
+          transparent: true,
+          opacity: margin >= 15.0 ? 0.85 : 0.70
+        });
+        line = new t.Line(lineGeo, lineMat);
+      }
       this.scene.add(line);
       this.linkObjects.push(line);
     }
@@ -1617,13 +2082,75 @@ export class SetuTwin3DViewer {
       }
     }
 
-    // 3. Airtime rings expansion
+    // 3. Airtime rings expansion and propagation
     for (let i = this.airtimeRings.length - 1; i >= 0; i--) {
       const ring = this.airtimeRings[i];
-      ring.radius += 90 * delta;
-      ring.alpha -= 0.65 * delta;
+      ring.radius += (ring.expansionSpeed || 80) * delta;
+      ring.alpha -= 0.55 * delta;
+      if (ring.mesh) {
+        const s = ring.radius / 3.5;
+        ring.mesh.scale.set(s, s, 1);
+        if (ring.mesh.material) {
+          ring.mesh.material.opacity = Math.max(0, ring.alpha);
+        }
+      }
       if (ring.alpha <= 0 || ring.radius >= ring.maxRadius) {
+        if (ring.mesh) this.scene.remove(ring.mesh);
         this.airtimeRings.splice(i, 1);
+      }
+    }
+
+    // 4. Active packet traveling pulses along links
+    for (let i = this.activePulses.length - 1; i >= 0; i--) {
+      const p = this.activePulses[i];
+      p.progress += (p.speed || 1.8) * delta;
+      if (p.progress >= 1.0) {
+        if (p.mesh) this.scene.remove(p.mesh);
+        if (p.badge) this.scene.remove(p.badge);
+        this.activePulses.splice(i, 1);
+      } else {
+        const curX = p.p1.x + (p.p2.x - p.p1.x) * p.progress;
+        const curY = p.p1.y + (p.p2.y - p.p1.y) * p.progress;
+        const curZ = p.p1.z + (p.p2.z - p.p1.z) * p.progress;
+        if (p.mesh) p.mesh.position.set(curX, curY, curZ);
+        if (p.badge) p.badge.position.set(curX, curY + 4.5, curZ);
+      }
+    }
+
+    // 5. Receiver Drop and Collision Flashes
+    for (let i = this.dropFlashes.length - 1; i >= 0; i--) {
+      const f = this.dropFlashes[i];
+      f.radius += 12 * delta;
+      f.alpha -= 0.65 * delta;
+      if (f.mesh) {
+        const s = f.radius / 6.0;
+        f.mesh.scale.set(s, s, 1);
+        if (f.mesh.material) f.mesh.material.opacity = Math.max(0, f.alpha);
+      }
+      if (f.badge && f.badge.material) {
+        f.badge.material.opacity = Math.max(0, f.alpha);
+      }
+      if (f.alpha <= 0) {
+        if (f.mesh) this.scene.remove(f.mesh);
+        if (f.badge) this.scene.remove(f.badge);
+        this.dropFlashes.splice(i, 1);
+      }
+    }
+
+    // 6. Wall crossing highlights and minus dB badges
+    for (let i = this.wallHighlights.length - 1; i >= 0; i--) {
+      const wh = this.wallHighlights[i];
+      wh.timer -= delta;
+      if (wh.timer <= 0) {
+        if (wh.wallMesh) {
+          wh.wallMesh.traverse(child => {
+            if (child.isMesh && child.material && child.material.emissive) {
+              child.material.emissive.setHex(0x000000);
+            }
+          });
+        }
+        if (wh.badge) this.scene.remove(wh.badge);
+        this.wallHighlights.splice(i, 1);
       }
     }
 

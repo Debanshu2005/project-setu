@@ -39,3 +39,39 @@ This document records honest visual inspections of the 3D twin viewer. Every ent
 - Is anything clipped: No.
 - Pixel assertion metrics: Coverage is 20.9% (PASS, requirement >= 12%), mean luminance is 81.7 (PASS, requirement >= 35), 95th percentile luminance is 165.0 (PASS, requirement >= 120), Cyan survivor pixels: 2,745, Amber relay pixels: 511, Green hub pixels: 1,143.
 - What is still wrong: Radio penetration loss visualization through ground ceiling is pending V3.
+
+
+
+## Checkpoint V-B Review (V3 Make Radio Visible in 3D)
+
+### 1. docs/screens/V_W1_01_landing.png (Desktop Landing with collapse_site_demo)
+- Clearly 3D with depth and light: Yes. Preloads collapse_site_demo as default landing scenario per user decision. The multi-storey collapsed building, tilted slabs, rubble mounds, street, and command post tent render immediately on startup.
+- Radio links visible: Yes. Filtered backbone links and best-margin links are rendered without cluttering into a hairball. Link thickness scales with margin. Blue solid indicates strong link (>15 dB margin), amber solid indicates medium link (5 to 15 dB margin), and red dashed indicates weak link (<5 dB margin). Colorblind safe with distinct dash pattern.
+- Top toolbar layout: Clean. Compact buttons (Orbit, Top-Down, Free-Fly, Follow, Fit View, Toggle Heatmap) leave generous space before the right obstacle badge. Zero collision.
+- Node composition: Exactly 16 physical nodes (1 Hub + 12 Survivors + 3 Relays).
+
+### 2. docs/screens/V_W1_02_demo_t3.png (First SOS at t=3.1s with Wall Attenuation)
+- Radio pulses and airtime rings visible: Yes. Node 1 initiates Trapped Under Debris SOS. A purple expanding airtime ring radiates across the floor. A purple packet pulse with a HOP 1 sprite badge travels along the link vector.
+- Wall crossing attenuation visible: Yes. Link ray from Node 1 to Hub 0 intersects exterior west shear wall and corridor wall. Both intersected wall segments illuminate in bright amber emissive. Floating -22 dB and -20 dB attenuation badges hover over the wall midpoints.
+- Drop flashes visible: Yes. Hub 0 receives the packet at -127.9 dBm (below sensitivity threshold of -123 dBm) and triggers a red drop flash with DROP: WEAK SIGNAL badge.
+- Label overlap status: Clean. Node 12 and Node 11 survivor labels stagger vertically, keeping both fully readable without colliding.
+- Pixel assertion metrics: Coverage is 53.1% (PASS, requirement >= 12%), mean luminance is 91.5 (PASS, requirement >= 35), 95th percentile luminance is 200.8 (PASS, requirement >= 120), Cyan survivor pixels: 16,635, Amber obstacle/relay pixels: 4,209, Green hub pixels: 2,552, Purple pulse pixels: 6,320.
+
+### 3. docs/screens/V_W1_03_demo_t8.png (Intermediate Hop at t=8.2s)
+- Intermediate hop packet visible: Yes. Node 7 transmits Medical SOS. An amber airtime ring radiates across the ground, and a HOP 2 packet pulse travels toward Relay 101.
+- Sprite badge accumulation: Resolved. Seeking to 8.2s cleanly clears historical transient badges from 3.1s, preventing the previous pile-up. Max active badges are capped at 4.
+- Pixel assertion metrics: Coverage is 51.0% (PASS, requirement >= 12%), mean luminance is 96.7 (PASS, requirement >= 35), Amber pixels: 23,268.
+
+### 4. docs/screens/V_W1_04_ack_buzz.png (ACK Arrival & Wristband Buzz at t=4.5s)
+- Acknowledgement return visible: Yes. Hub 0 returns ACK packet to Node 1. A green ACK airtime ring radiates across the hub perimeter. Alerts Delivered increments to 1, Delivery Ratio reaches 100%, and Latency displays 860 ms.
+- Wristband twin response: Wristband tactile buzzer triggers haptic vibration pattern.
+- Pixel assertion metrics: Coverage is 47.8% (PASS, requirement >= 12%), Green ACK/hub pixels: 2,743.
+
+### 5. docs/screens/V_heatmap_node1.png (RF Coverage Heatmap for Node 1)
+- Coverage heatmap visible: Yes. Toggle Heatmap button activates in blue (#0284c7). Ground is overlaid with path loss tiles computed from the C++ RF engine formula. Red tiles appear in the acoustic/RF shadow behind the 22 dB shear wall (negative link margin). Amber tiles show boundary coverage, and cyan tiles indicate strong margin.
+- Pixel assertion metrics: Coverage is 68.6% (PASS, requirement >= 12%), Amber path loss pixels: 17,133.
+
+### What is still wrong (Remaining for V4 through V8):
+1. **Interactive Demo Button (W1 Walkthrough):** Primary header button is still "Run Simulation" which opens modal settings. "Start Earthquake Demo" one-click button will replace it in V4.
+2. **Wristband 3D Inspector Panel (Item 5):** The wristband model panel in the right sidebar is still dark and lacks clear button component labels. To be lit and annotated in V6.
+3. **Loss Budget Waterfall Dialog (Item 7 / W2 Walkthrough):** Clicking a dropped link or "Dropped" event currently shows a text modal. Interactive waterfall chart with physical component breakdown (distance, walls, body, shadow) will be wired in V5.
