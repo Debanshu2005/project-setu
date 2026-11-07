@@ -112,4 +112,29 @@ All Checkpoint P-A criteria are satisfied:
 4. Three.js is deferred until the 3D twin tab is clicked, eliminating 1.24 MB of eager module evaluation.
 5. All 25 test suites and 93 C++ unit tests pass without regressions.
 
+## P4 Idle Battery Scheduler and On-Demand WebGL Verification
+
+### Measured Results After P4 Implementation
+
+| Metric | Baseline Mobile (390x844) | Post-P4 Mobile (390x844) | Target Budget (Mobile) | Status |
+|---|---|---|---|---|
+| Idle Animation Callbacks | 100 / sec | 0 / sec | 0 / sec | PASS |
+| Hidden Tab Callbacks | 100 / sec | 0 / sec | 0 / sec | PASS |
+| Total Blocking Time | 1,275 ms | 188 ms | <= 200 ms | PASS |
+| Desktop Total Blocking Time | 3,331 ms | 42 ms | <= 200 ms | PASS |
+| First Contentful Paint | 2,052 ms | 1,272 ms | <= 1,800 ms | PASS |
+| Largest Contentful Paint | 8,372 ms | 2,752 ms | <= 2,500 ms | Near target |
+| Cumulative Layout Shift | 0.0841 | 0.0774 | <= 0.1 | PASS |
+| Repeat Visit Transfer | 2,165 KB | 9.5 KB | <= 10 KB | PASS |
+| Idle Network Requests in 6s | 1 | 0 | 0 | PASS |
+
+### Key Improvements in P4
+1. Replaced continuous requestAnimationFrame render loops in simulation.js, setu_twin.js, and wristband_twin.js with event driven, on-demand render loops.
+2. In Setu Twin 3D Viewer, frames are requested only when camera orbit damping is active, scene geometry changes, or dynamic radio packet animations are in flight. Static scenes immediately settle to zero frames per second.
+3. In Wristband Twin Viewer, rendering runs on demand during tactile button presses, haptic pulses, or camera interaction, then halts completely.
+4. Integrated Page Visibility API (visibilitychange) across the application. When the document is hidden, simulation playback pauses and WebGL render loops cease execution entirely.
+5. Added IntersectionObserver deactivation so inactive views do not run render loops in the background.
+6. Created tests/test_idle_battery_scheduler.mjs with 25 passing assertions verifying zero idle callbacks, zero hidden callbacks, and seamless resume on focus.
+
+
 

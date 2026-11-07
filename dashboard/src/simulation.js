@@ -111,12 +111,30 @@ export class SimulationEngine {
     // Playback state
     this.currentTime = 0;
     this.isPlaying = false;
+    this.wasPlayingBeforeHidden = false;
     this.speed = 1.0;
     this.lastFrameTime = 0;
     this.animationId = null;
 
     // Listeners
     this.listeners = new Set();
+
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      this._onVisibilityChange = () => {
+        if (document.hidden) {
+          if (this.isPlaying) {
+            this.wasPlayingBeforeHidden = true;
+            this.pause();
+          }
+        } else {
+          if (this.wasPlayingBeforeHidden) {
+            this.wasPlayingBeforeHidden = false;
+            this.play();
+          }
+        }
+      };
+      document.addEventListener('visibilitychange', this._onVisibilityChange);
+    }
   }
 
   subscribe(fn) {
@@ -513,6 +531,11 @@ export class SimulationEngine {
 
   loop() {
     if (!this.isPlaying) return;
+    if (typeof document !== 'undefined' && document.hidden) {
+      this.pause();
+      this.wasPlayingBeforeHidden = true;
+      return;
+    }
     const now = performance.now();
     const dt = (now - this.lastFrameTime) * this.speed;
     this.lastFrameTime = now;
@@ -527,7 +550,9 @@ export class SimulationEngine {
 
     this.recalculateState(nextTime);
     this.notify('tick');
-    this.animationId = requestAnimationFrame(() => this.loop());
+    if (this.isPlaying) {
+      this.animationId = requestAnimationFrame(() => this.loop());
+    }
   }
 
   getMetrics() {

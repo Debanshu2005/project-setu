@@ -730,6 +730,30 @@ class SetuDashboardApp {
       }
     });
 
+    // Page Visibility API: pause timers and WebGL rendering when hidden
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', () => {
+        const isHidden = document.hidden;
+        if (isHidden) {
+          if (this.sim && this.sim.isPlaying) {
+            this._wasSimPlaying = true;
+            this.sim.pause();
+          }
+          if (this.setuTwin) this.setuTwin.setActive(false);
+          if (this.wristbandTwin) this.wristbandTwin.setActive(false);
+        } else {
+          const isTwin = this.btnModeTwin && this.btnModeTwin.classList.contains('active');
+          if (this.setuTwin) this.setuTwin.setActive(isTwin);
+          const activeTab = document.querySelector('.tab-btn.active')?.dataset?.tab;
+          if (this.wristbandTwin) this.wristbandTwin.setActive(activeTab === 'tab-twin');
+          if (this._wasSimPlaying && this.sim) {
+            this._wasSimPlaying = false;
+            this.sim.play();
+          }
+        }
+      });
+    }
+
     // View mode switching: Topology vs Setu Twin 3D vs Scientific Analytics
     if (this.btnModeTopology) {
       this.btnModeTopology.addEventListener('click', () => this.setViewMode('topology'));
@@ -1027,7 +1051,11 @@ class SetuDashboardApp {
       this.charts.render();
     }
     if (tabId === 'tab-twin') {
-      this.ensureWristbandTwin();
+      this.ensureWristbandTwin().then(twin => {
+        if (twin) twin.setActive(true);
+      });
+    } else if (this.wristbandTwin) {
+      this.wristbandTwin.setActive(false);
     }
     if (tabId === 'tab-scientific') {
       this.renderSidebarQuickChart();
@@ -1038,6 +1066,10 @@ class SetuDashboardApp {
     const isTopo = (mode === 'topology');
     const isTwin = (mode === 'twin');
     const isAnalytics = (mode === 'analytics');
+
+    if (this.setuTwin) {
+      this.setuTwin.setActive(isTwin);
+    }
 
     if (this.btnModeTopology) {
       this.btnModeTopology.classList.toggle('active', isTopo);
@@ -1075,6 +1107,7 @@ class SetuDashboardApp {
     if (isTwin) {
       this.ensureTwin3D().then(twin => {
         if (twin) {
+          twin.setActive(true);
           twin.setNodes(Array.from(this.sim.nodes.values()));
           const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
           twin.setObstacles(sc ? (sc.obstacles || []) : []);
