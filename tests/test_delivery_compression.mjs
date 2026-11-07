@@ -153,6 +153,16 @@ async function runTests() {
     assert(decompressedHtml.includes('<link rel="modulepreload" href="./src/simulation.js" />'), 'modulepreload tag present for simulation.js');
     assert(decompressedHtml.includes('<link rel="modulepreload" href="./components/topology.js" />'), 'modulepreload tag present for topology.js');
 
+    // 11. Test CSS bundle and font offline independence (P2)
+    const cssRes = await request('/styles/bundle.css', { 'Accept-Encoding': 'gzip' });
+    assert(cssRes.statusCode === 200, 'GET /styles/bundle.css returns HTTP 200');
+    assert(cssRes.headers['content-encoding'] === 'gzip', 'GET /styles/bundle.css is served with gzip');
+    assert(cssRes.headers['cache-control'] === 'no-cache', 'GET /styles/bundle.css has Cache-Control: no-cache');
+    const decompressedCss = zlib.gunzipSync(cssRes.bodyBuffer).toString('utf8');
+    assert(!decompressedCss.includes('fonts.googleapis.com'), 'bundle.css has zero external Google Fonts imports');
+    assert(decompressedCss.includes('ui-sans-serif'), 'bundle.css contains modern system font stack');
+    assert(decompressedHtml.includes('<link rel="stylesheet" href="./styles/bundle.css" />'), 'index.html links to single bundled stylesheet');
+
   } finally {
     serverProcess.kill('SIGTERM');
   }

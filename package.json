@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node dashboard/server.js",
     "dev": "node dashboard/server.js",
+    "build:css": "node scripts/build_css.mjs",
     "test:custom": "node tests/test_custom_simulation.mjs",
     "test:reliability": "node tests/test_reliability.mjs",
     "test:analytics": "node tests/test_analytics.mjs",

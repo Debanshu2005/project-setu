@@ -10,6 +10,13 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { findSimulator } from './sim_finder.js';
+import { buildCss } from '../scripts/build_css.mjs';
+
+try {
+  buildCss();
+} catch (cssErr) {
+  console.warn('[Setu CSS] Failed to build bundle.css on startup:', cssErr.message);
+}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
