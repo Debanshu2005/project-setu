@@ -49,10 +49,13 @@ async function testDashboardWebGL() {
 
     const errors = [];
     page.on('console', msg => {
+      console.log(`[Browser Console ${msg.type()}] ${msg.text()}`);
       if (msg.type() === 'error') errors.push(`[Console Error] ${msg.text()}`);
-      else console.log(`[Browser Console] ${msg.text()}`);
     });
-    page.on('pageerror', err => errors.push(`[Page Error] ${err.message}`));
+    page.on('pageerror', err => {
+      console.log(`[Page Error] ${err.message}`);
+      errors.push(`[Page Error] ${err.message}`);
+    });
     page.on('response', res => {
       if (res.status() >= 400) console.log(`[HTTP ${res.status()}] ${res.url()}`);
     });
@@ -65,7 +68,7 @@ async function testDashboardWebGL() {
     console.log('Switching to Setu Twin 3D View...');
     const btnTwin = page.locator('#btnModeTwin');
     await btnTwin.click();
-    await page.waitForTimeout(2000);
+    await page.waitForSelector('#setuTwinMount canvas', { timeout: 10000 });
 
     // Check canvas exists in mount point
     const hasCanvas3D = await page.locator('#setuTwinMount canvas').count();
