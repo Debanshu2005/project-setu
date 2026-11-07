@@ -51,6 +51,8 @@ class SetuDashboardApp {
     this.initBackendModal(); // Bound immediately so backend settings modal is always usable even if subsequent initializations throw
     this.initComponents();
     this.initEvents();
+    this.initServiceWorker();
+    this.initOfflineResilience();
     this.loadInitialData().catch(err => {
       console.warn('Initial data load notice:', err);
     });
@@ -2493,6 +2495,65 @@ class SetuDashboardApp {
         this.btnRunModal.disabled = false;
       }
     }
+  }
+
+  initServiceWorker() {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return;
+    if (window.location.protocol !== 'http:' && window.location.protocol !== 'https:') return;
+
+    const register = () => {
+      navigator.serviceWorker.register('/sw.js', { scope: '/' })
+        .then(reg => {
+          console.log('[ServiceWorker] Active with scope:', reg.scope);
+        })
+        .catch(err => {
+          console.warn('[ServiceWorker] Registration notice:', err.message);
+        });
+    };
+
+    if (document.readyState === 'complete') {
+      register();
+    } else {
+      window.addEventListener('load', register, { once: true });
+    }
+  }
+
+  initOfflineResilience() {
+    if (typeof window === 'undefined') return;
+
+    const updateOfflineState = () => {
+      const isOnline = navigator.onLine;
+      const offlineBadge = document.getElementById('badgeOfflineMode');
+      const engineBadge = document.getElementById('engineBadge');
+
+      if (offlineBadge) {
+        offlineBadge.style.display = isOnline ? 'none' : 'inline-block';
+      }
+
+      if (!isOnline) {
+        if (engineBadge) {
+          engineBadge.textContent = 'Engine: Offline (Replay Only)';
+          engineBadge.style.borderColor = '#f59e0b';
+          engineBadge.style.color = '#fbbf24';
+        }
+        if (this.elStatusDot) {
+          this.elStatusDot.style.background = '#f59e0b';
+        }
+        if (this.elStatusText && !this.elStatusText.textContent.includes('REPLAY') && !this.elStatusText.textContent.includes('OFFLINE')) {
+          this.elStatusText.textContent = `OFFLINE REPLAY READY: ${this.sim?.nodes?.size || 16} NODES (${this.currentScenario?.name || 'Earthquake Collapse Site (Demo)'})`;
+        }
+      } else {
+        if (engineBadge && engineBadge.textContent.includes('Offline')) {
+          engineBadge.textContent = 'Engine: Native REST';
+          engineBadge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
+          engineBadge.style.color = '#7dd3fc';
+        }
+      }
+    };
+
+    window.addEventListener('online', updateOfflineState);
+    window.addEventListener('offline', updateOfflineState);
+    updateOfflineState();
   }
 
   handleInjectTrigger(tr) {

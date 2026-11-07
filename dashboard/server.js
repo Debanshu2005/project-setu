@@ -1041,6 +1041,9 @@ function serveStaticFile(req, res, absPath, reqPath) {
     'Cache-Control': asset.cacheControl,
     'Vary': 'Accept-Encoding'
   };
+  if (reqPath === '/sw.js' || reqPath === '/dashboard/sw.js') {
+    headers['Service-Worker-Allowed'] = '/';
+  }
   applyCorsHeaders(headers, req);
 
   if (asset.br && acceptEncoding.includes('br')) {

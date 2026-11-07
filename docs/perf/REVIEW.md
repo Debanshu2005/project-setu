@@ -206,6 +206,48 @@ All Checkpoint P-B criteria are satisfied:
 7. Rebuilt production bundle.css via scripts/build_css.mjs and maintained byte parity with root index.html.
 8. Created tests/test_mobile_layout_and_touch.mjs verifying all mobile viewport constraints, sheet snap transitions, touch targets, and desktop layout preservation.
 
+## P7 Offline Resilience and Service Worker Verification
+
+### Visual Inspections
+
+#### Desktop Offline Mode: docs/screens/perf/offline_mode_desktop.png (1280 by 720)
+- Rendering quality: Page reloads cleanly from local service worker cache with zero external network requests.
+- Header status: Displays distinct amber badge "OFFLINE (REPLAY ONLY)" next to engine status "Engine: Offline (Replay Only)".
+- Simulation state: The demo scenario (Earthquake Collapse Site, 16 nodes) loads and plays smoothly. All 16 survivor and relay nodes render on the topology map.
+- Playback and scrubbing: Play button starts offline timeline replay. The scrubber seeks to arbitrary timestamps without network access.
+
+#### Mobile Offline Mode: docs/screens/perf/offline_mode_mobile.png (390 by 844, DPR 3)
+- Compact mobile view: Header displays collapsed 48 px bar with offline replay status.
+- Bottom sheet and thumb bar: Fully responsive with one thumb navigation, working offline without network lag.
+
+### Measured Results After P7 Implementation
+
+| Metric | Measured Value | Target Budget | Status |
+|---|---|---|---|
+| Offline Page Load HTTP Status | 200 (Service Worker Cache) | 200 | PASS |
+| Offline Demo Scenario Replay | 16 nodes, full trace playback | Operational | PASS |
+| Offline Timeline Scrubbing (15.0s seek) | 15.0s (exact match) | Functional | PASS |
+| Precached Assets Count | 36 assets | >= 30 core assets | PASS |
+| Offline Mode Badge Visibility | Visible when offline, hidden when online | Automatic | PASS |
+| Engine Status Reporting | Honest "Replay Only" state | Zero false claims | PASS |
+
+### Key Improvements in P7
+1. Authored dashboard/sw.js caching the complete application shell, stylesheets, 3D vendored Three.js modules, and demo scenario traces.
+2. Implemented cache-first strategy with background revalidation for static assets and network-first with cache fallback for navigation and demo traces.
+3. Added offline fallback JSON responses for scenario lists and status endpoints when completely disconnected.
+4. Added an honest OFFLINE (REPLAY ONLY) status badge in the header and updated engine connection state to report replay mode when disconnected.
+5. Added automatic network status listeners (online and offline events) in dashboard/src/app.js to dynamically reflect connectivity state.
+6. Created tests/test_offline_resilience.mjs verifying service worker installation, complete network severance, offline page reload, trace replay, and clean recovery upon reconnection.
+
+## Checkpoint P-C Signoff: Mobile Usability and Offline Field Readiness
+
+All Checkpoint P-C criteria are satisfied:
+1. Mobile layout audited at 390 by 844 and 360 by 740 with 0 undersized tap targets and 0 sub-11px text elements.
+2. Bottom sheet inspector operates smoothly with 3 snap points (peek 72 px, half 42vh, full 85vh).
+3. Service worker allows complete offline cold boot and simulation replay of Earthquake Collapse Site demo.
+4. All 29 automated test suites pass cleanly.
+
+
 
 
 

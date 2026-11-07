@@ -194,21 +194,20 @@ async function runTests() {
     // -------------------------------------------------------------------------
     console.log('\n[4/4] Executing 10 Consecutive Scenario Switches to Verify Disposal...');
 
-    // On mobile viewports, ensure header drawer is open so scenario selector is interactable
-    const btnDrawer = page.locator('#btnMobileHeaderToggle');
-    if (await btnDrawer.isVisible() && !(await page.locator('#scenarioSelect').isVisible())) {
-      await btnDrawer.click();
-    }
-
     // Warm up one cycle so all unique node textures and shader programs are compiled
-    await page.selectOption('#scenarioSelect', 'gps_denied_rescue');
-    await page.waitForTimeout(600);
-    await page.selectOption('#scenarioSelect', 'collapse_site_demo');
-    await page.waitForTimeout(600);
+    await page.evaluate(id => window.setuApp.loadScenario(id), 'gps_denied_rescue');
+    await page.waitForTimeout(300);
+    await page.evaluate(id => window.setuApp.loadScenario(id), 'collapse_site_demo');
+    await page.waitForTimeout(300);
 
     const baselineMemory = await page.evaluate(() => {
       const twin = window.setuApp?.setuTwin;
-      if (twin) twin.requestRender();
+      if (twin) {
+        twin.setActive(true);
+        if (twin.renderer && twin.scene && twin.camera) {
+          twin.renderer.render(twin.scene, twin.camera);
+        }
+      }
       return {
         geometries: twin?.renderer?.info?.memory?.geometries || 0,
         textures: twin?.renderer?.info?.memory?.textures || 0,
@@ -221,17 +220,22 @@ async function runTests() {
     // Perform 10 consecutive switches
     for (let i = 0; i < 10; i++) {
       const scenarioTarget = (i % 2 === 0) ? 'gps_denied_rescue' : 'collapse_site_demo';
-      await page.selectOption('#scenarioSelect', scenarioTarget);
-      await page.waitForTimeout(300);
+      await page.evaluate(id => window.setuApp.loadScenario(id), scenarioTarget);
+      await page.waitForTimeout(200);
     }
 
     // Ensure we settle on initial baseline scenario
-    await page.selectOption('#scenarioSelect', 'collapse_site_demo');
-    await page.waitForTimeout(600);
+    await page.evaluate(id => window.setuApp.loadScenario(id), 'collapse_site_demo');
+    await page.waitForTimeout(400);
 
     const postSwitchMemory = await page.evaluate(() => {
       const twin = window.setuApp?.setuTwin;
-      if (twin) twin.requestRender();
+      if (twin) {
+        twin.setActive(true);
+        if (twin.renderer && twin.scene && twin.camera) {
+          twin.renderer.render(twin.scene, twin.camera);
+        }
+      }
       return {
         geometries: twin?.renderer?.info?.memory?.geometries || 0,
         textures: twin?.renderer?.info?.memory?.textures || 0,
