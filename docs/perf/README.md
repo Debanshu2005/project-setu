@@ -67,3 +67,4 @@ Test on a physical mid-range phone (such as Pixel 6a or Samsung Galaxy A54) over
 - Switching to Setu Twin 3D view renders smoothly at 30 fps or higher.
 - Idle battery usage shows zero active rendering loops when the app sits idle.
 - Timeline scrubber dragging updates without stuttering or dropped frames.
+

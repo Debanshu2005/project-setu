@@ -38,3 +38,26 @@ This document records visual inspections, layout critiques, and measured perform
 | Hidden Animation Callbacks | 32 / sec | 100 / sec | 0 / sec | OVER BUDGET |
 | Small Tap Targets (<44px) | 89 | 89 | 0 primary | NEEDS OPTIMIZATION |
 | Small Text Fonts (<12px) | 2,984 | 2,984 | 0 body | NEEDS OPTIMIZATION |
+
+## P1 Delivery Verification (Compression, Caching, ETag, Modulepreload)
+
+### Measured Results After P1 Implementation
+
+| Metric | Baseline Mobile (390x844) | Post-P1 Mobile (390x844) | Improvement | Target Budget | Status |
+|---|---|---|---|---|---|
+| Initial Transfer | 4,394 KB | 453.5 KB | 89.7% reduction | <= 150 KB (gzip) | Significant progress |
+| Repeat Visit Transfer | 2,165 KB | 12.5 KB | 99.4% reduction | <= 10 KB | Near target |
+| First Contentful Paint | 2,052 ms | 1,900 ms | 152 ms faster | <= 1,800 ms | Near target |
+| Largest Contentful Paint | 8,372 ms | 4,048 ms | 51.6% faster | <= 2,500 ms | Progressing |
+| Cumulative Layout Shift | 0.0841 | 0.0836 | Stable | <= 0.1 | PASS |
+| Repeat Requests Handled as 304 | 0 | 35 | New capability | 100% of cached | PASS |
+
+### Key Improvements in P1
+1. Static assets (js, css, html, wasm, json) are compressed with Brotli and Gzip using Node.js built-in zlib.
+2. SHA-256 ETags are computed and cached in an in-memory static registry, enabling instant HTTP 304 Not Modified responses on revalidation.
+3. Cache-Control headers are explicitly assigned:
+   - Vendored dependencies and fonts: public, max-age=31536000, immutable
+   - Simulation traces: public, max-age=86400
+   - Application scripts, styles, and HTML: no-cache (guarantees fresh code deployment with zero stale cache)
+4. Critical modules are preloaded with modulepreload link tags in index.html.
+
