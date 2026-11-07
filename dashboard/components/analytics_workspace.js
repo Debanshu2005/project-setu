@@ -88,11 +88,9 @@ export class AnalyticsWorkspaceComponent {
 
   initLayout() {
     this.container.innerHTML = `
-      <div class="analytics-workspace-root" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--bg-darkest); color:var(--text-main); font-family:var(--font-sans); overflow-y:auto; overflow-x:hidden;">
-        <!-- Pinned Sticky Top Header -->
+      <div class="analytics-workspace-root" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--bg-darkest); color:var(--text-main); font-family:var(--font-sans); overflow-y:auto; overflow-x:hidden; scroll-padding-top:48px;">
         <div class="analytics-sticky-header" style="position:sticky; top:0; z-index:20; background:var(--bg-base); border-bottom:1px solid var(--border-subtle); box-shadow:0 2px 8px rgba(0,0,0,0.3);">
-          <!-- Top Scientific Toolbar -->
-          <div class="analytics-toolbar" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; padding:10px 14px;">
+          <div class="analytics-toolbar" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; padding:8px 14px;">
             <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
               <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px;">Workspace Domain:</span>
               <div class="domain-pill-group" style="display:flex; gap:4px; flex-wrap:wrap;">
@@ -107,24 +105,32 @@ export class AnalyticsWorkspaceComponent {
               </div>
             </div>
 
-            <div style="display:flex; align-items:center; gap:8px;">
-              <!-- Filter by Node -->
-              <select class="select-input" id="selAnalyticsNodeFilter" style="font-size:11px; padding:3px 8px; width:130px;" aria-label="Filter analytics by node">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <select class="select-input" id="selAnalyticsNodeFilter" style="font-size:11px; padding:3px 8px; width:120px;" aria-label="Filter analytics by node">
                 <option value="all">All Nodes</option>
               </select>
 
-              <!-- Save Current Run to Comparison Store -->
-              <button class="btn" id="btnSaveExperiment" style="font-size:11px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc;" title="Save current simulation snapshot for cross-run comparison">
+              <button class="btn btn-tool active" id="btnToggleKpis" style="font-size:11px; padding:3px 8px;" title="Toggle scientific KPI summary ribbon">
+                📊 KPIs
+              </button>
+
+              <button class="btn btn-tool active" id="btnToggleSidebars" style="font-size:11px; padding:3px 8px;" title="Sidebars hidden: click to restore sidebars">
+                ◫ Sidebars
+              </button>
+
+              <button class="btn btn-tool" id="btnToggleFullscreen" style="font-size:11px; padding:3px 8px;" title="Toggle browser fullscreen view">
+                ⛶ Fullscreen
+              </button>
+
+              <button class="btn btn-tool" id="btnSaveExperiment" style="font-size:11px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc;" title="Save current simulation snapshot for cross-run comparison">
                 💾 Snapshot Run
               </button>
             </div>
           </div>
-
-          <!-- Dynamic Scientific KPI Ribbon -->
-          <div id="analyticsKpiRibbon" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; padding:8px 14px; background:rgba(0,0,0,0.25); border-top:1px solid var(--border-subtle);"></div>
         </div>
 
-        <!-- Main Workspace Plot Viewport -->
+        <div id="analyticsKpiRibbon" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; padding:8px 14px; background:rgba(0,0,0,0.25); border-bottom:1px solid var(--border-subtle);"></div>
+
         <div id="analyticsPlotArea" style="flex:1; padding:12px 14px 40px 14px; display:flex; flex-direction:column; gap:14px;"></div>
       </div>
     `;
@@ -151,6 +157,66 @@ export class AnalyticsWorkspaceComponent {
         this.filterNodeId = e.target.value;
         this.renderDomainView();
       });
+    }
+
+    // Toggle KPI ribbon
+    const btnToggleKpis = this.container.querySelector('#btnToggleKpis');
+    if (btnToggleKpis) {
+      btnToggleKpis.addEventListener('click', () => {
+        const ribbon = this.container.querySelector('#analyticsKpiRibbon');
+        if (ribbon) {
+          const isHidden = ribbon.style.display === 'none';
+          ribbon.style.display = isHidden ? 'grid' : 'none';
+          btnToggleKpis.classList.toggle('active', isHidden);
+          btnToggleKpis.title = isHidden ? 'Hide scientific KPI summary ribbon' : 'Show scientific KPI summary ribbon';
+        }
+      });
+    }
+
+    // Toggle Sidebars (Split view vs Full width)
+    const btnToggleSidebars = this.container.querySelector('#btnToggleSidebars');
+    if (btnToggleSidebars) {
+      btnToggleSidebars.addEventListener('click', () => {
+        const mainLayout = document.querySelector('.main-layout');
+        if (mainLayout) {
+          const isFullWidth = mainLayout.classList.contains('analytics-mode');
+          mainLayout.classList.toggle('analytics-mode', !isFullWidth);
+          btnToggleSidebars.classList.toggle('active', !isFullWidth);
+          btnToggleSidebars.title = !isFullWidth ? 'Sidebars hidden: click to restore sidebars' : 'Sidebars visible: click to expand full width';
+          setTimeout(() => {
+            window.dispatchEvent(new Event('resize'));
+          }, 60);
+        }
+      });
+    }
+
+    // Fullscreen Toggle
+    const btnToggleFullscreen = this.container.querySelector('#btnToggleFullscreen');
+    if (btnToggleFullscreen) {
+      const updateFsBtn = () => {
+        const isFs = typeof document !== 'undefined' && !!document.fullscreenElement;
+        btnToggleFullscreen.textContent = isFs ? '🗗 Exit' : '⛶ Fullscreen';
+        btnToggleFullscreen.classList.toggle('active', isFs);
+        btnToggleFullscreen.title = isFs ? 'Exit browser fullscreen (Esc)' : 'Enter browser fullscreen';
+        setTimeout(() => {
+          window.dispatchEvent(new Event('resize'));
+        }, 100);
+      };
+      btnToggleFullscreen.addEventListener('click', async () => {
+        try {
+          if (!document.fullscreenElement) {
+            await document.documentElement.requestFullscreen();
+          } else {
+            await document.exitFullscreen();
+          }
+        } catch (err) {
+          console.warn('Fullscreen request rejected:', err);
+        }
+        updateFsBtn();
+      });
+      if (typeof document !== 'undefined') {
+        document.addEventListener('fullscreenchange', updateFsBtn);
+      }
     }
 
     // Save run snapshot
@@ -227,8 +293,27 @@ export class AnalyticsWorkspaceComponent {
 
   refresh() {
     this.updateNodeFilterOptions();
+    this.syncToolbarButtonStates();
     this.renderKpiRibbon();
     this.renderDomainView();
+  }
+
+  syncToolbarButtonStates() {
+    const btnToggleSidebars = this.container.querySelector('#btnToggleSidebars');
+    if (btnToggleSidebars && typeof document !== 'undefined') {
+      const mainLayout = document.querySelector('.main-layout');
+      const isFullWidth = mainLayout ? mainLayout.classList.contains('analytics-mode') : false;
+      btnToggleSidebars.classList.toggle('active', isFullWidth);
+      btnToggleSidebars.title = isFullWidth ? 'Sidebars hidden: click to restore sidebars' : 'Sidebars visible: click to expand full width';
+    }
+
+    const btnToggleFullscreen = this.container.querySelector('#btnToggleFullscreen');
+    if (btnToggleFullscreen && typeof document !== 'undefined') {
+      const isFs = !!document.fullscreenElement;
+      btnToggleFullscreen.textContent = isFs ? '🗗 Exit' : '⛶ Fullscreen';
+      btnToggleFullscreen.classList.toggle('active', isFs);
+      btnToggleFullscreen.title = isFs ? 'Exit browser fullscreen (Esc)' : 'Enter browser fullscreen';
+    }
   }
 
   renderKpiRibbon() {
@@ -281,6 +366,12 @@ export class AnalyticsWorkspaceComponent {
   renderDomainView() {
     const area = this.container.querySelector('#analyticsPlotArea');
     if (!area) return;
+
+    // Reset workspace vertical scroll to top on every domain switch
+    const root = this.container.querySelector('.analytics-workspace-root');
+    if (root) {
+      root.scrollTop = 0;
+    }
 
     area.innerHTML = '';
 
@@ -1148,54 +1239,55 @@ export class AnalyticsWorkspaceComponent {
   // =========================================================================
   renderEnergyBatteryView(container) {
     container.innerHTML = `
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
-        <!-- Plot 7A: State of Charge (SoC) vs Simulation Time -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:12px;">
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="font-weight:700; font-size:12px; color:#fff;">Plot 7A: Node Battery State of Charge (SoC) vs Time</span>
-            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+            <div class="chart-title-group" style="display:inline-flex; align-items:center; gap:6px;">
+              <span style="font-weight:700; font-size:12px; color:#fff;">Plot 7A: Node Battery State of Charge (SoC) vs Time</span>
+            </div>
+            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px; white-space:nowrap;">
               300 mAh 1S LiPo Model
             </span>
           </div>
           <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
             Per-node and fleet average battery depletion (%) accounting for LoRa TX (120mA), RX listening (15mA), and MCU standby.
           </div>
-          <div style="flex:1; min-height:260px; position:relative;">
+          <div style="flex:1; min-height:220px; position:relative;">
             <canvas id="canvasBatteryTimeline" style="width:100%; height:100%; display:block;"></canvas>
           </div>
         </div>
 
-        <!-- Energy vs Forwarding Load Scatter -->
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="font-weight:700; font-size:12px; color:#fff;">Energy Consumed (mAh) vs Relay Forwarding Load</span>
-            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
+            <div class="chart-title-group" style="display:inline-flex; align-items:center; gap:6px;">
+              <span style="font-weight:700; font-size:12px; color:#fff;">Plot 7B: Energy Consumed (mAh) vs Relay Forwarding Load</span>
+            </div>
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px; white-space:nowrap;">
               SX1262 Power Profile
             </span>
           </div>
           <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
             Validates proportional energy drain against packets forwarded across relay towers.
           </div>
-          <div style="flex:1; min-height:260px; position:relative;">
+          <div style="flex:1; min-height:220px; position:relative;">
             <canvas id="canvasEnergyLoad" style="width:100%; height:100%; display:block;"></canvas>
           </div>
         </div>
       </div>
 
-      <!-- Subsystem Energy Consumption Breakdown -->
       <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; margin-top:12px;">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+        <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
           <div>
             <span style="font-weight:700; font-size:12px; color:#fff;">Subsystem Energy Breakdown & Battery Life Projections</span>
-            <div style="font-size:10px; color:var(--text-dim);">
+            <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">
               Energy apportioned across LoRa TX (120 mA @ +14 dBm), LoRa RX listening (15 mA), and MCU standby / sensing (1.5 mA).
             </div>
           </div>
-          <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;" id="badgeTotalEnergy">
+          <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px; white-space:nowrap;" id="badgeTotalEnergy">
             Fleet Energy Drain
           </span>
         </div>
-        <div id="energyBreakdownGrid" style="display:grid; grid-template-columns:repeat(4, 1fr); gap:8px;"></div>
+        <div id="energyBreakdownGrid" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:8px;"></div>
       </div>
     `;
 

@@ -427,3 +427,35 @@ Visual inspection of the Scientific Analytics Workspace revealed five layout and
 
 - `docs/screens/V_radio_workspace_top.png`: verified Plot 3A and Plot 3B top section with two-tier headers, non-overlapping theoretical curves, and protected threshold pills.
 - `docs/screens/V_radio_workspace_bottom.png`: verified Plot 3C and Plot 3D bottom section with rotated node labels, unclipped legend, clean single-line title grouping, and solid sticky header.
+
+## VIII. Scientific Analytics Fullscreen, Sticky Header Decoupling, and Scroll Visibility Audit
+
+### 1. Issues Identified from Field Visual Inspection
+
+Visual inspection of user feedback on the Energy and Battery domain revealed three critical visibility defects:
+1. Retained scroll position across domains: When switching between analytics domains after scrolling down in another domain, `scrollTop` was not reset. This caused the new domain to render scrolled down, hiding Plot 7A and Plot 7B card titles, subtitles, badges, and the top 40% of the canvas behind the opaque sticky header.
+2. Sticky header height consumption: The sticky header pinned both the domain toolbar and the KPI ribbon together, consuming over 120px of vertical height. On compact displays (such as 1024x462 viewports), this obscured almost a third of the visible screen.
+3. Lack of explicit sidebar and fullscreen controls: Unconditional sidebar suppression in analytics mode removed user choice. Users had no direct way to restore sidebars or toggle browser fullscreen mode.
+
+### 2. Implemented Resolutions
+
+1. Sticky header decoupling:
+   - Pinned only the slim 40px domain navigation toolbar at the top of the workspace.
+   - Placed the KPI ribbon in the scrollable workspace flow, giving back 80px of vertical space during chart inspection.
+2. Workspace vertical scroll clamping:
+   - Added automatic `root.scrollTop = 0` on every domain switch and filter update, guaranteeing that all domain views open from the top with titles and top axis ticks fully visible.
+3. Dedicated toolbar controls:
+   - Added `◫ Sidebars` button in the toolbar to switch between full-width workspace and standard 3-column split view with sidebars.
+   - Added `⛶ Fullscreen` button to toggle browser fullscreen view.
+   - Added `📊 KPIs` button to toggle KPI ribbon display for maximum canvas room on compact laptop screens.
+4. Responsive Energy and Battery view:
+   - Standardized Plot 7B title with `Plot 7B: ` prefix.
+   - Optimized canvas min-height to 220px with auto-fit grid cards, allowing Plot 7A, Plot 7B, and the Subsystem Breakdown to fit cleanly.
+
+### 3. Verification Screenshots
+
+- `docs/screens/V_energy_workspace_top.png`: Verified Plot 7A and Plot 7B rendered with titles, badges, and 100% axis ticks fully visible below the slim navigation header.
+- `docs/screens/V_energy_workspace_breakdown.png`: Verified scrolled view showing Subsystem Energy Breakdown cards with clean margins and no title collision.
+- `docs/screens/V_energy_workspace_with_sidebars.png`: Verified split view with left and right sidebars restored via toolbar toggle.
+- `docs/screens/V_energy_workspace_compact_top.png`: Verified compact 1024x462 viewport rendering without top clipping.
+- `docs/screens/V_energy_workspace_compact_no_kpi.png`: Verified maximum chart area on compact viewport with KPI ribbon collapsed.

@@ -206,6 +206,7 @@ class MockElement {
     this.width = 600;
     this.height = 300;
     this.value = 'all';
+    this._queryMap = new Map();
   }
 
   get innerHTML() { return this._innerHTML; }
@@ -226,9 +227,13 @@ class MockElement {
   }
 
   querySelector(sel) {
+    if (this._queryMap.has(sel)) {
+      return this._queryMap.get(sel);
+    }
     const el = new MockElement(sel.includes('canvas') ? 'canvas' : (sel.includes('select') ? 'select' : 'div'));
     if (sel.startsWith('#')) el.id = sel.slice(1);
     el.parentElement = this;
+    this._queryMap.set(sel, el);
     return el;
   }
 
@@ -381,6 +386,50 @@ it('Battery lifetime projection accurately handles nominal 300mAh capacity', () 
   const proj = calculateBatteryProjections(100, 300, 10, 10, 60);
   assert.ok(proj.projectedHours > 0, 'Projected hours must be positive');
   assert.ok(proj.consumedMah > 0, 'Consumed mAh must be positive');
+});
+
+// Section: Test Suite 6
+// Test Suite 6: Fullscreen, Sidebars Toggle and Scroll Clamping
+console.log('\n[Test Suite 6] Fullscreen, Sidebars Toggle and Scroll Clamping Controls...');
+
+it('Analytics workspace template includes sidebars, fullscreen, and KPI toggle buttons', () => {
+  const sim = new SimulationEngine();
+  const container = new MockElement('div');
+  const ws = new AnalyticsWorkspaceComponent(container, sim);
+
+  assert.ok(container.innerHTML.includes('id="btnToggleSidebars"'), 'Must include btnToggleSidebars');
+  assert.ok(container.innerHTML.includes('id="btnToggleFullscreen"'), 'Must include btnToggleFullscreen');
+  assert.ok(container.innerHTML.includes('id="btnToggleKpis"'), 'Must include btnToggleKpis');
+  assert.ok(container.innerHTML.includes('class="analytics-sticky-header"'), 'Must include analytics-sticky-header');
+  assert.ok(container.innerHTML.includes('id="analyticsKpiRibbon"'), 'Must include analyticsKpiRibbon');
+});
+
+it('Analytics workspace setDomain resets scrollTop to top of viewport', () => {
+  const sim = new SimulationEngine();
+  const container = new MockElement('div');
+  const ws = new AnalyticsWorkspaceComponent(container, sim);
+
+  // Set mock scrollTop property
+  const rootMock = container.querySelector('.analytics-workspace-root');
+  rootMock.scrollTop = 380;
+  assert.strictEqual(rootMock.scrollTop, 380);
+
+  // Switching domain must clamp scrollTop back to 0
+  ws.setDomain('energy');
+  const updatedRoot = container.querySelector('.analytics-workspace-root');
+  assert.strictEqual(updatedRoot.scrollTop, 0, 'setDomain must reset scrollTop to 0');
+});
+
+it('Energy and battery view contains Plot 7A and Plot 7B titles and responsive grids', () => {
+  const sim = new SimulationEngine();
+  const container = new MockElement('div');
+  const ws = new AnalyticsWorkspaceComponent(container, sim);
+
+  ws.setDomain('energy');
+  const plotArea = container.querySelector('#analyticsPlotArea');
+  assert.ok(plotArea.innerHTML.includes('Plot 7A: Node Battery State of Charge'), 'Must contain Plot 7A title');
+  assert.ok(plotArea.innerHTML.includes('Plot 7B: Energy Consumed'), 'Must contain Plot 7B title');
+  assert.ok(plotArea.innerHTML.includes('Subsystem Energy Breakdown'), 'Must contain breakdown section');
 });
 
 // -----------------------------------------------------------------------------
