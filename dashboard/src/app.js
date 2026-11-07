@@ -737,20 +737,28 @@ class SetuDashboardApp {
     }
 
     // Export buttons
+    const menuDataExport = document.getElementById('menuDataExport');
+    const closeExportMenu = () => {
+      if (menuDataExport) menuDataExport.style.display = 'none';
+    };
+
     if (this.btnExportJson) {
       this.btnExportJson.addEventListener('click', () => {
+        closeExportMenu();
         Exporter.exportJson(this.sim);
       });
     }
 
     if (this.btnExportCsv) {
       this.btnExportCsv.addEventListener('click', () => {
+        closeExportMenu();
         Exporter.exportCsv(this.sim);
       });
     }
 
     if (this.btnExportRawCsv) {
       this.btnExportRawCsv.addEventListener('click', () => {
+        closeExportMenu();
         Exporter.exportRawObservationsCsv(this.sim);
       });
     }
@@ -758,6 +766,7 @@ class SetuDashboardApp {
     // Upload custom trace
     if (this.fileTraceUpload) {
       this.fileTraceUpload.addEventListener('change', async e => {
+        closeExportMenu();
         const file = e.target.files[0];
         if (file) {
           const text = await file.text();
@@ -765,6 +774,18 @@ class SetuDashboardApp {
           this.sim.loadTrace(events);
           this.timeline.setEvents();
         }
+      });
+    }
+
+    const btnExportToggle = document.getElementById('btnExportDropdownToggle');
+    if (btnExportToggle && menuDataExport) {
+      btnExportToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const isOpen = menuDataExport.style.display === 'flex';
+        menuDataExport.style.display = isOpen ? 'none' : 'flex';
+      });
+      document.addEventListener('click', () => {
+        closeExportMenu();
       });
     }
   }
@@ -1170,13 +1191,13 @@ class SetuDashboardApp {
   toggleOperatingMode() {
     if (this.mode === 'live') {
       this.mode = 'replay';
-      this.btnToggleMode.textContent = '📽️ SCENARIO REPLAY';
+      this.btnToggleMode.innerHTML = '<span class="mode-label-full">📽️ SCENARIO REPLAY</span><span class="mode-label-short">📽️ Replay</span>';
       this.btnToggleMode.style.color = '#f59e0b';
       this.btnToggleMode.style.borderColor = '#f59e0b';
       this.elStatusText.textContent = 'MODE: SCENARIO REPLAY (SCRUBBER ACTIVE)';
     } else {
       this.mode = 'live';
-      this.btnToggleMode.textContent = '⚡ LIVE DIGITAL TWIN';
+      this.btnToggleMode.innerHTML = '<span class="mode-label-full">⚡ LIVE DIGITAL TWIN</span><span class="mode-label-short">⚡ Live</span>';
       this.btnToggleMode.style.color = 'var(--cyan-main)';
       this.btnToggleMode.style.borderColor = 'var(--cyan-main)';
       this.elStatusText.textContent = 'MODE: LIVE DIGITAL TWIN (INTERACTIVE C++ ENGINE)';
@@ -1903,7 +1924,7 @@ class SetuDashboardApp {
       this.sim.isLiveEngine = false;
       this.sim.isFallbackDemo = false;
       if (this.btnToggleMode) {
-        this.btnToggleMode.textContent = '📽️ SCENARIO REPLAY';
+        this.btnToggleMode.innerHTML = '<span class="mode-label-full">📽️ SCENARIO REPLAY</span><span class="mode-label-short">📽️ Replay</span>';
         this.btnToggleMode.style.color = '#f59e0b';
         this.btnToggleMode.style.borderColor = '#f59e0b';
       }
