@@ -10,6 +10,7 @@
   },
   "rewrites": [
     { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/sw.js", "destination": "/dashboard/sw.js" },
     { "source": "/dashboard", "destination": "/index.html" },
     { "source": "/dashboard/(.*)", "destination": "/dashboard/$1" },
     { "source": "/styles/(.*)", "destination": "/dashboard/styles/$1" },
@@ -73,6 +74,13 @@
       "source": "/dashboard/(src|components|styles)/(.*)",
       "headers": [
         { "key": "Cache-Control", "value": "no-cache" }
+      ]
+    },
+    {
+      "source": "/(dashboard/)?sw.js",
+      "headers": [
+        { "key": "Cache-Control", "value": "no-cache" },
+        { "key": "Service-Worker-Allowed", "value": "/" }
       ]
     }
   ]
