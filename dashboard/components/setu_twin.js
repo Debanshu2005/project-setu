@@ -1,4 +1,5 @@
 import { LossWaterfallComponent } from './loss_waterfall.js';
+import { getWebGLQualityTier, disposeThreeObject } from '../src/webgl_tier.js';
 // Project Setu: Setu Twin 3D Navigable World Visualizer
 // Provides a real WebGL 3D environment for disaster simulation inspection via Three.js.
 // Renders physical 3D disaster terrain (collapsed floor slabs, broken walls, rubble mounds, subterranean levels),
@@ -43,6 +44,8 @@ export class SetuTwin3DViewer {
     this.isWebGL = false;
     this.animId = null;
     this.isActive = true;
+    this.qualityTier = null;
+    this.labelTextureCache = new Map();
     this._renderScheduled = false;
     this._boundRender = null;
     this._onVisibilityChange = null;
@@ -102,9 +105,10 @@ export class SetuTwin3DViewer {
     this.isDragging2D = false;
     this.lastMouseX = 0;
     this.lastMouseY = 0;
+    this._initPromise = null;
 
     if (this.container) {
-      this.init();
+      this._initPromise = this.init();
     }
   }
 
@@ -200,21 +204,45 @@ export class SetuTwin3DViewer {
     this.bindKeyboard();
     this.bindRaycasting();
     this.startRenderLoop();
+
+    if (this.isWebGL && this.T) {
+      if (this.nodes.size > 0) {
+        this.syncNodeMeshes();
+        this.updateBoundaryOutline();
+      }
+      if (this.obstacles.length > 0) {
+        this.syncObstacleMeshes();
+      }
+      if (this.environment) {
+        this.syncEnvironmentMeshes();
+      }
+      if (this.links.length > 0) {
+        this.syncLinkObjects();
+      }
+      this.requestRender();
+    }
   }
 
   initThree(t, oc) {
     const width = (this.mountPoint && this.mountPoint.clientWidth) || 800;
     const height = (this.mountPoint && this.mountPoint.clientHeight) || 500;
 
+    this.qualityTier = getWebGLQualityTier();
+
     this.renderer = new t.WebGLRenderer({
-      antialias: true,
+      antialias: this.qualityTier.antialias,
       alpha: false,
-      powerPreference: 'high-performance'
+      powerPreference: this.qualityTier.isMobile ? 'low-power' : 'high-performance'
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2));
-    this.renderer.shadowMap.enabled = true;
-    this.renderer.shadowMap.type = t.PCFSoftShadowMap;
+    const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.qualityTier.dprCap);
+    this.renderer.setPixelRatio(dpr);
+    if (this.qualityTier.shadows) {
+      this.renderer.shadowMap.enabled = true;
+      this.renderer.shadowMap.type = this.qualityTier.shadowType === 'pcf' ? t.PCFSoftShadowMap : t.BasicShadowMap;
+    } else {
+      this.renderer.shadowMap.enabled = false;
+    }
     this.renderer.setClearColor(0x0c1527, 1);
     this.mountPoint.appendChild(this.renderer.domElement);
 
@@ -566,6 +594,8 @@ export class SetuTwin3DViewer {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.qualityTier ? this.qualityTier.dprCap : 2.0);
+    this.renderer.setPixelRatio(dpr);
     this.requestRender();
   }
 
@@ -834,6 +864,7 @@ export class SetuTwin3DViewer {
     if (!this.scene || !this.T) return;
     const t = this.T;
     if (this.boundaryOutline) {
+      disposeThreeObject(this.boundaryOutline);
       this.scene.remove(this.boundaryOutline);
       this.boundaryOutline = null;
     }
@@ -868,6 +899,7 @@ export class SetuTwin3DViewer {
 
     for (const [id, meshGroup] of this.nodeMeshes.entries()) {
       if (!this.nodes.has(id)) {
+        disposeThreeObject(meshGroup);
         this.scene.remove(meshGroup);
         this.nodeMeshes.delete(id);
       }
@@ -875,6 +907,12 @@ export class SetuTwin3DViewer {
 
     for (const [id, node] of this.nodes.entries()) {
       let group = this.nodeMeshes.get(id);
+      if (group && group.userData && group.userData.role !== node.role) {
+        disposeThreeObject(group);
+        this.scene.remove(group);
+        group = null;
+        this.nodeMeshes.delete(id);
+      }
       if (!group) {
         group = this.createNodeMesh(node, t);
         this.scene.add(group);
@@ -1161,76 +1199,86 @@ export class SetuTwin3DViewer {
     const hexStr = `#${colorHex.toString(16).padStart(6, '0')}`;
 
     // 1. Compact Texture (Role color dot + Node ID, shown at distance)
-    const compactCanvas = document.createElement('canvas');
-    compactCanvas.width = 120;
-    compactCanvas.height = 48;
-    const cctx = compactCanvas.getContext('2d');
-    cctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-    cctx.strokeStyle = hexStr;
-    cctx.lineWidth = 3;
-    const cr = 14, cx = 2, cy = 2, cw = 116, ch = 44;
-    cctx.beginPath();
-    cctx.moveTo(cx + cr, cy);
-    cctx.lineTo(cx + cw - cr, cy);
-    cctx.quadraticCurveTo(cx + cw, cy, cx + cw, cy + cr);
-    cctx.lineTo(cx + cw, cy + ch - cr);
-    cctx.quadraticCurveTo(cx + cw, cy + ch, cx + cw - cr, cy + ch);
-    cctx.lineTo(cx + cr, cy + ch);
-    cctx.quadraticCurveTo(cx, cy + ch, cx, cy + ch - cr);
-    cctx.lineTo(cx, cy + cr);
-    cctx.quadraticCurveTo(cx, cy, cx + cr, cy);
-    cctx.closePath();
-    cctx.fill();
-    cctx.stroke();
-    // Compact dot
-    cctx.beginPath();
-    cctx.arc(20, 24, 7, 0, Math.PI * 2);
-    cctx.fillStyle = hexStr;
-    cctx.fill();
-    // Compact text
-    cctx.font = 'bold 22px monospace';
-    cctx.fillStyle = '#ffffff';
-    cctx.textBaseline = 'middle';
     const compactText = node.role === 'hub' ? 'H0' : String(node.id);
-    cctx.fillText(compactText, 36, 24);
-    const compactTex = new t.CanvasTexture(compactCanvas);
-    compactTex.minFilter = t.LinearFilter;
+    const compactKey = `c_${node.role}_${compactText}_${hexStr}`;
+    let compactTex = this.labelTextureCache.get(compactKey);
+    if (!compactTex) {
+      const compactCanvas = document.createElement('canvas');
+      compactCanvas.width = 120;
+      compactCanvas.height = 48;
+      const cctx = compactCanvas.getContext('2d');
+      cctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      cctx.strokeStyle = hexStr;
+      cctx.lineWidth = 3;
+      const cr = 14, cx = 2, cy = 2, cw = 116, ch = 44;
+      cctx.beginPath();
+      cctx.moveTo(cx + cr, cy);
+      cctx.lineTo(cx + cw - cr, cy);
+      cctx.quadraticCurveTo(cx + cw, cy, cx + cw, cy + cr);
+      cctx.lineTo(cx + cw, cy + ch - cr);
+      cctx.quadraticCurveTo(cx + cw, cy + ch, cx + cw - cr, cy + ch);
+      cctx.lineTo(cx + cr, cy + ch);
+      cctx.quadraticCurveTo(cx, cy + ch, cx, cy + ch - cr);
+      cctx.lineTo(cx, cy + cr);
+      cctx.quadraticCurveTo(cx, cy, cx + cr, cy);
+      cctx.closePath();
+      cctx.fill();
+      cctx.stroke();
+      // Compact dot
+      cctx.beginPath();
+      cctx.arc(20, 24, 7, 0, Math.PI * 2);
+      cctx.fillStyle = hexStr;
+      cctx.fill();
+      // Compact text
+      cctx.font = 'bold 22px monospace';
+      cctx.fillStyle = '#ffffff';
+      cctx.textBaseline = 'middle';
+      cctx.fillText(compactText, 36, 24);
+      compactTex = new t.CanvasTexture(compactCanvas);
+      compactTex.minFilter = t.LinearFilter;
+      this.labelTextureCache.set(compactKey, compactTex);
+    }
 
     // 2. Full Texture (Node ID + Role description, shown on hover/selection)
-    const fullCanvas = document.createElement('canvas');
-    fullCanvas.width = 360;
-    fullCanvas.height = 48;
-    const fctx = fullCanvas.getContext('2d');
-    fctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
-    fctx.strokeStyle = hexStr;
-    fctx.lineWidth = 3;
-    const fr = 14, fx = 2, fy = 2, fw = 356, fh = 44;
-    fctx.beginPath();
-    fctx.moveTo(fx + fr, fy);
-    fctx.lineTo(fx + fw - fr, fy);
-    fctx.quadraticCurveTo(fx + fw, fy, fx + fw, fy + fr);
-    fctx.lineTo(fx + fw, fy + fh - fr);
-    fctx.quadraticCurveTo(fx + fw, fy + fh, fx + fw - fr, fy + fh);
-    fctx.lineTo(fx + fr, fy + fh);
-    fctx.quadraticCurveTo(fx, fy + fh, fx, fy + fh - fr);
-    fctx.lineTo(fx, fy + fr);
-    fctx.quadraticCurveTo(fx, fy, fx + fr, fy);
-    fctx.closePath();
-    fctx.fill();
-    fctx.stroke();
-    // Full dot
-    fctx.beginPath();
-    fctx.arc(20, 24, 7, 0, Math.PI * 2);
-    fctx.fillStyle = hexStr;
-    fctx.fill();
-    // Full text
-    fctx.font = 'bold 18px sans-serif';
-    fctx.fillStyle = '#ffffff';
-    fctx.textBaseline = 'middle';
     const fullText = node.role === 'hub' ? 'RESCUE HUB 0' : `NODE ${node.id} (${role})`;
-    fctx.fillText(fullText, 36, 24);
-    const fullTex = new t.CanvasTexture(fullCanvas);
-    fullTex.minFilter = t.LinearFilter;
+    const fullKey = `f_${node.role}_${fullText}_${hexStr}`;
+    let fullTex = this.labelTextureCache.get(fullKey);
+    if (!fullTex) {
+      const fullCanvas = document.createElement('canvas');
+      fullCanvas.width = 360;
+      fullCanvas.height = 48;
+      const fctx = fullCanvas.getContext('2d');
+      fctx.fillStyle = 'rgba(15, 23, 42, 0.94)';
+      fctx.strokeStyle = hexStr;
+      fctx.lineWidth = 3;
+      const fr = 14, fx = 2, fy = 2, fw = 356, fh = 44;
+      fctx.beginPath();
+      fctx.moveTo(fx + fr, fy);
+      fctx.lineTo(fx + fw - fr, fy);
+      fctx.quadraticCurveTo(fx + fw, fy, fx + fw, fy + fr);
+      fctx.lineTo(fx + fw, fy + fh - fr);
+      fctx.quadraticCurveTo(fx + fw, fy + fh, fx + fw - fr, fy + fh);
+      fctx.lineTo(fx + fr, fy + fh);
+      fctx.quadraticCurveTo(fx, fy + fh, fx, fy + fh - fr);
+      fctx.lineTo(fx, fy + fr);
+      fctx.quadraticCurveTo(fx, fy, fx + fr, fy);
+      fctx.closePath();
+      fctx.fill();
+      fctx.stroke();
+      // Full dot
+      fctx.beginPath();
+      fctx.arc(20, 24, 7, 0, Math.PI * 2);
+      fctx.fillStyle = hexStr;
+      fctx.fill();
+      // Full text
+      fctx.font = 'bold 18px sans-serif';
+      fctx.fillStyle = '#ffffff';
+      fctx.textBaseline = 'middle';
+      fctx.fillText(fullText, 36, 24);
+      fullTex = new t.CanvasTexture(fullCanvas);
+      fullTex.minFilter = t.LinearFilter;
+      this.labelTextureCache.set(fullKey, fullTex);
+    }
 
     const spriteMat = new t.SpriteMaterial({ map: compactTex, depthTest: false, transparent: true });
     const sprite = new t.Sprite(spriteMat);
@@ -1410,6 +1458,7 @@ export class SetuTwin3DViewer {
     const t = this.T;
 
     for (const mesh of this.obstacleMeshes) {
+      disposeThreeObject(mesh);
       this.scene.remove(mesh);
     }
     this.obstacleMeshes = [];
@@ -1465,6 +1514,7 @@ export class SetuTwin3DViewer {
     const t = this.T;
 
     for (const m of this.environmentMeshes) {
+      disposeThreeObject(m);
       this.scene.remove(m);
     }
     this.environmentMeshes = [];
@@ -2062,6 +2112,7 @@ export class SetuTwin3DViewer {
     const t = this.T;
 
     for (const obj of this.linkObjects) {
+      disposeThreeObject(obj);
       this.scene.remove(obj);
     }
     this.linkObjects = [];
@@ -2492,6 +2543,83 @@ export class SetuTwin3DViewer {
     }
   }
 
+  clearScene() {
+    if (!this.scene) return;
+    for (const [id, meshGroup] of this.nodeMeshes.entries()) {
+      disposeThreeObject(meshGroup);
+      this.scene.remove(meshGroup);
+    }
+    this.nodeMeshes.clear();
+
+    for (const mesh of this.obstacleMeshes) {
+      disposeThreeObject(mesh);
+      this.scene.remove(mesh);
+    }
+    this.obstacleMeshes = [];
+
+    for (const obj of this.linkObjects) {
+      disposeThreeObject(obj);
+      this.scene.remove(obj);
+    }
+    this.linkObjects = [];
+
+    if (this.waterMesh) {
+      disposeThreeObject(this.waterMesh);
+      this.scene.remove(this.waterMesh);
+      this.waterMesh = null;
+    }
+
+    if (this.subterraneanCutaway) {
+      disposeThreeObject(this.subterraneanCutaway);
+      this.scene.remove(this.subterraneanCutaway);
+      this.subterraneanCutaway = null;
+    }
+
+    if (this.heatmapMesh) {
+      disposeThreeObject(this.heatmapMesh);
+      this.scene.remove(this.heatmapMesh);
+      this.heatmapMesh = null;
+    }
+
+    if (this.boundaryOutline) {
+      disposeThreeObject(this.boundaryOutline);
+      this.scene.remove(this.boundaryOutline);
+      this.boundaryOutline = null;
+    }
+
+    for (const p of this.packetPulses) {
+      if (p.mesh) {
+        disposeThreeObject(p.mesh);
+        this.scene.remove(p.mesh);
+      }
+    }
+    this.packetPulses = [];
+
+    for (const f of this.dropFlashes) {
+      if (f.mesh) {
+        disposeThreeObject(f.mesh);
+        this.scene.remove(f.mesh);
+      }
+    }
+    this.dropFlashes = [];
+
+    for (const r of this.airtimeRings) {
+      if (r.mesh) {
+        disposeThreeObject(r.mesh);
+        this.scene.remove(r.mesh);
+      }
+    }
+    this.airtimeRings = [];
+
+    for (const h of this.activeHighlights) {
+      if (h.box) {
+        disposeThreeObject(h.box);
+        this.scene.remove(h.box);
+      }
+    }
+    this.activeHighlights = [];
+  }
+
   destroy() {
     this.destroyed = true;
     if (this._observer) {
@@ -2509,6 +2637,13 @@ export class SetuTwin3DViewer {
       this.animId = null;
     }
     this._renderScheduled = false;
+    this.clearScene();
+    for (const tex of this.labelTextureCache.values()) {
+      if (tex && typeof tex.dispose === 'function') {
+        tex.dispose();
+      }
+    }
+    this.labelTextureCache.clear();
     if (this.renderer && typeof this.renderer.dispose === 'function') {
       this.renderer.dispose();
     }
