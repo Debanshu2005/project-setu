@@ -187,7 +187,7 @@
   color: var(--text-muted);
   margin-bottom: 2px;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
 }
 
 .tooltip-row span:last-child {

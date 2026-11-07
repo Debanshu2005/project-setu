@@ -46,8 +46,12 @@
         <span class="status-dot" id="statusDot"></span>
         <span id="statusText">CONNECTING TO SIMULATOR...</span>
       </div>
-      <span class="badge" id="engineBadge" style="font-size: 10px; padding: 2px 7px; border-radius: 3px; font-family: monospace; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #7dd3fc; font-weight: 600;" title="Active Simulation Engine">Engine: Native REST</span>
+      <span class="badge" id="engineBadge" style="font-size: 11px; padding: 2px 7px; border-radius: 3px; font-family: monospace; background: rgba(56, 189, 248, 0.15); border: 1px solid rgba(56, 189, 248, 0.4); color: #7dd3fc; font-weight: 600;" title="Active Simulation Engine">Engine: Native REST</span>
     </div>
+
+    <button class="btn mobile-header-toggle" id="btnMobileHeaderToggle" aria-label="Toggle navigation menu" title="Toggle scenario and actions menu" style="display:none;">
+      <span id="mobileHeaderIcon">☰</span>
+    </button>
 
     <div class="header-actions">
       <!-- Primary Workspace View Switcher -->
@@ -89,7 +93,7 @@
       <div class="header-dropdown" id="dropdownDataExport">
         <button class="btn dropdown-toggle" id="btnExportDropdownToggle" aria-haspopup="true" aria-expanded="false" title="Export metrics, CSV, or upload trace">
           <span>💾 Data</span>
-          <span style="font-size:9px;">▼</span>
+          <span style="font-size:11px;">▼</span>
         </button>
         <div class="header-dropdown-menu" id="menuDataExport" role="menu">
           <button class="dropdown-item" id="btnExportJson" role="menuitem" title="Export simulation metrics to JSON">
@@ -187,8 +191,8 @@
 
             <!-- Selectable Overlays (Phase 5) -->
             <div style="display:flex; align-items:center; gap:4px; background:rgba(11,17,32,0.85); backdrop-filter:blur(8px); padding:3px 8px; border-radius:var(--radius-sm); border:1px solid var(--border-subtle);">
-              <label for="selTopologyOverlay" style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Overlay:</label>
-              <select class="select-input" id="selTopologyOverlay" style="font-size:10px; padding:2px 6px; height:22px;">
+              <label for="selTopologyOverlay" style="font-size:11px; color:var(--text-dim); text-transform:uppercase;">Overlay:</label>
+              <select class="select-input" id="selTopologyOverlay" style="font-size:11px; padding:2px 6px; height:24px;">
                 <option value="none" selected>Default Mesh</option>
                 <option value="link_quality">Link Quality (dBm)</option>
                 <option value="packet_loss">Packet Loss Rate</option>
@@ -202,7 +206,7 @@
           <div class="zoom-tool-group">
             <button class="zoom-btn" id="btnZoomIn" title="Zoom in">+</button>
             <button class="zoom-btn" id="btnZoomOut" title="Zoom out">−</button>
-            <button class="zoom-btn" id="btnZoomFit" title="Fit network to view" style="font-size:10px;">FIT</button>
+            <button class="zoom-btn" id="btnZoomFit" title="Fit network to view" style="font-size:11px;">FIT</button>
           </div>
         </div>
 
@@ -229,7 +233,14 @@
     </section>
 
     <!-- Right Sidebar: Inspector, Timeline & Charts -->
-    <aside class="sidebar-right" aria-label="Inspector and analytics">
+    <aside class="sidebar-right sheet-peek" aria-label="Inspector and analytics">
+      <div class="sheet-handle-bar" id="sheetHandleBar" role="button" tabindex="0" aria-label="Toggle bottom sheet height">
+        <div class="sheet-handle"></div>
+        <div class="sheet-handle-info">
+          <span class="sheet-title" id="sheetTitleLabel">INSPECTOR &amp; TELEMETRY</span>
+          <span class="sheet-snap-indicator" id="sheetSnapIndicator">PEEK ▲</span>
+        </div>
+      </div>
       <nav class="tabs-header">
         <button class="tab-btn active" data-tab="tab-inspector">Inspect</button>
         <button class="tab-btn" data-tab="tab-twin" id="tabBtnTwin" title="Open Setu Wristband Digital Twin and Loss Waterfall">Twin</button>
@@ -263,22 +274,22 @@
             <strong style="font-size:12px; color:#fff; display:flex; align-items:center; gap:6px;">
               <span>🔬</span> Scientific Visualizations
             </strong>
-            <button class="btn" id="btnExpandAnalytics" style="font-size:10px; padding:3px 8px; border-color:#06b6d4; color:#67e8f9; font-weight:700;">
+            <button class="btn" id="btnExpandAnalytics" style="font-size:11px; padding:3px 8px; border-color:#06b6d4; color:#67e8f9; font-weight:700;">
               ⛶ Open Full Workspace
             </button>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">
             Research-grade engineering models: RSSI vs Distance, Latency CDF, Mesh Routing, Collisions, Energy, and GNSS Trajectories.
           </div>
           <div style="display:flex; gap:4px; flex-wrap:wrap;" class="quick-domain-shortcuts">
-            <button class="btn btn-domain-quick" data-domain="radio" style="font-size:9px; padding:2px 6px;">📡 Radio</button>
-            <button class="btn btn-domain-quick" data-domain="delivery" style="font-size:9px; padding:2px 6px;">📦 Delivery</button>
-            <button class="btn btn-domain-quick" data-domain="topology" style="font-size:9px; padding:2px 6px;">🕸️ Routing</button>
-            <button class="btn btn-domain-quick" data-domain="congestion" style="font-size:9px; padding:2px 6px;">💥 Collisions</button>
-            <button class="btn btn-domain-quick" data-domain="energy" style="font-size:9px; padding:2px 6px;">🔋 Energy</button>
-            <button class="btn btn-domain-quick" data-domain="positioning" style="font-size:9px; padding:2px 6px;">📍 Position</button>
-            <button class="btn btn-domain-quick" data-domain="sos_ack" style="font-size:9px; padding:2px 6px;">🚨 SOS/ACK</button>
-            <button class="btn btn-domain-quick" data-domain="comparison" style="font-size:9px; padding:2px 6px;">⚖️ Compare</button>
+            <button class="btn btn-domain-quick" data-domain="radio" style="font-size:11px; padding:4px 8px;">📡 Radio</button>
+            <button class="btn btn-domain-quick" data-domain="delivery" style="font-size:11px; padding:4px 8px;">📦 Delivery</button>
+            <button class="btn btn-domain-quick" data-domain="topology" style="font-size:11px; padding:4px 8px;">🕸️ Routing</button>
+            <button class="btn btn-domain-quick" data-domain="congestion" style="font-size:11px; padding:4px 8px;">💥 Collisions</button>
+            <button class="btn btn-domain-quick" data-domain="energy" style="font-size:11px; padding:4px 8px;">🔋 Energy</button>
+            <button class="btn btn-domain-quick" data-domain="positioning" style="font-size:11px; padding:4px 8px;">📍 Position</button>
+            <button class="btn btn-domain-quick" data-domain="sos_ack" style="font-size:11px; padding:4px 8px;">🚨 SOS/ACK</button>
+            <button class="btn btn-domain-quick" data-domain="comparison" style="font-size:11px; padding:4px 8px;">⚖️ Compare</button>
           </div>
         </div>
         <div id="chartsContainer"></div>
@@ -290,22 +301,22 @@
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
               <strong style="font-size:12px; color:#fff;">Network Analytics Engine</strong>
-              <button class="btn" id="btnLaunchScientificFull" style="font-size:10px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc; font-weight:700;">
+              <button class="btn" id="btnLaunchScientificFull" style="font-size:11px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc; font-weight:700;">
                 ⛶ Expand Workspace
               </button>
             </div>
-            <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+            <div style="font-size:12px; color:var(--text-dim); margin-bottom:8px;">
               Select an engineering domain below to analyze simulation measurements against theoretical wireless models:
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
-              <button class="btn btn-sidebar-domain" data-domain="radio" style="font-size:10px; text-align:left; padding:5px 8px;">📡 Radio & Path Loss</button>
-              <button class="btn btn-sidebar-domain" data-domain="delivery" style="font-size:10px; text-align:left; padding:5px 8px;">📦 Latency CDF & PDR</button>
-              <button class="btn btn-sidebar-domain" data-domain="topology" style="font-size:10px; text-align:left; padding:5px 8px;">🕸️ Multi-Hop Routing</button>
-              <button class="btn btn-sidebar-domain" data-domain="congestion" style="font-size:10px; text-align:left; padding:5px 8px;">💥 Channel Impairments</button>
-              <button class="btn btn-sidebar-domain" data-domain="energy" style="font-size:10px; text-align:left; padding:5px 8px;">🔋 Battery Drain (mAh)</button>
-              <button class="btn btn-sidebar-domain" data-domain="positioning" style="font-size:10px; text-align:left; padding:5px 8px;">📍 GNSS Trajectory & Error</button>
-              <button class="btn btn-sidebar-domain" data-domain="sos_ack" style="font-size:10px; text-align:left; padding:5px 8px;">🚨 Two-Way SOS/ACK</button>
-              <button class="btn btn-sidebar-domain" data-domain="comparison" style="font-size:10px; text-align:left; padding:5px 8px;">⚖️ Multi-Run Compare</button>
+              <button class="btn btn-sidebar-domain" data-domain="radio" style="font-size:11px; text-align:left; padding:5px 8px;">📡 Radio & Path Loss</button>
+              <button class="btn btn-sidebar-domain" data-domain="delivery" style="font-size:11px; text-align:left; padding:5px 8px;">📦 Latency CDF & PDR</button>
+              <button class="btn btn-sidebar-domain" data-domain="topology" style="font-size:11px; text-align:left; padding:5px 8px;">🕸️ Multi-Hop Routing</button>
+              <button class="btn btn-sidebar-domain" data-domain="congestion" style="font-size:11px; text-align:left; padding:5px 8px;">💥 Channel Impairments</button>
+              <button class="btn btn-sidebar-domain" data-domain="energy" style="font-size:11px; text-align:left; padding:5px 8px;">🔋 Battery Drain (mAh)</button>
+              <button class="btn btn-sidebar-domain" data-domain="positioning" style="font-size:11px; text-align:left; padding:5px 8px;">📍 GNSS Trajectory & Error</button>
+              <button class="btn btn-sidebar-domain" data-domain="sos_ack" style="font-size:11px; text-align:left; padding:5px 8px;">🚨 Two-Way SOS/ACK</button>
+              <button class="btn btn-sidebar-domain" data-domain="comparison" style="font-size:11px; text-align:left; padding:5px 8px;">⚖️ Multi-Run Compare</button>
             </div>
           </div>
 
@@ -313,11 +324,11 @@
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
               <span style="font-weight:700; font-size:11px; color:#fff;" id="lblSidebarQuickChart">Quick Plot: RSSI vs Distance</span>
-              <select class="select-input" id="sidebarDomainSelector" style="font-size:9px; padding:1px 4px; background:rgba(0,0,0,0.4); border:1px solid #334155; color:#cbd5e1; border-radius:3px;">
+              <select class="select-input" id="sidebarDomainSelector" style="font-size:11px; padding:1px 4px; background:rgba(0,0,0,0.4); border:1px solid #334155; color:#cbd5e1; border-radius:3px;">
                 <option value="radio_propagation">RSSI vs Distance</option>
                 <option value="packet_delivery">Latency CDF</option>
               </select>
-              <span class="badge" id="badgeSidebarMetric" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:9px;">
+              <span class="badge" id="badgeSidebarMetric" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:11px;">
                 Log-Distance Model
               </span>
             </div>
@@ -356,7 +367,7 @@
       </div>
 
       <div class="speed-selector">
-        <span style="font-size:10px; color:var(--text-dim); margin-right:4px;">SPEED:</span>
+        <span style="font-size:11px; color:var(--text-dim); margin-right:4px;">SPEED:</span>
         <button class="speed-btn" data-speed="0.5">0.5x</button>
         <button class="speed-btn active" data-speed="1.0">1x</button>
         <button class="speed-btn" data-speed="2.0">2x</button>
@@ -365,6 +376,34 @@
       </div>
     </footer>
   </main>
+
+  <!-- Mobile Persistent Thumb Bar -->
+  <nav class="mobile-thumb-bar" id="mobileThumbBar" aria-label="Mobile primary actions">
+    <button class="thumb-btn" id="mobileBtnPlay" title="Play or pause simulation" aria-label="Play or pause">
+      <span class="thumb-icon" id="mobilePlayIcon">▶</span>
+      <span class="thumb-label">Play</span>
+    </button>
+    <button class="thumb-btn active" id="mobileBtnTopo" title="Topology map view" aria-label="Topology view">
+      <span class="thumb-icon">🗺️</span>
+      <span class="thumb-label">Topo</span>
+    </button>
+    <button class="thumb-btn" id="mobileBtnTwin" title="Setu Twin 3D view" aria-label="Setu Twin 3D view">
+      <span class="thumb-icon">🌐</span>
+      <span class="thumb-label">Twin</span>
+    </button>
+    <button class="thumb-btn" id="mobileBtnAnalytics" title="Scientific analytics view" aria-label="Scientific analytics view">
+      <span class="thumb-icon">🔬</span>
+      <span class="thumb-label">Data</span>
+    </button>
+    <button class="thumb-btn thumb-btn-sos" id="mobileBtnSos" title="Trigger SOS emergency" aria-label="Trigger SOS emergency">
+      <span class="thumb-icon">🚨</span>
+      <span class="thumb-label">SOS</span>
+    </button>
+    <button class="thumb-btn" id="mobileBtnSheet" title="Toggle inspector bottom sheet" aria-label="Toggle bottom sheet">
+      <span class="thumb-icon">📊</span>
+      <span class="thumb-label" id="mobileSheetLabel">Sheet</span>
+    </button>
+  </nav>
 
   <!-- Modal: Run Custom Native Simulation -->
   <div class="modal-backdrop" id="modalRunSim" role="dialog" aria-modal="true" aria-labelledby="modalSimTitle">
@@ -419,7 +458,7 @@
           <div class="form-group" style="grid-column: span 2;">
             <label class="form-label"><span>Path Loss Exponent:</span></label>
             <input type="number" class="form-input" id="simPathExp" value="3.5" step="0.1" min="2.0" max="5.0" />
-            <small style="color:var(--text-dim); font-size:10px;">2.0 = Free space, 3.5 = Urban rubble, 4.5 = Collapsed subterranean concrete.</small>
+            <small style="color:var(--text-dim); font-size:11px;">2.0 = Free space, 3.5 = Urban rubble, 4.5 = Collapsed subterranean concrete.</small>
           </div>
           <div class="form-group">
             <label class="form-label"><span>Simulation Zone Size (Meters):</span></label>
@@ -446,7 +485,7 @@
         <button class="modal-close-btn" id="btnCloseTriggerAllModal">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
           Broadcasts simultaneous emergency SOS triggers across every eligible online survivor node in the mesh network to test LoRa congestion, packet collision capture, relay queue pressure, and hub acknowledgment delivery.
         </p>
 
@@ -489,7 +528,7 @@
         <button class="modal-close-btn" id="btnCloseBackendModal" aria-label="Close backend settings modal">&times;</button>
       </div>
       <div class="modal-body">
-        <p style="font-size: 11px; color: var(--text-muted); margin-bottom: 12px;">
+        <p style="font-size: 12px; color: var(--text-muted); margin-bottom: 12px;">
           Project Setu executes the authoritative C++ firmware core (<code style="color:var(--cyan-main);">setu::Node</code>, FreeRTOS queue tasks, SX1262 ISRs) inside a persistent simulation engine. Connect this dashboard to your persistent backend daemon on Render or localhost.
         </p>
 
@@ -497,19 +536,19 @@
           <div>
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 4px;">
               <label class="form-label" style="margin-bottom:0;" for="txtBackendUrl"><span>Backend Target URL (REST / SSE):</span></label>
-              <span id="lblBackendSource" style="font-size: 10px; color: #38bdf8; font-weight: 600;">Source: Loading...</span>
+              <span id="lblBackendSource" style="font-size: 11px; color: #38bdf8; font-weight: 600;">Source: Loading...</span>
             </div>
             <input type="text" class="form-input" id="txtBackendUrl" placeholder="https://project-setu-backend.onrender.com" autocomplete="off" spellcheck="false" />
-            <div style="font-size: 10px; color: #94a3b8; margin-top: 4px;">Primary setting: Vercel SETU_BACKEND_URL. Manual entries take precedence until reset.</div>
+            <div style="font-size: 11px; color: #94a3b8; margin-top: 4px;">Primary setting: Vercel SETU_BACKEND_URL. Manual entries take precedence until reset.</div>
           </div>
 
-          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); font-size: 11px;">
+          <div style="background: rgba(15, 23, 42, 0.6); padding: 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.08); font-size: 12px;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
               <span style="font-weight: 700; color: #38bdf8;">Engine Connection Diagnostics</span>
-              <span id="lblBackendCommitBadge" style="font-size: 10px; color: #94a3b8; font-family: var(--font-mono);">Backend: Pending</span>
+              <span id="lblBackendCommitBadge" style="font-size: 11px; color: #94a3b8; font-family: var(--font-mono);">Backend: Pending</span>
             </div>
-            <div id="lblBackendEngineStatus" style="color: #94a3b8; font-family: var(--font-mono); font-size: 11px; word-break: break-all;">Awaiting connection test...</div>
-            <div id="lblFrontendVersionStatus" style="color: #64748b; font-family: var(--font-mono); font-size: 10px; margin-top: 4px;">Frontend: checking...</div>
+            <div id="lblBackendEngineStatus" style="color: #94a3b8; font-family: var(--font-mono); font-size: 12px; word-break: break-all;">Awaiting connection test...</div>
+            <div id="lblFrontendVersionStatus" style="color: #64748b; font-family: var(--font-mono); font-size: 11px; margin-top: 4px;">Frontend: checking...</div>
           </div>
         </div>
       </div>

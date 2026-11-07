@@ -156,8 +156,12 @@ async function runTests() {
     await page.waitForTimeout(600);
 
     // Switch to Setu Twin 3D View
-    const btnTwin = page.locator('#btnModeTwin');
-    await btnTwin.click();
+    const mobileTwin = page.locator('#mobileBtnTwin');
+    if (await mobileTwin.isVisible()) {
+      await mobileTwin.click();
+    } else {
+      await page.locator('#btnModeTwin').click();
+    }
     await page.waitForSelector('#setuTwinMount canvas', { timeout: 15000 });
     await page.waitForTimeout(1000);
 
@@ -189,6 +193,12 @@ async function runTests() {
     // Part 4: 10x Scenario Switch Stability and Memory Leak Verification
     // -------------------------------------------------------------------------
     console.log('\n[4/4] Executing 10 Consecutive Scenario Switches to Verify Disposal...');
+
+    // On mobile viewports, ensure header drawer is open so scenario selector is interactable
+    const btnDrawer = page.locator('#btnMobileHeaderToggle');
+    if (await btnDrawer.isVisible() && !(await page.locator('#scenarioSelect').isVisible())) {
+      await btnDrawer.click();
+    }
 
     // Warm up one cycle so all unique node textures and shader programs are compiled
     await page.selectOption('#scenarioSelect', 'gps_denied_rescue');

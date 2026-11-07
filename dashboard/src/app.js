@@ -885,6 +885,8 @@ class SetuDashboardApp {
         }
       });
     }
+
+    this.initMobileControls();
   }
 
   initBackendModal() {
@@ -1063,6 +1065,135 @@ class SetuDashboardApp {
     if (tabId === 'tab-scientific') {
       this.renderSidebarQuickChart();
     }
+    if (typeof window !== 'undefined' && window.innerWidth <= 768 && this.sheetSnapState === 'peek') {
+      if (typeof this.setSheetSnap === 'function') {
+        this.setSheetSnap('half');
+      }
+    }
+  }
+
+  initMobileControls() {
+    this.sheetSnapState = 'peek';
+    const sidebarRight = document.querySelector('.sidebar-right');
+    const sheetHandle = document.getElementById('sheetHandleBar');
+    const snapIndicator = document.getElementById('sheetSnapIndicator');
+    const mobileSheetLabel = document.getElementById('mobileSheetLabel');
+    const btnMobileHeaderToggle = document.getElementById('btnMobileHeaderToggle');
+    const headerActions = document.querySelector('.header-actions');
+
+    this.setSheetSnap = (state) => {
+      this.sheetSnapState = state;
+      if (sidebarRight) {
+        sidebarRight.classList.remove('sheet-peek', 'sheet-half', 'sheet-full');
+        sidebarRight.classList.add(`sheet-${state}`);
+      }
+      if (snapIndicator) {
+        snapIndicator.textContent = state === 'peek' ? 'PEEK ▲' : (state === 'half' ? 'HALF ▲' : 'FULL ▼');
+      }
+      if (mobileSheetLabel) {
+        mobileSheetLabel.textContent = state === 'peek' ? 'Sheet' : (state === 'half' ? 'Half' : 'Full');
+      }
+      if (this.topo) this.topo.resize();
+      if (this.setuTwin) this.setuTwin.resize();
+    };
+
+    const cycleSheetSnap = () => {
+      if (this.sheetSnapState === 'peek') {
+        this.setSheetSnap('half');
+      } else if (this.sheetSnapState === 'half') {
+        this.setSheetSnap('full');
+      } else {
+        this.setSheetSnap('peek');
+      }
+    };
+
+    if (sheetHandle) {
+      sheetHandle.addEventListener('click', () => cycleSheetSnap());
+
+      let startY = 0;
+      sheetHandle.addEventListener('touchstart', (e) => {
+        if (e.touches.length > 0) startY = e.touches[0].clientY;
+      }, { passive: true });
+
+      sheetHandle.addEventListener('touchend', (e) => {
+        if (e.changedTouches.length > 0) {
+          const deltaY = e.changedTouches[0].clientY - startY;
+          if (deltaY < -30) {
+            if (this.sheetSnapState === 'peek') this.setSheetSnap('half');
+            else if (this.sheetSnapState === 'half') this.setSheetSnap('full');
+          } else if (deltaY > 30) {
+            if (this.sheetSnapState === 'full') this.setSheetSnap('half');
+            else if (this.sheetSnapState === 'half') this.setSheetSnap('peek');
+          }
+        }
+      }, { passive: true });
+    }
+
+    if (btnMobileHeaderToggle && headerActions) {
+      btnMobileHeaderToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        headerActions.classList.toggle('show-mobile-drawer');
+      });
+
+      document.addEventListener('click', (e) => {
+        if (headerActions.classList.contains('show-mobile-drawer') && !headerActions.contains(e.target) && e.target !== btnMobileHeaderToggle) {
+          headerActions.classList.remove('show-mobile-drawer');
+        }
+      });
+    }
+
+    const mPlay = document.getElementById('mobileBtnPlay');
+    const mPlayIcon = document.getElementById('mobilePlayIcon');
+    const mTopo = document.getElementById('mobileBtnTopo');
+    const mTwin = document.getElementById('mobileBtnTwin');
+    const mAnalytics = document.getElementById('mobileBtnAnalytics');
+    const mSos = document.getElementById('mobileBtnSos');
+    const mSheet = document.getElementById('mobileBtnSheet');
+
+    if (mPlay) {
+      mPlay.addEventListener('click', () => {
+        if (this.sim) {
+          if (this.sim.playing) {
+            this.sim.pause();
+            if (mPlayIcon) mPlayIcon.textContent = '▶';
+          } else {
+            this.sim.play();
+            if (mPlayIcon) mPlayIcon.textContent = '⏸';
+          }
+        }
+      });
+    }
+
+    if (mTopo) {
+      mTopo.addEventListener('click', () => this.setViewMode('topology'));
+    }
+    if (mTwin) {
+      mTwin.addEventListener('click', () => this.setViewMode('twin'));
+    }
+    if (mAnalytics) {
+      mAnalytics.addEventListener('click', () => this.setViewMode('analytics'));
+    }
+    if (mSos) {
+      mSos.addEventListener('click', () => {
+        if (this.btnOpenTriggerAllModal) this.btnOpenTriggerAllModal.click();
+      });
+    }
+    if (mSheet) {
+      mSheet.addEventListener('click', () => cycleSheetSnap());
+    }
+
+    if (this.sim) {
+      const origPlay = this.sim.play.bind(this.sim);
+      const origPause = this.sim.pause.bind(this.sim);
+      this.sim.play = () => {
+        origPlay();
+        if (mPlayIcon) mPlayIcon.textContent = '⏸';
+      };
+      this.sim.pause = () => {
+        origPause();
+        if (mPlayIcon) mPlayIcon.textContent = '▶';
+      };
+    }
   }
 
   setViewMode(mode) {
@@ -1089,6 +1220,13 @@ class SetuDashboardApp {
       this.btnModeAnalytics.style.background = isAnalytics ? 'var(--bg-surface-elevated)' : 'transparent';
       this.btnModeAnalytics.style.color = isAnalytics ? '#38bdf8' : 'var(--text-muted)';
     }
+
+    const mTopo = document.getElementById('mobileBtnTopo');
+    const mTwin = document.getElementById('mobileBtnTwin');
+    const mAnalytics = document.getElementById('mobileBtnAnalytics');
+    if (mTopo) mTopo.classList.toggle('active', isTopo);
+    if (mTwin) mTwin.classList.toggle('active', isTwin);
+    if (mAnalytics) mAnalytics.classList.toggle('active', isAnalytics);
 
     const mainLayout = document.querySelector('.main-layout');
     if (mainLayout) {

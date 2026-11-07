@@ -114,34 +114,34 @@ export class InspectorComponent {
             <span>Individual SOS Triggers (Node ${n.id})</span>
           </div>
           <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-            <button class="btn btn-sos-trigger" data-kind="short" style="font-size: 10px; padding: 6px 4px; background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5;">
+            <button class="btn btn-sos-trigger" data-kind="short" style="font-size: 11px; padding: 6px 4px; background: rgba(239, 68, 68, 0.2); border: 1px solid #ef4444; color: #fca5a5;">
               🚨 Short Press (General)
             </button>
-            <button class="btn btn-sos-trigger" data-kind="double" style="font-size: 10px; padding: 6px 4px; background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #fcd34d;">
+            <button class="btn btn-sos-trigger" data-kind="double" style="font-size: 11px; padding: 6px 4px; background: rgba(245, 158, 11, 0.2); border: 1px solid #f59e0b; color: #fcd34d;">
               🩺 Double Press (Medical)
             </button>
-            <button class="btn btn-sos-trigger" data-kind="long" style="font-size: 10px; padding: 6px 4px; background: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; color: #d8b4fe;">
+            <button class="btn btn-sos-trigger" data-kind="long" style="font-size: 11px; padding: 6px 4px; background: rgba(168, 85, 247, 0.2); border: 1px solid #a855f7; color: #d8b4fe;">
               🏚️ Long Press (Trapped)
             </button>
-            <button class="btn btn-sos-trigger" data-kind="voice" style="font-size: 10px; padding: 6px 4px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #bae6fd;">
+            <button class="btn btn-sos-trigger" data-kind="voice" style="font-size: 11px; padding: 6px 4px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #bae6fd;">
               🎙️ Wake-Word ("Setu")
             </button>
-            <button class="btn btn-sos-trigger" data-kind="voice-medical" style="font-size: 10px; padding: 6px 4px; background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #a7f3d0;">
+            <button class="btn btn-sos-trigger" data-kind="voice-medical" style="font-size: 11px; padding: 6px 4px; background: rgba(16, 185, 129, 0.2); border: 1px solid #10b981; color: #a7f3d0;">
               🗣️ Voice: Medical
             </button>
-            <button class="btn btn-sos-trigger" data-kind="voice-trapped" style="font-size: 10px; padding: 6px 4px; background: rgba(236, 72, 153, 0.2); border: 1px solid #ec4899; color: #fbcfe8;">
+            <button class="btn btn-sos-trigger" data-kind="voice-trapped" style="font-size: 11px; padding: 6px 4px; background: rgba(236, 72, 153, 0.2); border: 1px solid #ec4899; color: #fbcfe8;">
               🗣️ Voice: Trapped
             </button>
           </div>
 
-          <div class="wire-header" style="color: #94a3b8; font-size: 10px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
+          <div class="wire-header" style="color: #94a3b8; font-size: 11px; margin-top: 8px; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 6px;">
             <span>Hardware Telemetry & Fault Controls</span>
           </div>
 
           <div style="display: flex; flex-direction: column; gap: 6px; font-size: 11px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Node Power State:</span>
-              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
+              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 11px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
                 ${n.online ? 'Kill Node (Offline)' : 'Restore Node (Online)'}
               </button>
             </div>
@@ -150,26 +150,26 @@ export class InspectorComponent {
               <span>Battery:</span>
               <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
               <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
-              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>
+              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 11px;">Set</button>
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>GNSS Satellite Receiver:</span>
-              <button id="btnToggleGnss" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.gnss_on ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}; border: 1px solid ${n.gnss_on ? '#10b981' : '#ef4444'}; color: ${n.gnss_on ? '#34d399' : '#f87171'};">
+              <button id="btnToggleGnss" class="btn" style="padding: 3px 8px; font-size: 11px; background: ${n.gnss_on ? 'rgba(16, 185, 129, 0.25)' : 'rgba(239, 68, 68, 0.25)'}; border: 1px solid ${n.gnss_on ? '#10b981' : '#ef4444'}; color: ${n.gnss_on ? '#34d399' : '#f87171'};">
                 ${n.gnss_on ? 'GNSS Active' : 'GNSS Denied (Lost)'}
               </button>
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>MPU-6050 Dead-Reckoning:</span>
-              <button id="btnToggleDr" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.dr_on ? 'rgba(56, 189, 248, 0.25)' : 'rgba(148, 163, 184, 0.25)'}; border: 1px solid ${n.dr_on ? '#38bdf8' : '#64748b'}; color: ${n.dr_on ? '#38bdf8' : '#94a3b8'};">
+              <button id="btnToggleDr" class="btn" style="padding: 3px 8px; font-size: 11px; background: ${n.dr_on ? 'rgba(56, 189, 248, 0.25)' : 'rgba(148, 163, 184, 0.25)'}; border: 1px solid ${n.dr_on ? '#38bdf8' : '#64748b'}; color: ${n.dr_on ? '#38bdf8' : '#94a3b8'};">
                 ${n.dr_on ? 'IMU DR Active' : 'IMU DR Disabled'}
               </button>
             </div>
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Motion Profile (Inertial):</span>
-              <select id="selMotionProfile" style="font-size: 10px; padding: 3px 6px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #38bdf8; border-radius: var(--radius-sm); cursor: pointer;">
+              <select id="selMotionProfile" style="font-size: 11px; padding: 3px 6px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #38bdf8; border-radius: var(--radius-sm); cursor: pointer;">
                 <option value="stationary" ${n.motion_profile === 'stationary' ? 'selected' : ''}>🚶‍♂️ Stationary</option>
                 <option value="moving" ${n.motion_profile === 'moving' ? 'selected' : ''}>🚶 Moving</option>
                 <option value="walking" ${n.motion_profile === 'walking' ? 'selected' : ''}>🚶 Walking (1.8 Hz)</option>
@@ -182,7 +182,7 @@ export class InspectorComponent {
 
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Simulate GNSS Outage:</span>
-              <button id="btnScheduleGnssOutage" class="btn" style="padding: 3px 8px; font-size: 10px; background: rgba(245, 158, 11, 0.25); border: 1px solid #f59e0b; color: #fcd34d;">
+              <button id="btnScheduleGnssOutage" class="btn" style="padding: 3px 8px; font-size: 11px; background: rgba(245, 158, 11, 0.25); border: 1px solid #f59e0b; color: #fcd34d;">
                 📡 Trigger 5s Outage
               </button>
             </div>
@@ -199,7 +199,7 @@ export class InspectorComponent {
           <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Radio Tower Status:</span>
-              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
+              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 11px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
                 ${n.online ? 'Disable Tower (Offline)' : 'Enable Tower (Online)'}
               </button>
             </div>
@@ -207,7 +207,7 @@ export class InspectorComponent {
               <span>Backup Battery:</span>
               <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
               <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
-              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>
+              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 11px;">Set</button>
             </div>
           </div>
         </div>
@@ -225,7 +225,7 @@ export class InspectorComponent {
           <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11px;">
             <div style="display: flex; justify-content: space-between; align-items: center;">
               <span>Node Power State:</span>
-              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 10px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
+              <button id="btnToggleOnline" class="btn" style="padding: 3px 8px; font-size: 11px; background: ${n.online ? '#ef4444' : '#10b981'}; color: #fff;">
                 ${n.online ? 'Kill Node (Offline)' : 'Restore Node (Online)'}
               </button>
             </div>
@@ -233,7 +233,7 @@ export class InspectorComponent {
               <span>Battery:</span>
               <input type="range" id="sliderBattery" min="0" max="100" value="${curBatt}" style="flex: 1; cursor: pointer;" />
               <input type="number" id="numBattery" min="0" max="100" value="${curBatt}" style="width: 48px; font-size: 11px; padding: 2px 4px; background: var(--bg-surface); border: 1px solid var(--border-subtle); color: #fff; border-radius: var(--radius-sm);" />
-              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">Set</button>
+              <button id="btnApplyBattery" class="btn btn-primary" style="padding: 2px 8px; font-size: 11px;">Set</button>
             </div>
           </div>
         </div>
@@ -249,7 +249,7 @@ export class InspectorComponent {
           <div class="wire-header" style="color: #38bdf8;">
             <span>Connected RF Links & Obstructions (${nodeLinks.length})</span>
           </div>
-          <table class="field-table" style="font-size: 10px;">
+          <table class="field-table" style="font-size: 11px;">
             <thead>
               <tr style="color: var(--text-dim); text-align: left;">
                 <th>Peer</th>
@@ -270,10 +270,10 @@ export class InspectorComponent {
                     <td class="field-val" style="color: ${l.rssi >= -90 ? '#10b981' : l.rssi >= -110 ? '#f59e0b' : '#ef4444'}">${l.rssi} dBm</td>
                     <td class="field-val" style="color: ${isBlocked ? '#ef4444' : '#10b981'}; font-weight: 700;">${isBlocked ? 'BLOCKED' : 'ACTIVE'}</td>
                     <td style="white-space:nowrap;">
-                      <button class="btn btn-toggle-link" data-peer="${peerId}" data-blocked="${isBlocked}" style="padding: 2px 6px; font-size: 9px; background: ${isBlocked ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${isBlocked ? '#10b981' : '#ef4444'}; color: ${isBlocked ? '#34d399' : '#fca5a5'};">
+                      <button class="btn btn-toggle-link" data-peer="${peerId}" data-blocked="${isBlocked}" style="padding: 2px 6px; font-size: 11px; background: ${isBlocked ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${isBlocked ? '#10b981' : '#ef4444'}; color: ${isBlocked ? '#34d399' : '#fca5a5'};">
                         ${isBlocked ? 'Restore' : 'Block'}
                       </button>
-                      <button class="btn btn-inspect-loss" data-from="${n.id}" data-to="${peerId}" style="padding: 2px 6px; font-size: 9px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #38bdf8; margin-left: 4px;" title="View RF loss budget waterfall">Budget</button>
+                      <button class="btn btn-inspect-loss" data-from="${n.id}" data-to="${peerId}" style="padding: 2px 6px; font-size: 11px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #38bdf8; margin-left: 4px;" title="View RF loss budget waterfall">Budget</button>
                     </td>
                   </tr>
                 `;
@@ -321,10 +321,10 @@ export class InspectorComponent {
         <div class="wire-header" style="color: #38bdf8; font-weight: 700; display: flex; justify-content: space-between; align-items: center;">
           <span>Geographic Location & Provenance</span>
           <div style="display: flex; gap: 6px; align-items: center;">
-            <button id="btnResetEstimator" class="btn" style="padding: 2px 6px; font-size: 9px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #38bdf8;" title="Reset estimator coordinates to match current ground truth">
+            <button id="btnResetEstimator" class="btn" style="padding: 2px 6px; font-size: 11px; background: rgba(56, 189, 248, 0.2); border: 1px solid #38bdf8; color: #38bdf8;" title="Reset estimator coordinates to match current ground truth">
               🔄 Reset Estimator
             </button>
-            <span class="badge" style="background: ${n.gnss_on && hasEstimate ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${n.gnss_on && hasEstimate ? '#10b981' : '#ef4444'}; color: ${n.gnss_on && hasEstimate ? '#34d399' : '#f87171'}; font-size: 9px;">${n.gnss_status || (n.gnss_on ? 'ACQUIRING' : 'NO_FIX')}</span>
+            <span class="badge" style="background: ${n.gnss_on && hasEstimate ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}; border: 1px solid ${n.gnss_on && hasEstimate ? '#10b981' : '#ef4444'}; color: ${n.gnss_on && hasEstimate ? '#34d399' : '#f87171'}; font-size: 11px;">${n.gnss_status || (n.gnss_on ? 'ACQUIRING' : 'NO_FIX')}</span>
           </div>
         </div>
         <table class="field-table">
@@ -528,7 +528,7 @@ export class InspectorComponent {
         <div class="hex-stream-container">
           ${hexHtml}
         </div>
-        <div style="font-size: 9px; color: var(--text-dim); margin-top: 6px;">Hover over any byte to view field alignment, offset, and bit layout.</div>
+        <div style="font-size: 11px; color: var(--text-dim); margin-top: 6px;">Hover over any byte to view field alignment, offset, and bit layout.</div>
       </div>
 
       <div class="wire-breakdown-card">

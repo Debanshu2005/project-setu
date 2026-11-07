@@ -562,7 +562,7 @@ export function renderExplainerCardHtml(explainer, isPinned = false) {
   if (!explainer) return '';
 
   const tags = (explainer.provenanceTags || []).map(tag =>
-    `<span style="display:inline-block; font-size:9px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8; text-transform:uppercase; margin-right:4px;">[${tag}]</span>`
+    `<span style="display:inline-block; font-size: 11px; padding:1px 5px; border-radius:3px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#38bdf8; text-transform:uppercase; margin-right:4px;">[${tag}]</span>`
   ).join('');
 
   return `
@@ -591,7 +591,7 @@ export function renderExplainerCardHtml(explainer, isPinned = false) {
           <div style="margin-top:4px;">${tags}</div>
         </div>
         <div style="display:flex; align-items:center; gap:6px;">
-          ${isPinned ? '<span style="font-size:9px; color:#38bdf8; background:rgba(56,189,248,0.1); padding:2px 4px; border-radius:3px;">PINNED</span>' : ''}
+          ${isPinned ? '<span style="font-size: 11px; color:#38bdf8; background:rgba(56,189,248,0.1); padding:2px 4px; border-radius:3px;">PINNED</span>' : ''}
           <button class="explainer-close-btn" aria-label="Close explanation" style="background:transparent; border:none; color:#94a3b8; font-size:14px; cursor:pointer; padding:2px 6px; border-radius:3px;">×</button>
         </div>
       </div>
@@ -608,7 +608,7 @@ export function renderExplainerCardHtml(explainer, isPinned = false) {
 
       <div style="margin-bottom:8px; background:rgba(30,41,59,0.5); padding:6px; border-radius:4px; border-left:2px solid #38bdf8;">
         <strong style="color:#38bdf8;">X versus Y:</strong>
-        <p style="margin:2px 0 0 0; color:#e2e8f0; font-family:'JetBrains Mono', monospace; font-size:10px;">${explainer.xy}</p>
+        <p style="margin:2px 0 0 0; color:#e2e8f0; font-family:'JetBrains Mono', monospace; font-size: 11px;">${explainer.xy}</p>
       </div>
 
       <div style="margin-bottom:8px;">
@@ -627,8 +627,8 @@ export function renderExplainerCardHtml(explainer, isPinned = false) {
       </div>
 
       <details style="margin-top:6px; border-top:1px solid #1e293b; padding-top:6px;">
-        <summary style="cursor:pointer; color:#38bdf8; font-weight:600; font-size:10px;">Expert Details & Formulas</summary>
-        <p style="margin:4px 0 0 0; color:#94a3b8; font-size:10px; font-family:'JetBrains Mono', monospace;">${explainer.expertDetails}</p>
+        <summary style="cursor:pointer; color:#38bdf8; font-weight:600; font-size: 11px;">Expert Details & Formulas</summary>
+        <p style="margin:4px 0 0 0; color:#94a3b8; font-size: 11px; font-family:'JetBrains Mono', monospace;">${explainer.expertDetails}</p>
       </details>
     </div>
   `;

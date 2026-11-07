@@ -64,12 +64,12 @@ export class ChartsComponent {
         <!-- Header Info Row -->
         <div style="display:flex; justify-content:space-between; align-items:center; background:rgba(0,0,0,0.25); padding:8px 10px; border-radius:var(--radius-sm); border:1px solid var(--border-subtle);">
           <div style="display:flex; align-items:center; gap:8px;">
-            <span style="font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; color:var(--text-dim);">Analytics Session:</span>
+            <span style="font-size: 11px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; color:var(--text-dim);">Analytics Session:</span>
             <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-weight:700;">
               ${String((metrics && metrics.session && metrics.session.mode) || 'replay').toUpperCase()}: ${(metrics && metrics.session && (metrics.session.name || metrics.session.id)) || 'default'}
             </span>
           </div>
-          <button id="btnOpenMetricContract" class="btn" style="font-size:10px; padding:3px 8px; background:rgba(255,255,255,0.05); border:1px solid var(--border-subtle); color:var(--text-muted);">
+          <button id="btnOpenMetricContract" class="btn" style="font-size: 11px; padding:3px 8px; background:rgba(255,255,255,0.05); border:1px solid var(--border-subtle); color:var(--text-muted);">
             📘 Metric Contract
           </button>
         </div>
@@ -79,7 +79,7 @@ export class ChartsComponent {
           <div class="chart-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <div>
               <span style="font-weight:700; font-size:12px;">SOS Message Lifecycle & Delivery</span>
-              <div style="font-size:10px; color:var(--text-dim);">Logical Survivor Emergency Episodes (Click bar to filter timeline)</div>
+              <div style="font-size: 11px; color:var(--text-dim);">Logical Survivor Emergency Episodes (Click bar to filter timeline)</div>
             </div>
             <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid ${pdrBadgeColor}; color:${pdrBadgeColor}; font-weight:700;">
               ${pdrBadgeText}
@@ -88,7 +88,7 @@ export class ChartsComponent {
           ${this.renderInteractiveBarChart(lifecycleItems, 'lifecycle')}
 
           <!-- Mesh Physical Radio Airtime Telemetry -->
-          <div style="margin-top:8px; padding:6px 10px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:10px; font-family:var(--font-mono); color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
+          <div style="margin-top:8px; padding:6px 10px; background:rgba(0,0,0,0.3); border-radius:4px; font-size: 11px; font-family:var(--font-mono); color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:6px;">
             <span>Relay Forwards: <strong style="color:#f59e0b;">${metrics.lifecycle.relayForwards} pkts</strong></span>
             <span>Retransmissions: <strong style="color:#38bdf8;">${metrics.lifecycle.retries}</strong></span>
             <span>Suppressed: <strong style="color:#a78bfa;">${metrics.radio.relaySuppressedTotal}</strong></span>
@@ -102,7 +102,7 @@ export class ChartsComponent {
           <div class="chart-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
             <div>
               <span style="font-weight:700; font-size:12px;">Drop Causes & Channel Impairments</span>
-              <div style="font-size:10px; color:var(--text-dim);">Physical layer radio reception drops (Click bar to isolate drops)</div>
+              <div style="font-size: 11px; color:var(--text-dim);">Physical layer radio reception drops (Click bar to isolate drops)</div>
             </div>
             <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-weight:700;">
               ${metrics.dropTotal} Total Drops
@@ -116,7 +116,7 @@ export class ChartsComponent {
           <div class="chart-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <div>
               <span style="font-weight:700; font-size:12px;">End-to-End Hop Count Traversed</span>
-              <div style="font-size:10px; color:var(--text-dim);">Route length for successfully delivered alerts</div>
+              <div style="font-size: 11px; color:var(--text-dim);">Route length for successfully delivered alerts</div>
             </div>
             <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-weight:700;">
               Latency: ${metrics.latencyDisplay}
@@ -125,7 +125,7 @@ export class ChartsComponent {
           ${this.renderInteractiveBarChart(hopItems, 'hops')}
 
           <!-- Latency Distribution Detail Card -->
-          <div style="margin-top:8px; padding:6px 8px; background:rgba(0,0,0,0.3); border-radius:4px; font-size:10px; font-family:var(--font-mono); color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px;">
+          <div style="margin-top:8px; padding:6px 8px; background:rgba(0,0,0,0.3); border-radius:4px; font-size: 11px; font-family:var(--font-mono); color:var(--text-dim); display:flex; justify-content:space-between; flex-wrap:wrap; gap:4px;">
             <span>Avg: <strong style="color:#fff;">${metrics.latency.avgMs !== null ? metrics.latency.avgMs + 'ms' : 'N/A'}</strong></span>
             <span>Med: <strong style="color:#fff;">${metrics.latency.medianMs !== null ? metrics.latency.medianMs + 'ms' : 'N/A'}</strong></span>
             <span>P95: <strong style="color:#fff;">${metrics.latency.p95Ms !== null ? metrics.latency.p95Ms + 'ms' : 'N/A'}</strong></span>
@@ -191,9 +191,9 @@ export class ChartsComponent {
           <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc;">${String((def && def.category) || 'metric').toUpperCase()} [${(def && def.units) || ''}]</span>
         </div>
         <div style="color:#e2e8f0; margin-bottom:4px;">${def.description}</div>
-        <div style="font-family:var(--font-mono); font-size:10px; color:#38bdf8; margin-bottom:4px;">Formula: ${def.formula}</div>
-        <div style="font-size:10px; color:var(--text-muted);"><strong style="color:#94a3b8;">Counting Rule:</strong> ${def.countingRule}</div>
-        ${def.limitations ? `<div style="font-size:10px; color:#f59e0b; margin-top:2px;">⚠️ <strong>Limitation:</strong> ${def.limitations}</div>` : ''}
+        <div style="font-family:var(--font-mono); font-size: 11px; color:#38bdf8; margin-bottom:4px;">Formula: ${def.formula}</div>
+        <div style="font-size: 11px; color:var(--text-muted);"><strong style="color:#94a3b8;">Counting Rule:</strong> ${def.countingRule}</div>
+        ${def.limitations ? `<div style="font-size: 11px; color:#f59e0b; margin-top:2px;">⚠️ <strong>Limitation:</strong> ${def.limitations}</div>` : ''}
       </div>
     `).join('');
   }

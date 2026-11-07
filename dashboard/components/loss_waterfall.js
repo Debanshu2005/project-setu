@@ -26,7 +26,7 @@ export class LossWaterfallComponent {
             <h3 style="margin:0; font-size:12px; text-transform:uppercase; letter-spacing:0.05em; color:#38bdf8; font-weight:700;">RF Link Margin & Loss Budget Waterfall</h3>
             <div id="lwLinkDescription" style="font-size:10.5px; color:#94a3b8; margin-top:1px;">Select any node or radio link to inspect the physical loss breakdown</div>
           </div>
-          <span id="lwViableBadge" style="font-size:10px; padding:2px 8px; border-radius:4px; font-weight:bold; background:#334155; color:#cbd5e1;">AWAITING LINK</span>
+          <span id="lwViableBadge" style="font-size: 11px; padding:2px 8px; border-radius:4px; font-weight:bold; background:#334155; color:#cbd5e1;">AWAITING LINK</span>
         </div>
 
         <div id="lwBarsContainer" style="display:flex; flex-direction:column; gap:4px;">
@@ -260,7 +260,7 @@ export class LossWaterfallComponent {
       <div style="margin-top:4px; background:${isViable ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)'}; padding:6px 10px; border-radius:4px; display:flex; justify-content:space-between; align-items:center; border:1px solid ${isViable ? '#10b981' : '#ef4444'};">
         <div>
           <span style="font-weight:bold; font-size:11px; color:${isViable ? '#10b981' : '#ef4444'};">Net Link Margin</span>
-          <span style="font-size:9px; color:#94a3b8; margin-left:6px;">(Row sum parity delta: ${sumParityDelta.toFixed(2)} dB)</span>
+          <span style="font-size: 11px; color:#94a3b8; margin-left:6px;">(Row sum parity delta: ${sumParityDelta.toFixed(2)} dB)</span>
         </div>
         <span style="font-size:13px; font-weight:bold; color:${isViable ? '#10b981' : '#ef4444'}; font-family:monospace;">${margin >= 0 ? '+' : ''}${margin.toFixed(1)} dB</span>
       </div>
