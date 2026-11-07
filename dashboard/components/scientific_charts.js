@@ -2,13 +2,337 @@
 // Pure Canvas renderers with dark technical aesthetics, interactive crosshairs,
 // tooltips, HiDPI Retina support, theoretical curve overlays, and eCDFs.
 
+import {
+  resolveExplainerId,
+  formatExplainer,
+  renderExplainerCardHtml
+} from '../src/chart_explainers.js';
+
+/**
+ * Utility to draw explainer tooltip on chart canvas
+ */
+export function drawCanvasExplainerTooltip(ctx, lines, x, y, width, height) {
+  if (!lines || lines.length === 0) return;
+  ctx.save();
+  ctx.font = '10px "JetBrains Mono", monospace';
+  const textLines = Array.isArray(lines) ? lines : [lines];
+  const maxW = Math.max(...textLines.map(l => ctx.measureText(l).width));
+  const boxW = Math.min(340, maxW + 16);
+  const boxH = textLines.length * 15 + 10;
+  let bx = x + 10;
+  let by = y - boxH - 10;
+  if (bx + boxW > width - 10) bx = width - boxW - 10;
+  if (bx < 10) bx = 10;
+  if (by < 10) by = y + 15;
+
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.95)';
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth = 1;
+  ctx.fillRect(bx, by, boxW, boxH);
+  ctx.strokeRect(bx, by, boxW, boxH);
+
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  for (let i = 0; i < textLines.length; i++) {
+    ctx.fillStyle = i === 0 ? '#38bdf8' : '#e2e8f0';
+    ctx.fillText(textLines[i], bx + 8, by + 6 + i * 15);
+  }
+  ctx.restore();
+}
+
+/**
+ * Explainer Controller attached to each scientific chart
+ */
+export class ChartExplainerController {
+  constructor(chart, canvasElement, options = {}) {
+    this.chart = chart;
+    this.canvas = canvasElement;
+    this.options = options;
+    this.explainerId = options.explainerId || resolveExplainerId(canvasElement ? canvasElement.id : null, options.title);
+    this.isOpen = false;
+    this.isPinned = false;
+    this.openTimer = null;
+    this.closeTimer = null;
+    this.dwellTimer = null;
+    this.cardEl = null;
+    this.hintEl = null;
+    this.buttonEl = null;
+    this.titleEl = null;
+
+    if (typeof document !== 'undefined' && canvasElement) {
+      this.init();
+    }
+  }
+
+  init() {
+    if (!this.canvas) return;
+    const parent = this.canvas.parentElement;
+    if (parent && typeof getComputedStyle !== 'undefined') {
+      try {
+        if (getComputedStyle(parent).position === 'static') {
+          parent.style.position = 'relative';
+        }
+      } catch (err) {}
+    }
+
+    const panel = this.canvas.closest ? (this.canvas.closest('.chart-panel') || (parent ? parent.parentElement : null)) : null;
+    if (panel) {
+      this.titleEl = panel.querySelector('#lblSidebarQuickChart') ||
+                     panel.querySelector('span[style*="font-weight:700"], span[style*="font-weight: 700"], h3, h4, .chart-title');
+    }
+
+    this.buttonEl = this.createButton();
+
+    if (this.titleEl) {
+      const existingBtn = this.titleEl.parentElement ? this.titleEl.parentElement.querySelector('.chart-info-btn') : null;
+      if (existingBtn) {
+        existingBtn.remove();
+      }
+      this.titleEl.parentElement.insertBefore(this.buttonEl, this.titleEl.nextSibling);
+
+      this.titleEl.style.cursor = 'help';
+      this.titleEl.addEventListener('mouseenter', () => this.scheduleOpen(120));
+      this.titleEl.addEventListener('mouseleave', () => this.scheduleClose(200));
+    } else if (parent) {
+      this.buttonEl.style.position = 'absolute';
+      this.buttonEl.style.top = '8px';
+      this.buttonEl.style.right = '8px';
+      this.buttonEl.style.zIndex = '15';
+      parent.appendChild(this.buttonEl);
+    }
+
+    this.onKeyDown = (e) => {
+      if (e.key === 'Escape' && this.isOpen) {
+        e.stopPropagation();
+        this.close();
+        if (this.buttonEl) this.buttonEl.focus();
+      }
+    };
+    document.addEventListener('keydown', this.onKeyDown);
+
+    this.onDocPointerDown = (e) => {
+      if (!this.isOpen) return;
+      if (this.cardEl && this.cardEl.contains(e.target)) return;
+      if (this.buttonEl && this.buttonEl.contains(e.target)) return;
+      if (this.titleEl && this.titleEl.contains(e.target)) return;
+      this.close();
+    };
+    document.addEventListener('pointerdown', this.onDocPointerDown);
+
+    this.canvas.addEventListener('mousemove', () => {
+      this.clearDwellTimer();
+      this.hideDwellHint();
+      this.dwellTimer = setTimeout(() => {
+        this.showDwellHint();
+      }, 700);
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.clearDwellTimer();
+      this.hideDwellHint();
+    });
+  }
+
+  createButton() {
+    const btn = document.createElement('button');
+    btn.className = 'chart-info-btn';
+    btn.setAttribute('role', 'button');
+    btn.setAttribute('aria-haspopup', 'dialog');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.setAttribute('aria-label', `Graph explanation for ${this.options.title || this.explainerId || 'chart'}`);
+    btn.innerHTML = 'ℹ️';
+    btn.style.cssText = 'display:inline-flex; align-items:center; justify-content:center; width:18px; height:18px; font-size:11px; line-height:1; padding:0; margin-left:6px; background:rgba(56,189,248,0.12); border:1px solid rgba(56,189,248,0.4); border-radius:4px; color:#38bdf8; cursor:pointer; vertical-align:middle; transition:all 0.15s ease; user-select:none;';
+
+    btn.addEventListener('mouseenter', () => this.scheduleOpen(120));
+    btn.addEventListener('mouseleave', () => this.scheduleClose(200));
+    btn.addEventListener('focus', () => this.scheduleOpen(120));
+    btn.addEventListener('blur', () => this.scheduleClose(200));
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this.togglePin();
+    });
+
+    return btn;
+  }
+
+  scheduleOpen(delayMs = 120) {
+    if (this.isOpen) return;
+    clearTimeout(this.closeTimer);
+    clearTimeout(this.openTimer);
+    this.openTimer = setTimeout(() => this.open(), delayMs);
+  }
+
+  scheduleClose(delayMs = 200) {
+    if (this.isPinned) return;
+    clearTimeout(this.openTimer);
+    clearTimeout(this.closeTimer);
+    this.closeTimer = setTimeout(() => {
+      if (this.isPinned) return;
+      if (typeof document !== 'undefined') {
+        const active = document.activeElement;
+        if (this.cardEl && (this.cardEl.contains?.(active) || (this.cardEl.matches && this.cardEl.matches(':hover')))) {
+          return;
+        }
+        if (this.buttonEl && (this.buttonEl === active || (this.buttonEl.matches && this.buttonEl.matches(':hover')))) {
+          return;
+        }
+        if (this.titleEl && this.titleEl.matches && this.titleEl.matches(':hover')) {
+          return;
+        }
+      }
+      this.close();
+    }, delayMs);
+  }
+
+  togglePin() {
+    if (!this.isOpen) {
+      this.isPinned = true;
+      this.open();
+    } else if (this.isPinned) {
+      this.isPinned = false;
+      this.close();
+    } else {
+      this.isPinned = true;
+      this.updateCardContent();
+    }
+  }
+
+  open() {
+    clearTimeout(this.openTimer);
+    clearTimeout(this.closeTimer);
+    this.hideDwellHint();
+    this.clearDwellTimer();
+
+    const explainerId = this.explainerId || resolveExplainerId(this.canvas?.id, this.options.title);
+    if (!explainerId) return;
+    const explainer = formatExplainer(explainerId);
+    if (!explainer) return;
+
+    this.isOpen = true;
+    if (this.buttonEl) {
+      this.buttonEl.setAttribute('aria-expanded', 'true');
+      this.buttonEl.style.background = 'rgba(56,189,248,0.3)';
+    }
+
+    if (!this.cardEl) {
+      this.cardEl = document.createElement('div');
+      this.cardEl.className = 'chart-explainer-card-wrapper';
+      this.cardEl.style.cssText = 'position:absolute; top:32px; z-index:100; max-width:calc(100% - 24px);';
+    }
+
+    this.updateCardContent();
+
+    const parent = this.canvas.parentElement || document.body;
+    if (!parent.contains(this.cardEl)) {
+      parent.appendChild(this.cardEl);
+    }
+
+    const hoverX = this.chart?.hoverPos?.x || 0;
+    const canvasW = this.canvas.clientWidth || 600;
+    if (hoverX < canvasW / 2) {
+      this.cardEl.style.left = 'auto';
+      this.cardEl.style.right = '12px';
+    } else {
+      this.cardEl.style.right = 'auto';
+      this.cardEl.style.left = '12px';
+    }
+    this.cardEl.style.display = 'block';
+
+    const cardInner = this.cardEl.querySelector('.chart-explainer-card');
+    if (cardInner) {
+      cardInner.focus?.();
+    }
+  }
+
+  updateCardContent() {
+    if (!this.cardEl) return;
+    const explainerId = this.explainerId || resolveExplainerId(this.canvas?.id, this.options.title);
+    const explainer = formatExplainer(explainerId);
+    this.cardEl.innerHTML = renderExplainerCardHtml(explainer, this.isPinned);
+
+    const closeBtn = this.cardEl.querySelector('.explainer-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.close();
+        if (this.buttonEl) this.buttonEl.focus();
+      });
+    }
+
+    this.cardEl.addEventListener('mouseenter', () => {
+      clearTimeout(this.closeTimer);
+    });
+    this.cardEl.addEventListener('mouseleave', () => {
+      if (!this.isPinned) this.scheduleClose(200);
+    });
+  }
+
+  close() {
+    clearTimeout(this.openTimer);
+    clearTimeout(this.closeTimer);
+    this.isOpen = false;
+    this.isPinned = false;
+    if (this.buttonEl) {
+      this.buttonEl.setAttribute('aria-expanded', 'false');
+      this.buttonEl.style.background = 'rgba(56,189,248,0.12)';
+    }
+    if (this.cardEl) {
+      this.cardEl.style.display = 'none';
+      if (this.cardEl.parentElement) {
+        this.cardEl.parentElement.removeChild(this.cardEl);
+      }
+    }
+  }
+
+  showDwellHint() {
+    if (this.isOpen) return;
+    if (!this.hintEl) {
+      this.hintEl = document.createElement('div');
+      this.hintEl.className = 'chart-dwell-hint';
+      this.hintEl.setAttribute('role', 'status');
+      this.hintEl.style.cssText = 'position:absolute; bottom:8px; right:8px; z-index:25; background:rgba(15,23,42,0.92); border:1px solid rgba(56,189,248,0.5); color:#cbd5e1; font-family:"Outfit", -apple-system, BlinkMacSystemFont, sans-serif; font-size:10px; padding:3px 8px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.5); pointer-events:none; transition:opacity 0.2s ease;';
+      this.hintEl.textContent = 'What is this graph? Hover the info icon for details';
+    }
+    const parent = this.canvas.parentElement;
+    if (parent && !parent.contains(this.hintEl)) {
+      parent.appendChild(this.hintEl);
+    }
+    this.hintEl.style.display = 'block';
+    this.hintEl.style.opacity = '1';
+  }
+
+  hideDwellHint() {
+    if (this.hintEl) {
+      this.hintEl.style.display = 'none';
+    }
+  }
+
+  clearDwellTimer() {
+    if (this.dwellTimer) {
+      clearTimeout(this.dwellTimer);
+      this.dwellTimer = null;
+    }
+  }
+
+  destroy() {
+    this.clearDwellTimer();
+    clearTimeout(this.openTimer);
+    clearTimeout(this.closeTimer);
+    if (this.onKeyDown) document.removeEventListener('keydown', this.onKeyDown);
+    if (this.onDocPointerDown) document.removeEventListener('pointerdown', this.onDocPointerDown);
+    if (this.buttonEl && this.buttonEl.parentElement) this.buttonEl.remove();
+    if (this.cardEl && this.cardEl.parentElement) this.cardEl.remove();
+    if (this.hintEl && this.hintEl.parentElement) this.hintEl.remove();
+  }
+}
+
 /**
  * Utility to setup HiDPI canvas backing store
  */
 function setupCanvas(canvas) {
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  const width = rect.width || canvas.parentElement.clientWidth || 600;
+  const dpr = (typeof window !== 'undefined' && window.devicePixelRatio) || 1;
+  const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { width: 600, height: 260 };
+  const width = rect.width || (canvas.parentElement ? canvas.parentElement.clientWidth : 600) || 600;
   const height = rect.height || 260;
 
   canvas.width = Math.round(width * dpr);
@@ -42,6 +366,13 @@ export class ScientificLineChart {
     this.hoverPos = null;
 
     this.initEvents();
+    this.explainerController = new ChartExplainerController(this, canvasElement, this.options);
+  }
+
+  destroy() {
+    if (this.explainerController) {
+      this.explainerController.destroy();
+    }
   }
 
   setSeries(series) {
@@ -95,7 +426,7 @@ export class ScientificLineChart {
       ctx.font = '12px "JetBrains Mono", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(this.options.emptyMessage || 'NO MEASURED OBSERVATIONS', width / 2, height / 2);
+      ctx.fillText(this.options.emptyMessage || 'NO OBSERVATIONS', width / 2, height / 2);
       return;
     }
 
@@ -338,6 +669,31 @@ export class ScientificLineChart {
         ctx.fillText(tooltipLines[li], boxX + 8, boxY + 6 + li * 15);
       }
     }
+
+    // 9. Interactive Axis & Legend Hover Explanations
+    if (this.hoverPos) {
+      const hx = this.hoverPos.x;
+      const hy = this.hoverPos.y;
+      const expl = formatExplainer(this.explainerController?.explainerId);
+
+      if (hy > height - padBottom && hx >= padLeft && hx <= width - padRight) {
+        drawCanvasExplainerTooltip(ctx, [this.options.xLabel || 'Horizontal Axis', expl?.axisExplanations?.x || 'Measured horizontal axis variable.'], hx, hy, width, height);
+      } else if (hx < padLeft && hy >= padTop && hy <= height - padBottom) {
+        drawCanvasExplainerTooltip(ctx, [this.options.yLabel || 'Vertical Axis', expl?.axisExplanations?.y || 'Measured vertical axis variable.'], hx, hy, width, height);
+      } else if (hy < padTop && hx > width / 2) {
+        let lX = width - padRight;
+        for (let i = this.series.length - 1; i >= 0; i--) {
+          const s = this.series[i];
+          const textW = ctx.measureText(s.name).width;
+          const boxStart = lX - textW - 28;
+          if (hx >= boxStart && hx <= lX) {
+            drawCanvasExplainerTooltip(ctx, [s.name, expl?.seriesExplanations?.[s.name] || 'Simulation time series curve.'], hx, hy, width, height);
+            break;
+          }
+          lX -= (textW + 28);
+        }
+      }
+    }
   }
 }
 
@@ -363,6 +719,13 @@ export class ScientificScatterPlot {
     this.hoverPos = null;
 
     this.initEvents();
+    this.explainerController = new ChartExplainerController(this, canvasElement, this.options);
+  }
+
+  destroy() {
+    if (this.explainerController) {
+      this.explainerController.destroy();
+    }
   }
 
   setData(points, theoryCurve = null) {
@@ -579,7 +942,7 @@ export class ScientificScatterPlot {
         const lines = [
           nearest.label || `Link: Node ${nearest.nodeA} ➔ ${nearest.nodeB}`,
           `Distance: ${nearest.x.toFixed(1)} m`,
-          `Measured: ${nearest.y.toFixed(1)} ${this.options.yUnit}`
+          `Observed: ${nearest.y.toFixed(1)} ${this.options.yUnit}`
         ];
         if (nearest.samples) lines.push(`Samples: ${nearest.samples}`);
         if (nearest.linkMargin !== undefined) lines.push(`Link Margin: ${nearest.linkMargin > 0 ? '+' : ''}${nearest.linkMargin.toFixed(1)} dB`);
@@ -604,6 +967,27 @@ export class ScientificScatterPlot {
           ctx.fillStyle = i === 0 ? '#38bdf8' : '#e2e8f0';
           ctx.fillText(lines[i], bx + 8, by + 6 + i * 15);
         }
+      } else {
+        const hx = this.hoverPos.x;
+        const hy = this.hoverPos.y;
+        const expl = formatExplainer(this.explainerController?.explainerId);
+
+        if (hy > height - padBottom && hx >= padLeft && hx <= width - padRight) {
+          drawCanvasExplainerTooltip(ctx, [this.options.xLabel || 'Distance (m)', expl?.axisExplanations?.x || '3D Euclidean distance between nodes (m).'], hx, hy, width, height);
+        } else if (hx < padLeft && hy >= padTop && hy <= height - padBottom) {
+          drawCanvasExplainerTooltip(ctx, [this.options.yLabel || 'Signal Metric', expl?.axisExplanations?.y || 'Received signal metric in decibels.'], hx, hy, width, height);
+        } else if (hy < padTop && hx > width / 2) {
+          drawCanvasExplainerTooltip(ctx, ['Theory Distance Curve', expl?.seriesExplanations?.['Theoretical Distance Model'] || 'Engine theoretical path loss model with scenario exponent.'], hx, hy, width, height);
+        } else if (this.options.theoryCurve && hx >= padLeft && hx <= padLeft + plotW) {
+          const invX = this.options.logScaleX
+            ? minX * Math.pow(maxX / minX, (hx - padLeft) / plotW)
+            : minX + ((hx - padLeft) / plotW) * (maxX - minX);
+          const expectedY = this.options.theoryCurve(invX);
+          const theoryCanvasY = scaleY(expectedY);
+          if (Math.abs(theoryCanvasY - hy) < 14) {
+            drawCanvasExplainerTooltip(ctx, ['Theory Model Curve', expl?.seriesExplanations?.['Theoretical Distance Model'] || 'Engine log-distance path loss prediction: P_rx = P_tx - (PL0 + 10*n*log10(d) + extra).'], hx, hy, width, height);
+          }
+        }
       }
     }
   }
@@ -626,6 +1010,13 @@ export class ScientificCdfPlot {
     this.hoverPos = null;
 
     this.initEvents();
+    this.explainerController = new ChartExplainerController(this, canvasElement, this.options);
+  }
+
+  destroy() {
+    if (this.explainerController) {
+      this.explainerController.destroy();
+    }
   }
 
   setCdfs(cdfs) {
@@ -802,6 +1193,21 @@ export class ScientificCdfPlot {
     ctx.rotate(-Math.PI / 2);
     ctx.fillText('Cumulative Percentage (%)', 0, 0);
     ctx.restore();
+
+    // 7. Interactive Axis & Legend Hover Explanations
+    if (this.hoverPos) {
+      const hx = this.hoverPos.x;
+      const hy = this.hoverPos.y;
+      const expl = formatExplainer(this.explainerController?.explainerId);
+
+      if (hy > height - padBottom && hx >= padLeft && hx <= width - padRight) {
+        drawCanvasExplainerTooltip(ctx, [this.options.xLabel || 'Latency (ms)', expl?.axisExplanations?.x || 'Observed latency quantile duration.'], hx, hy, width, height);
+      } else if (hx < padLeft && hy >= padTop && hy <= height - padBottom) {
+        drawCanvasExplainerTooltip(ctx, ['Cumulative Percentage (%)', expl?.axisExplanations?.y || 'Cumulative probability distribution from 0 to 100 percent.'], hx, hy, width, height);
+      } else if (hy < padTop && hx > width / 2) {
+        drawCanvasExplainerTooltip(ctx, ['Empirical CDF Curve', expl?.seriesExplanations?.['Empirical CDF (Step Function)'] || 'Step function tracking fraction of delivered messages arriving within time t.'], hx, hy, width, height);
+      }
+    }
   }
 }
 
@@ -820,6 +1226,13 @@ export class ScientificHeatmap {
     this.hoverCell = null;
 
     this.initEvents();
+    this.explainerController = new ChartExplainerController(this, canvasElement, this.options);
+  }
+
+  destroy() {
+    if (this.explainerController) {
+      this.explainerController.destroy();
+    }
   }
 
   setMatrix(matrixData) {
@@ -837,11 +1250,13 @@ export class ScientificHeatmap {
       const rect = this.canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
+      this.hoverPos = { x: mx, y: my };
       this.checkHover(mx, my);
     });
 
     this.canvas.addEventListener('mouseleave', () => {
       this.hoverCell = null;
+      this.hoverPos = null;
       this.render();
     });
   }
@@ -1005,7 +1420,7 @@ export class ScientificHeatmap {
 
       const lines = [
         `Link: Node ${cell.from} ➔ Node ${cell.to}`,
-        `Status: ${cell.status}`,
+        `Status: ${cell.status === 'MEASURED' ? 'OBSERVED' : cell.status}`,
         `Distance: ${cell.distanceM !== null ? cell.distanceM.toFixed(1) + ' m' : 'N/A'}`
       ];
 
@@ -1015,11 +1430,14 @@ export class ScientificHeatmap {
         lines.push(`Delivery (PRR): ${cell.prr !== null ? cell.prr + '%' : 'N/A'}`);
         lines.push(`Loss Rate: ${cell.lossRate !== null ? cell.lossRate + '%' : 'N/A'}`);
         if (cell.linkMargin !== null) lines.push(`Link Margin: ${cell.linkMargin > 0 ? '+' : ''}${cell.linkMargin} dB`);
+        lines.push(`Cell Meaning: Active pairwise link with observed packets.`);
       } else if (cell.status === 'UNOBSERVED') {
         lines.push(`Predicted RSSI: ${cell.rssi !== null ? cell.rssi + ' dBm' : 'N/A'}`);
         lines.push(`Simulated Packets: 0 (No events observed yet)`);
+        lines.push(`Cell Meaning: In radio range but zero trace transmissions.`);
       } else {
         lines.push(`Radio Link: Out of range or blocked`);
+        lines.push(`Cell Meaning: Disconnected or blocked link.`);
       }
 
       ctx.font = '10px "JetBrains Mono", monospace';
@@ -1043,6 +1461,18 @@ export class ScientificHeatmap {
         ctx.fillStyle = i === 0 ? '#38bdf8' : (i === 1 ? (cell.status === 'MEASURED' ? '#10b981' : '#f59e0b') : '#e2e8f0');
         ctx.fillText(lines[i], bx + 8, by + 6 + i * 15);
       }
+    } else if (this.hoverPos) {
+      const hx = this.hoverPos.x;
+      const hy = this.hoverPos.y;
+      const expl = formatExplainer(this.explainerController?.explainerId);
+
+      if (hx < padLeft && hy >= padTop && hy <= padTop + n * cellSize) {
+        drawCanvasExplainerTooltip(ctx, ['Transmitter Node ID (Rows)', expl?.axisExplanations?.y || 'Sender / origin node ID.'], hx, hy, width, height);
+      } else if (hy < padTop && hx >= padLeft && hx <= padLeft + n * cellSize) {
+        drawCanvasExplainerTooltip(ctx, ['Receiver Node ID (Columns)', expl?.axisExplanations?.x || 'Target / receiver node ID.'], hx, hy, width, height);
+      } else if (hx >= width - padRight) {
+        drawCanvasExplainerTooltip(ctx, ['Heatmap Metric Scale', 'Color indicates link quality between node pairs.'], hx, hy, width, height);
+      }
     }
   }
 }
@@ -1063,8 +1493,16 @@ export class ScientificTrajectoryPlot {
     this.estPath = []; // [{ x, y, t, gnssAvailable }]
     this.errorVectors = []; // [{ gtX, gtY, estX, estY, errorM, t }]
     this.currentPoint = null;
+    this.hoverPos = null;
 
     this.initEvents();
+    this.explainerController = new ChartExplainerController(this, canvasElement, this.options);
+  }
+
+  destroy() {
+    if (this.explainerController) {
+      this.explainerController.destroy();
+    }
   }
 
   setTrajectory(gtPath, estPath, errorVectors = [], currentPoint = null) {
@@ -1076,7 +1514,16 @@ export class ScientificTrajectoryPlot {
   }
 
   initEvents() {
-    // Zoom / pan support can be attached if needed
+    this.canvas.addEventListener('mousemove', e => {
+      const rect = this.canvas.getBoundingClientRect();
+      this.hoverPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
+      this.render();
+    });
+
+    this.canvas.addEventListener('mouseleave', () => {
+      this.hoverPos = null;
+      this.render();
+    });
   }
 
   render() {
@@ -1224,10 +1671,83 @@ export class ScientificTrajectoryPlot {
     ctx.textAlign = 'right';
 
     ctx.fillStyle = '#06b6d4';
-    ctx.fillText('-- Ground Truth', width - padRight, 12);
+    ctx.fillText('Dashed: Ground Truth', width - padRight, 12);
     ctx.fillStyle = '#10b981';
-    ctx.fillText('— GNSS Fix Fix', width - padRight - 90, 12);
+    ctx.fillText('Solid: GNSS Fix', width - padRight - 110, 12);
     ctx.fillStyle = '#f59e0b';
-    ctx.fillText('— DR Outage', width - padRight - 180, 12);
+    ctx.fillText('Amber: DR Outage', width - padRight - 200, 12);
+
+    // Interactive Hover Tooltips for Error Vectors, Path Fixes, and Axes
+    if (this.hoverPos) {
+      const hx = this.hoverPos.x;
+      const hy = this.hoverPos.y;
+      const expl = formatExplainer(this.explainerController?.explainerId || 'trajectory_error_vectors');
+
+      if (hy > height - padBottom && hx >= padLeft && hx <= width - padRight) {
+        drawCanvasExplainerTooltip(ctx, ['Easting Axis (m)', expl?.axisExplanations?.x || 'Cartesian Easting relative to coordinate origin (m).'], hx, hy, width, height);
+      } else if (hx < padLeft && hy >= padTop && hy <= height - padBottom) {
+        drawCanvasExplainerTooltip(ctx, ['Northing Axis (m)', expl?.axisExplanations?.y || 'Cartesian Northing relative to coordinate origin (m).'], hx, hy, width, height);
+      } else if (hy < padTop && hx > width - 240) {
+        drawCanvasExplainerTooltip(ctx, ['Trajectory Legend', 'Cyan dashed line: Ground truth. Green solid line: GNSS fix. Amber: Dead reckoning outage.'], hx, hy, width, height);
+      } else {
+        let nearestVec = null;
+        let minVecDist = 16;
+        for (const vec of this.errorVectors) {
+          const midX = (scaleX(vec.estX) + scaleX(vec.gtX)) / 2;
+          const midY = (scaleY(vec.estY) + scaleY(vec.gtY)) / 2;
+          const d = Math.hypot(midX - hx, midY - hy);
+          if (d < minVecDist) {
+            minVecDist = d;
+            nearestVec = vec;
+          }
+        }
+
+        if (nearestVec) {
+          const lines = [
+            'Position Error Vector (Displacement Arrow)',
+            `Error: ${nearestVec.errorM.toFixed(1)} m (t = ${nearestVec.t.toFixed(1)}s)`,
+            'Meaning: Euclidean gap from estimated solver point to true position.'
+          ];
+          drawCanvasExplainerTooltip(ctx, lines, hx, hy, width, height);
+        } else {
+          let nearestEst = null;
+          let minEstDist = 14;
+          for (const p of this.estPath) {
+            const d = Math.hypot(scaleX(p.x) - hx, scaleY(p.y) - hy);
+            if (d < minEstDist) {
+              minEstDist = d;
+              nearestEst = p;
+            }
+          }
+
+          if (nearestEst) {
+            const lines = [
+              nearestEst.gnssAvailable ? 'Position Estimate: GNSS Fix' : 'Position Estimate: Dead Reckoning Outage',
+              `Coordinates: (${nearestEst.x.toFixed(1)}m, ${nearestEst.y.toFixed(1)}m)`,
+              nearestEst.gnssAvailable ? 'Meaning: Satellite trilateration lock available.' : 'Meaning: Inertial dead reckoning heading and step propagation.'
+            ];
+            drawCanvasExplainerTooltip(ctx, lines, hx, hy, width, height);
+          } else {
+            let nearestGt = null;
+            let minGtDist = 14;
+            for (const p of this.gtPath) {
+              const d = Math.hypot(scaleX(p.x) - hx, scaleY(p.y) - hy);
+              if (d < minGtDist) {
+                minGtDist = d;
+                nearestGt = p;
+              }
+            }
+            if (nearestGt) {
+              const lines = [
+                'Ground Truth Position',
+                `Coordinates: (${nearestGt.x.toFixed(1)}m, ${nearestGt.y.toFixed(1)}m)`,
+                'Meaning: True simulated physical location without noise.'
+              ];
+              drawCanvasExplainerTooltip(ctx, lines, hx, hy, width, height);
+            }
+          }
+        }
+      }
+    }
   }
 }

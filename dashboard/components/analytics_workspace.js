@@ -378,7 +378,7 @@ export class AnalyticsWorkspaceComponent {
             <div>
               <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3D: Node-to-Node Link Quality Matrix Heatmap</span>
               <div style="font-size:10px; color:var(--text-dim);">
-                Pairwise link telemetry across mesh nodes. Distinguishes Absent, Unobserved, and Measured links.
+                Pairwise link telemetry across mesh nodes. Distinguishes Absent, Unobserved, and Observed links.
               </div>
             </div>
             <div style="display:flex; align-items:center; gap:6px;">
@@ -535,7 +535,7 @@ export class AnalyticsWorkspaceComponent {
     const canvas3A = container.querySelector('#canvasRssiDistance');
     if (canvas3A) {
       const plot3A = new ScientificScatterPlot(canvas3A, {
-        title: 'Measured RSSI vs Theoretical Distance Model',
+        title: 'Simulated RSSI vs Distance Model',
         xLabel: 'Distance (m)',
         yLabel: 'Received Signal Strength (dBm)',
         yUnit: 'dBm',
@@ -1427,9 +1427,9 @@ export class AnalyticsWorkspaceComponent {
           const ey = gy - drift * 0.7;
           gtPath.push({ x: gx, y: gy, t: tSec });
           estPath.push({ x: ex, y: ey, t: tSec, gnssAvailable: gnssOn });
-          const errM = Math.hypot(ex - gx, ey - gy);
+          const errorM = Math.hypot(ex - gx, ey - gy);
           errorVectors.push({ gtX: gx, gtY: gy, estX: ex, estY: ey, errorM, t: tSec });
-          errorTimeline.push({ x: tSec, y: Math.round(errM * 10) / 10 });
+          errorTimeline.push({ x: tSec, y: Math.round(errorM * 10) / 10 });
         }
       }
     }
