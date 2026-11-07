@@ -55,6 +55,7 @@ RUN chmod +x /app/build/setu_sim
 COPY package.json ./
 COPY dashboard ./dashboard
 COPY scenarios ./scenarios
+COPY scripts ./scripts
 
 # Create directory for runtime traces
 RUN mkdir -p /app/scenarios/traces

@@ -20,6 +20,24 @@ const DASHBOARD_DIR = __dirname;
 const SCENARIOS_DIR = path.join(ROOT_DIR, 'scenarios');
 const TRACES_DIR = path.join(SCENARIOS_DIR, 'traces');
 
+// Ensure production bundle.css exists
+const bundleCssPath = path.join(DASHBOARD_DIR, 'styles', 'bundle.css');
+if (!fs.existsSync(bundleCssPath)) {
+  try {
+    const cssFiles = ['main.css', 'topology.css', 'controls.css', 'inspector.css'];
+    const chunks = ['/* Project Setu Combined Application Stylesheet */\n'];
+    for (const f of cssFiles) {
+      const p = path.join(DASHBOARD_DIR, 'styles', f);
+      if (fs.existsSync(p)) {
+        chunks.push(fs.readFileSync(p, 'utf8'));
+      }
+    }
+    fs.writeFileSync(bundleCssPath, chunks.join('\n'), 'utf8');
+  } catch (cssErr) {
+    console.warn('[Setu CSS] Could not generate bundle.css fallback:', cssErr.message);
+  }
+}
+
 class RequestError extends Error {
   constructor(statusCode, message) {
     super(message);

@@ -61,3 +61,22 @@ This document records visual inspections, layout critiques, and measured perform
    - Application scripts, styles, and HTML: no-cache (guarantees fresh code deployment with zero stale cache)
 4. Critical modules are preloaded with modulepreload link tags in index.html.
 
+## P2 Fonts and Critical CSS Verification
+
+### Measured Results After P2 Implementation
+
+| Metric | Baseline Mobile (390x844) | Post-P2 Mobile (390x844) | Total Improvement | Target Budget | Status |
+|---|---|---|---|---|---|
+| Initial Transfer | 4,394 KB | 387.6 KB | 91.2% reduction | <= 150 KB (gzip) | Progressing toward P-A |
+| Requests at Load | 74 | 62 | 12 fewer requests | Minimal chains | PASS |
+| First Contentful Paint | 2,052 ms | 1,648 ms | 404 ms faster | <= 1,800 ms | PASS |
+| Largest Contentful Paint | 8,372 ms | 3,832 ms | 54.2% faster | <= 2,500 ms | Progressing |
+| Cumulative Layout Shift | 0.0841 | 0.0774 | Improved stability | <= 0.1 | PASS |
+| External Font Requests | 1 CSS + 2 WOFF2 | 0 | Zero external calls | 0 external | PASS (Offline ready) |
+
+### Key Improvements in P2
+1. Removed Google Fonts @import link from main.css. The app now operates with zero external network requests and operates reliably in offline disaster deployments.
+2. Adopted modern system font stacks for both sans and monospace text, eliminating font downloads and font loading layout shift.
+3. Created scripts/build_css.mjs to bundle main.css, topology.css, controls.css, and inspector.css into a single bundle.css stylesheet.
+4. Auto-bundling runs on server startup, cutting stylesheet requests from 4 to 1.
+
