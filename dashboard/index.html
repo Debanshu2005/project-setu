@@ -79,23 +79,23 @@
         <span>⚡</span> <span class="backend-label-full">Backend</span><span class="backend-label-short">API</span>
       </button>
 
-      <div class="header-dropdown" id="dropdownDataExport" style="position:relative; display:inline-block;">
-        <button class="btn dropdown-toggle" id="btnExportDropdownToggle" style="font-size:11px; padding:4px 8px; border-color:var(--border-subtle); display:flex; align-items:center; gap:4px;" title="Export metrics, CSV, or upload trace">
+      <div class="header-dropdown" id="dropdownDataExport">
+        <button class="btn dropdown-toggle" id="btnExportDropdownToggle" aria-haspopup="true" aria-expanded="false" title="Export metrics, CSV, or upload trace">
           <span>💾 Data</span>
           <span style="font-size:9px;">▼</span>
         </button>
-        <div class="header-dropdown-menu" id="menuDataExport" style="display:none; position:absolute; right:0; top:calc(100% + 4px); background:var(--bg-surface-elevated); border:1px solid var(--border-subtle); border-radius:6px; box-shadow:0 8px 24px rgba(0,0,0,0.5); min-width:160px; z-index:100; padding:4px; flex-direction:column; gap:2px;">
-          <button class="dropdown-item" id="btnExportJson" style="display:flex; align-items:center; width:100%; text-align:left; padding:6px 10px; font-size:11px; background:none; border:none; color:var(--text-main); cursor:pointer; border-radius:4px;" title="Export simulation metrics to JSON">
+        <div class="header-dropdown-menu" id="menuDataExport" role="menu">
+          <button class="dropdown-item" id="btnExportJson" role="menuitem" title="Export simulation metrics to JSON">
             📄 Export JSON
           </button>
-          <button class="dropdown-item" id="btnExportCsv" style="display:flex; align-items:center; width:100%; text-align:left; padding:6px 10px; font-size:11px; background:none; border:none; color:var(--text-main); cursor:pointer; border-radius:4px;" title="Export node telemetry to CSV">
+          <button class="dropdown-item" id="btnExportCsv" role="menuitem" title="Export node telemetry to CSV">
             📊 Export CSV
           </button>
-          <button class="dropdown-item" id="btnExportRawCsv" style="display:flex; align-items:center; width:100%; text-align:left; padding:6px 10px; font-size:11px; background:none; border:none; color:#7dd3fc; cursor:pointer; border-radius:4px;" title="Export raw packet observations (TX, RX, Drops) to CSV">
+          <button class="dropdown-item" id="btnExportRawCsv" role="menuitem" title="Export raw packet observations (TX, RX, Drops) to CSV" style="color:#7dd3fc;">
             📈 Raw Packet CSV
           </button>
           <div style="height:1px; background:var(--border-subtle); margin:4px 0;"></div>
-          <label class="dropdown-item" for="fileTraceUpload" style="display:flex; align-items:center; width:100%; text-align:left; padding:6px 10px; font-size:11px; background:none; border:none; color:var(--text-main); cursor:pointer; border-radius:4px;" title="Upload custom JSONL trace">
+          <label class="dropdown-item" for="fileTraceUpload" role="menuitem" title="Upload custom JSONL trace">
             📁 Upload Trace (.jsonl)
             <input type="file" id="fileTraceUpload" accept=".jsonl,.txt" style="display:none;" />
           </label>

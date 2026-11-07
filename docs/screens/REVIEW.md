@@ -493,3 +493,31 @@ Measured using automated Playwright inspector (scripts/inspect_header_width.mjs)
 - 1024px viewport (user screen): 0 clipped buttons, 0 truncated tabs (total actions width 646px, rightmost button ends at 1012px, safely inside 1024px).
 - Verification screenshot saved to docs/screens/header_after_1024.png.
 
+## X. Data Dropdown Overflow Unclipping and Interactive Accessibility Audit
+
+### 1. Issues Identified from Field Testing
+
+Testing the Data dropdown menu revealed a critical clipping defect:
+1. Header overflow containment: The app-header container was styled with overflow: hidden and header-actions was styled with overflow-x: auto. Because the dropdown menu (id menuDataExport) is positioned absolute at top: calc(100% + 4px), the menu extends vertically below the 48px header boundary (from y=45px to y=182px). The overflow: hidden rule on the header clipped everything below 58px. As a result, clicking the Data button opened the menu in the DOM, but it was visually invisible to the user.
+2. Menu state and accessibility: The menu relied on manual inline display string toggles without active button states, aria-expanded attributes, or Escape key closing support.
+
+### 2. Implemented Resolutions
+
+1. Header and actions unclipping:
+   - Configured app-header with overflow: visible and header-actions without scroll containment. Because header buttons use responsive label switching, the header fits within compact viewports (872px total needed vs 1024px viewport width), eliminating any need for header overflow clipping.
+2. Standardized dropdown classes and z-index layering:
+   - Migrated inline styling to dedicated header-dropdown, header-dropdown-menu, header-dropdown-menu.show, and dropdown-toggle.active classes in dashboard/styles/main.css.
+   - Elevated menuDataExport to z-index: 1000 with solid elevated surface background, high-contrast border, and 24px drop shadow.
+3. Enhanced interaction and keyboard accessibility:
+   - Added aria-haspopup="true" and reactive aria-expanded attributes on btnExportDropdownToggle.
+   - Implemented toggle, outside-click, and Escape key dismissal listeners in dashboard/src/app.js.
+   - Automatically closes the menu upon clicking any export action (Export JSON, Export CSV, Raw CSV) or selecting a trace file for upload.
+4. Regression test coverage:
+   - Added Test Suite 7 to tests/test_scientific_dashboard_ui.mjs verifying dropdown DOM elements, upload input presence, and CSS unclipped rules.
+   - Added step 6 to tests/test_three_dashboard.mjs verifying automated headless Chromium clicking, unclipped bounding box calculation, and toggling.
+
+### 3. Verification Screenshots
+
+- docs/screens/dropdown_open_1024.png: Full 1024x458 viewport screenshot showing the open Data dropdown menu floating cleanly above the 3D scene without clipping.
+- docs/screens/dropdown_crop.png: High-resolution cropped capture of the open Data dropdown showing all four actions clearly rendered and styled.
+

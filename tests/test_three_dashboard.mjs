@@ -175,6 +175,53 @@ async function testDashboardWebGL() {
       console.log('[ PASS ] Label screen height is capped at 12-14px and covers <10% of viewport!');
     }
 
+    // 6. Verify Data Export Dropdown Interaction and Unclipped Rendering
+    console.log('Verifying Data Export Dropdown Interaction and Unclipped Rendering...');
+    const btnDataToggle = page.locator('#btnExportDropdownToggle');
+    const menuData = page.locator('#menuDataExport');
+
+    if (await btnDataToggle.count() > 0) {
+      if (await menuData.isVisible()) {
+        throw new Error('menuDataExport must be closed initially');
+      }
+
+      await btnDataToggle.click();
+      await page.waitForTimeout(200);
+
+      if (!(await menuData.isVisible())) {
+        throw new Error('menuDataExport must be visible after clicking btnExportDropdownToggle');
+      }
+
+      const btnExportJson = page.locator('#btnExportJson');
+      if (!(await btnExportJson.isVisible())) {
+        throw new Error('btnExportJson must be visible in open dropdown menu');
+      }
+
+      const clipStatus = await page.evaluate(() => {
+        const header = document.querySelector('.app-header');
+        const menu = document.getElementById('menuDataExport');
+        const headerRect = header.getBoundingClientRect();
+        const menuRect = menu.getBoundingClientRect();
+        return {
+          menuBottom: menuRect.bottom,
+          headerBottom: headerRect.bottom,
+          isClipped: menuRect.bottom > headerRect.bottom && window.getComputedStyle(header).overflow !== 'visible'
+        };
+      });
+
+      if (clipStatus.isClipped) {
+        throw new Error('menuDataExport is clipped by app-header overflow');
+      }
+
+      await btnDataToggle.click();
+      await page.waitForTimeout(200);
+      if (await menuData.isVisible()) {
+        throw new Error('menuDataExport must close after clicking toggle again');
+      }
+
+      console.log('[ PASS ] Data Export Dropdown opens, renders unclipped, and toggles cleanly!');
+    }
+
     await browser.close();
 
     if (errors.length > 0) {
