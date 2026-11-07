@@ -653,7 +653,8 @@ class InteractiveSimulatorManager {
       sf: 7,
       loss: 0.0,
       path_exp: 3.5,
-      profile: 'field'
+      profile: 'field',
+      obstacles: []
     };
   }
 
@@ -678,6 +679,12 @@ class InteractiveSimulatorManager {
       '--path-exp', String(this.config.path_exp),
       '--profile', String(this.config.profile || 'field')
     ];
+
+    if (Array.isArray(this.config.obstacles)) {
+      for (const obs of this.config.obstacles) {
+        args.push('--obstacle', `${obs.id}:${obs.material || 'concrete'}:${obs.label || 'wall'}:${obs.x1},${obs.y1},${obs.x2},${obs.y2}@${obs.attenuation_db || 22.0}`);
+      }
+    }
 
     console.log(`[Setu API] Spawning interactive simulator: ${simPath} ${args.join(' ')}`);
     this.process = spawn(simPath, args, { cwd: ROOT_DIR });
@@ -1381,30 +1388,31 @@ const server = http.createServer(async (req, res) => {
     try {
       const body = await parseBody(req);
       const params = body.params || body;
-      simManager.config.survivors = Math.min(100, Math.max(1, parseInt(params.survivors, 10) || 20));
-      simManager.config.relays = Math.min(30, Math.max(1, parseInt(params.relays, 10) || 5));
-      simManager.config.zone = Math.min(5000, Math.max(200, parseFloat(params.zone) || 1200));
-      simManager.config.seed = Math.max(0, parseInt(params.seed, 10) || 7);
+      if (params.scenarioId || body.scenarioId) {
+        const scFile = path.join(SCENARIOS_DIR, `${params.scenarioId || body.scenarioId}.json`);
+        if (fs.existsSync(scFile)) {
+          const scData = JSON.parse(fs.readFileSync(scFile, 'utf8'));
+          if (scData.params) Object.assign(params, scData.params);
+          if (scData.obstacles) simManager.config.obstacles = scData.obstacles;
+        }
+      }
+      if (body.obstacles || params.obstacles) {
+        simManager.config.obstacles = body.obstacles || params.obstacles;
+      }
+      simManager.config.survivors = Math.min(100, Math.max(1, parseInt(params.survivors, 10) || 12));
+      simManager.config.relays = Math.min(30, Math.max(1, parseInt(params.relays, 10) || 3));
+      simManager.config.zone = Math.min(5000, Math.max(200, parseFloat(params.zone) || 250));
+      simManager.config.seed = Math.max(0, parseInt(params.seed, 10) || 42);
       if (params.sf) simManager.config.sf = parseInt(params.sf, 10);
       if (params.loss !== undefined) simManager.config.loss = parseFloat(params.loss);
       if (params.path_exp) simManager.config.path_exp = parseFloat(params.path_exp);
       if (params.profile) simManager.config.profile = String(params.profile);
 
-      if (!simManager.process) {
-        await simManager.spawn();
-      } else {
-        await simManager.sendCommand({
-          cmd: 'init',
-          survivors: simManager.config.survivors,
-          relays: simManager.config.relays,
-          zone: simManager.config.zone,
-          seed: simManager.config.seed,
-          sf: simManager.config.sf,
-          loss: simManager.config.loss,
-          path_exp: simManager.config.path_exp,
-          profile: simManager.config.profile
-        });
+      if (simManager.process) {
+        try { simManager.process.kill(); } catch {}
+        simManager.process = null;
       }
+      await simManager.spawn();
       return sendJson(res, 200, { success: true, config: simManager.config, t: simManager.simTime }, req);
     } catch (err) {
       return sendError(res, errorStatus(err), err.message, req);

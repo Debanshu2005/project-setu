@@ -1,7 +1,7 @@
 // Project Setu: Setu Twin Viewer, Narrator, and Loss Budget Unit & DOM Tests
 // Validates plain-English narration, link-margin waterfall decomposition, and 3D projection.
 
-import { narrateEvent, narrateIncidentStory, computeLossBudget, formatTimestamp, findCrossedObstacles, HAZARD_NAMES, SENSITIVITY_BY_SF } from '../dashboard/src/narrator.js';
+import { narrateEvent, narrateIncidentStory, formatFailureVerdict, formatTimestamp, HAZARD_NAMES, SENSITIVITY_BY_SF } from '../dashboard/src/narrator.js';
 import { LossWaterfallComponent } from '../dashboard/components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../dashboard/components/setu_twin.js';
 import fs from 'node:fs';
@@ -156,57 +156,68 @@ async function runTests() {
   const waterfall = new LossWaterfallComponent(mockContainer);
   assert(typeof waterfall.update === 'function', 'LossWaterfallComponent exposes update method');
 
-  waterfall.update({
-    from: 3,
-    to: 100,
-    dist: 120.0,
-    tx_dbm: 14.0,
-    path_loss: 93.7,
+  const engineBudgetWall = {
+    distance_m: 143.38,
+    tx_power_dbm: 14.0,
+    ref_loss_db: 31.2,
+    path_loss_db: 81.9,
+    shadow_loss_db: -4.2,
+    extra_loss_db: 15.0,
+    fading_loss_db: 0.0,
     obstacle_loss_db: 22.0,
-    body_loss_db: 15.0,
-    shadow: 4.0,
-    sensitivity_dbm: -128.5
-  });
+    crossed_obstacles: [
+      { id: 2, name: 'exterior_south_shear_wall', material: 'concrete', loss_db: 22.0 }
+    ],
+    body_loss_db: 0.0,
+    noise_floor_dbm: -117.0,
+    rx_power_dbm: -131.9,
+    sensitivity_dbm: -126.0,
+    link_margin_db: -5.9,
+    viable: false,
+    from: 1,
+    to: 0
+  };
+
+  waterfall.update(engineBudgetWall);
 
   const descEl = document.getElementById('lwLinkDescription');
-  assert(descEl && descEl.textContent.includes('Path: Node 3 -> Node 100'), 'Link path description updated');
+  assert(descEl && descEl.textContent.includes('Path: Node 1 -> Node 0'), 'Link path description updated');
 
   const badgeEl = document.getElementById('lwViableBadge');
-  assert(badgeEl && badgeEl.textContent.length > 0, 'Viability badge rendered with margin');
+  assert(badgeEl && (badgeEl.textContent.includes('DROPPED') || badgeEl.textContent.includes('Below Sens')), 'Viability badge rendered with margin deficit');
 
-  // Test computeLossBudget for wall-blocked link
-  console.log('Testing computeLossBudget for wall-blocked link...');
-  const node1 = { id: 1, role: 'survivor', x: 190.768, y: 118.803, hazard: 2, motion_profile: 'stationary' };
-  const node0 = { id: 0, role: 'hub', x: 60.0, y: 60.0 };
-  const mockObstacles = [
-    { id: 1, name: 'exterior_west_shear_wall', material: 'reinforced_concrete', x1: 130.0, y1: 50.0, x2: 130.0, y2: 160.0, loss_db: 22.0 },
-    { id: 2, name: 'interior_corridor_partition', material: 'reinforced_concrete', x1: 150.0, y1: 80.0, x2: 150.0, y2: 140.0, loss_db: 20.0 }
-  ];
+  // Test formatFailureVerdict for wall-impacted link
+  console.log('Testing formatFailureVerdict for wall-impacted link...');
+  const verdictWall = formatFailureVerdict(engineBudgetWall);
+  assert(verdictWall.includes('exterior_south_shear_wall'), 'Verdict mentions crossed wall');
+  assert(verdictWall.includes('distance path loss'), 'Verdict identifies distance path loss as largest contributor');
+  assert(verdictWall.includes('-5.9 dB margin deficit'), 'Verdict correctly states margin deficit');
 
-  const wallBudget = computeLossBudget(node1, node0, {
-    obstacles: mockObstacles,
-    sf: 7,
-    rssi: -127.9
-  });
+  // Test formatFailureVerdict for distance-blocked link
+  console.log('Testing formatFailureVerdict for distance-blocked link...');
+  const engineBudgetDistance = {
+    distance_m: 117.8,
+    tx_power_dbm: 14.0,
+    ref_loss_db: 31.2,
+    path_loss_db: 75.5,
+    shadow_loss_db: 3.2,
+    extra_loss_db: 15.0,
+    fading_loss_db: 0.0,
+    obstacle_loss_db: 0.0,
+    crossed_obstacles: [],
+    body_loss_db: 0.0,
+    noise_floor_dbm: -117.0,
+    rx_power_dbm: -130.9,
+    sensitivity_dbm: -126.0,
+    link_margin_db: -4.9,
+    viable: false,
+    from: 9,
+    to: 6
+  };
 
-  assert(wallBudget.crossedWalls.length === 2, `Ray intersects both walls (Got: ${wallBudget.crossedWalls.length})`);
-  assert(wallBudget.totalWallLoss === 42.0, `Total wall attenuation equals 42 dB (Got: ${wallBudget.totalWallLoss})`);
-  assert(wallBudget.viable === false, 'Wall-blocked link is unviable');
-  assert(wallBudget.link_margin_db === -4.9, `Link margin matches -4.9 dB deficit (Got: ${wallBudget.link_margin_db})`);
-  assert(wallBudget.verdict.includes('exterior_west_shear_wall') && wallBudget.verdict.includes('reduced signal below receiver sensitivity'), 'Verdict explicitly names the 22 dB shear wall');
-
-  // Test computeLossBudget for distance-blocked link
-  console.log('Testing computeLossBudget for distance-blocked link...');
-  const distantNode = { id: 104, role: 'survivor', x: 910.0, y: 60.0 };
-  const distanceBudget = computeLossBudget(distantNode, node0, {
-    obstacles: [],
-    sf: 7,
-    rssi: -124.4
-  });
-
-  assert(distanceBudget.crossedWalls.length === 0, 'Distance link has 0 crossed walls');
-  assert(distanceBudget.viable === false, 'Distance-blocked link is unviable');
-  assert(distanceBudget.verdict.includes('distance path loss') && distanceBudget.verdict.includes('reduced signal below receiver sensitivity'), 'Verdict explicitly names distance path loss');
+  const verdictDistance = formatFailureVerdict(engineBudgetDistance);
+  assert(verdictDistance.includes('distance path loss'), 'Verdict identifies distance path loss');
+  assert(verdictDistance.includes('-4.9 dB margin deficit'), 'Verdict correctly states -4.9 dB deficit');
 
   // Test Plain English Disaster Story Narration
   console.log('Testing narrative timeline disaster story formatting...');

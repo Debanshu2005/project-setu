@@ -591,6 +591,7 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
   lb.ref_loss_db = ch_.ref_loss_db;
   lb.extra_loss_db = ch_.extra_loss_db;
   lb.sensitivity_dbm = sens_;
+  lb.noise_floor_dbm = -174.0 + 10.0 * std::log10(static_cast<double>(ch_.bw_hz)) + 6.0;
 
   if (a == b || !nodes_.count(a) || !nodes_.count(b)) {
     lb.rx_power_dbm = kNegInf;
@@ -614,6 +615,7 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
   const auto& na = *nodes_.at(a);
   const auto& nb = *nodes_.at(b);
   const double d = std::max(1.0, std::hypot(na.x - nb.x, na.y - nb.y));
+  lb.distance_m = d;
   lb.path_loss_db = 10.0 * ch_.path_exp * std::log10(d);
 
   if (ch_.shadow_sigma_db > 0.0) {
@@ -637,21 +639,25 @@ LossBudget World::get_loss_budget(uint16_t a, uint16_t b) const {
     lb.body_loss = "not modeled yet";
   } else {
     if (!obstacles_.empty()) {
-      obs_loss = calculate_obstacle_attenuation(na.x, na.y, nb.x, nb.y, obstacles_, &obs_count);
+      obs_loss = calculate_obstacle_attenuation(na.x, na.y, nb.x, nb.y, obstacles_, &obs_count, &lb.crossed_obstacles);
+      lb.obstacle_loss_db = obs_loss;
       char ob[64];
       std::snprintf(ob, sizeof ob, "%.1f dB (%dx intersected)", obs_loss, obs_count);
       lb.obstacle_loss = ob;
     } else {
+      lb.obstacle_loss_db = 0.0;
       lb.obstacle_loss = "0.0 dB (line of sight)";
     }
 
     if (na.heading_rad >= 0.0 || nb.heading_rad >= 0.0) {
       body_loss = calculate_body_shadowing_db(na.x, na.y, nb.x, nb.y, na.heading_rad) +
                   calculate_body_shadowing_db(nb.x, nb.y, na.x, na.y, nb.heading_rad);
+      lb.body_loss_db = body_loss;
       char bb[64];
       std::snprintf(bb, sizeof bb, "%.1f dB", body_loss);
       lb.body_loss = bb;
     } else {
+      lb.body_loss_db = 0.0;
       lb.body_loss = "0.0 dB (unshadowed)";
     }
   }

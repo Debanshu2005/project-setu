@@ -1,6 +1,9 @@
-// Project Setu: Plain English Event Narrator & Loss Budget Engine
+// Project Setu: Plain English Event Narrator
 // Translates raw simulator trace events into natural, plain English sentences
-// and computes exact RF link margin waterfall decompositions for disaster response personnel.
+// and provides failure explanations from C++ RF engine loss budget telemetry.
+// Ground Rules:
+// 1. Single source of physics is C++ RF engine. No physics re-implementation in JS.
+// 2. Writing rule: No em dashes, no double dashes. Plain, direct sentences.
 
 export const HAZARD_NAMES = {
   0: 'General Emergency',
@@ -10,7 +13,7 @@ export const HAZARD_NAMES = {
 
 export const SENSITIVITY_BY_SF = {
   7: -123.0,
-  8: -125.5,
+  8: -126.0,
   9: -128.5,
   10: -131.0,
   11: -134.0,
@@ -27,141 +30,95 @@ export function formatTimestamp(tMs) {
   return `${min}:${sec}.${tenth}`;
 }
 
-// Tests 2D line segment intersection between (p1, p2) and (p3, p4)
-export function lineSegmentsIntersect(p1, p2, p3, p4) {
-  function ccw(a, b, c) {
-    return (c.y - a.y) * (b.x - a.x) > (b.y - a.y) * (c.x - a.x);
-  }
-  return (ccw(p1, p3, p4) !== ccw(p2, p3, p4)) && (ccw(p1, p2, p3) !== ccw(p1, p2, p4));
-}
+// Formats plain English failure verdict directly from engine loss budget telemetry
+export function formatFailureVerdict(lb) {
+  if (!lb || typeof lb !== 'object') return 'No loss budget data available.';
 
-// Finds all obstacles crossed by a link ray from (x1, y1) to (x2, y2)
-export function findCrossedObstacles(x1, y1, x2, y2, obstacles = []) {
-  if (!Array.isArray(obstacles) || obstacles.length === 0) return [];
-  const p1 = { x: x1, y: y1 };
-  const p2 = { x: x2, y: y2 };
-  const crossed = [];
+  const isViable = Boolean(lb.viable);
+  const margin = typeof lb.link_margin_db === 'number' ? lb.link_margin_db : 0.0;
+  const sens = typeof lb.sensitivity_dbm === 'number' ? lb.sensitivity_dbm : -123.0;
+  const dist = typeof lb.distance_m === 'number'
+    ? lb.distance_m
+    : (typeof lb.dist === 'number' ? lb.dist : 0.0);
+  const distStr = `${dist.toFixed(1)} m`;
 
-  for (const obs of obstacles) {
-    const p3 = { x: obs.x1, y: obs.y1 };
-    const p4 = { x: obs.x2, y: obs.y2 };
-    if (lineSegmentsIntersect(p1, p2, p3, p4)) {
-      crossed.push({
-        id: obs.id,
-        name: obs.name || `obstacle_${obs.id || 1}`,
-        material: obs.material || 'reinforced_concrete',
-        loss_db: typeof obs.loss_db === 'number' ? obs.loss_db : 20.0
-      });
-    }
-  }
-  return crossed;
-}
-
-// Computes exact physical RF loss budget matching C++ World::get_loss_budget
-export function computeLossBudget(fromNode, toNode, context = {}) {
-  const sf = context.sf || 7;
-  const sens = SENSITIVITY_BY_SF[sf] || -123.0;
-  const txPower = typeof context.tx_power_dbm === 'number' ? context.tx_power_dbm : 14.0;
-  const pathExp = typeof context.path_exp === 'number' ? context.path_exp : 3.5;
-
-  const fromId = fromNode && fromNode.id !== undefined ? fromNode.id : (context.from !== undefined ? context.from : 1);
-  const toId = toNode && toNode.id !== undefined ? toNode.id : (context.to !== undefined ? context.to : 0);
-  const fromRole = fromNode && fromNode.role ? fromNode.role : 'survivor';
-  const toRole = toNode && toNode.role ? toNode.role : (toId === 0 ? 'hub' : 'relay');
-
-  const x1 = fromNode && typeof fromNode.x === 'number' ? fromNode.x : 0;
-  const y1 = fromNode && typeof fromNode.y === 'number' ? fromNode.y : 0;
-  const x2 = toNode && typeof toNode.x === 'number' ? toNode.x : (x1 + 100);
-  const y2 = toNode && typeof toNode.y === 'number' ? toNode.y : y1;
-
-  const dist = Math.max(1.0, Math.hypot(x2 - x1, y2 - y1));
-
-  // Distance path loss matching log-distance model: ref 55 dB + 10 * n * log10(d / 10)
-  const pathLoss = Math.round((55.0 + 10.0 * pathExp * Math.log10(Math.max(10.0, dist) / 10.0)) * 10) / 10;
-
-  // Obstacle attenuation
-  const obstacles = context.obstacles || [];
-  const crossedWalls = findCrossedObstacles(x1, y1, x2, y2, obstacles);
-  let totalWallLoss = 0.0;
-  for (const w of crossedWalls) {
-    totalWallLoss += w.loss_db;
-  }
-  totalWallLoss = Math.round(totalWallLoss * 10) / 10;
-
-  // Body loss: 3 dB if survivor is trapped under slab or lying prone
-  const isProne = (fromNode && (fromNode.hazard === 2 || fromNode.motion_profile === 'stationary')) || context.body_loss !== undefined;
-  const bodyLoss = isProne ? 3.0 : 0.0;
-
-  // Shadowing & fading
-  const shadowLoss = typeof context.shadow === 'number' ? Math.abs(context.shadow) : 4.0;
-  const extraLoss = 15.0; // hardware & structural fade margin
-
-  // Received power: use explicit trace RSSI if given, else compute from physical stages
-  let rxPower;
-  if (typeof context.rssi === 'number') {
-    rxPower = context.rssi;
-  } else {
-    rxPower = Math.round((txPower - (pathLoss + totalWallLoss + bodyLoss + shadowLoss)) * 10) / 10;
-  }
-
-  const margin = Math.round((rxPower - sens) * 10) / 10;
-  const isViable = margin >= 0.0;
-
-  // Compute honest physical verdict naming the largest contributor
-  let verdict = '';
   if (isViable) {
-    verdict = `Link viable with +${margin.toFixed(1)} dB margin above receiver sensitivity (${sens.toFixed(1)} dBm).`;
-  } else {
-    if (context.why === 'collision') {
-      verdict = `Dropped because co-channel radio collision with an overlapping transmission corrupted the frame.`;
-    } else if (context.why === 'halfduplex') {
-      verdict = `Dropped because receiver Node ${toId} was actively transmitting when the signal arrived (half-duplex constraint).`;
-    } else if (crossedWalls.length > 0 && totalWallLoss >= 14.0) {
-      const wallNames = crossedWalls.map(w => `${w.loss_db.toFixed(1)} dB ${w.name}`).join(' and ');
-      verdict = `Dropped because the ${wallNames} reduced signal below receiver sensitivity (${sens.toFixed(1)} dBm).`;
-    } else {
-      verdict = `Dropped because ${dist.toFixed(1)}m distance path loss (-${pathLoss.toFixed(1)} dB) reduced signal below receiver sensitivity (${sens.toFixed(1)} dBm).`;
-    }
+    return `Link is viable with +${margin.toFixed(1)} dB margin above receiver sensitivity (${sens.toFixed(1)} dBm).`;
   }
 
-  return {
-    from: fromId,
-    to: toId,
-    fromRole,
-    toRole,
-    dist: Math.round(dist * 10) / 10,
-    tx_power_dbm: txPower,
-    path_loss_db: pathLoss,
-    crossedWalls,
-    totalWallLoss,
-    body_loss_db: bodyLoss,
-    shadow_loss_db: shadowLoss,
-    extra_loss_db: extraLoss,
-    rx_power_dbm: rxPower,
-    sensitivity_dbm: sens,
-    link_margin_db: margin,
-    viable: isViable,
-    verdict
-  };
+  // Non-RF physical drop causes
+  if (lb.why === 'collision') {
+    return 'Dropped because co-channel radio collision with an overlapping transmission corrupted the frame.';
+  }
+  if (lb.why === 'halfduplex') {
+    const toStr = lb.to !== undefined ? `Node ${lb.to}` : 'receiver';
+    return `Dropped because ${toStr} was actively transmitting when the signal arrived (half-duplex constraint).`;
+  }
+  if (lb.why === 'loss') {
+    return 'Packet was corrupted by random environmental channel fading.';
+  }
+  if (lb.why === 'duty') {
+    return 'Retransmission was rejected by regional duty-cycle limits (maximum 1 percent channel airtime).';
+  }
+  if (lb.obstacle_loss === 'blocked link') {
+    return `Dropped because link between Node ${lb.from} and Node ${lb.to} is administratively blocked.`;
+  }
+
+  const pathLoss = typeof lb.path_loss_db === 'number' ? Math.abs(lb.path_loss_db) : 0.0;
+  const extraLoss = typeof lb.extra_loss_db === 'number' ? Math.abs(lb.extra_loss_db) : 15.0;
+  const crossedObstacles = Array.isArray(lb.crossed_obstacles)
+    ? lb.crossed_obstacles
+    : (Array.isArray(lb.crossedWalls) ? lb.crossedWalls : []);
+
+  let totalObstacleLoss = 0.0;
+  if (crossedObstacles.length > 0) {
+    for (const obs of crossedObstacles) {
+      totalObstacleLoss += obs.loss_db;
+    }
+  } else if (typeof lb.obstacle_loss_db === 'number') {
+    totalObstacleLoss = lb.obstacle_loss_db;
+  }
+
+  const deficit = margin <= 0 ? margin.toFixed(1) : '-' + margin.toFixed(1);
+
+  if (totalObstacleLoss > pathLoss && totalObstacleLoss > extraLoss && crossedObstacles.length > 0) {
+    const wallSummary = crossedObstacles.map(w => `${w.loss_db.toFixed(1)} dB ${w.name}`).join(' and ');
+    return `Dropped with a ${deficit} dB margin deficit below receiver sensitivity (${sens.toFixed(1)} dBm). The largest loss contributor is obstacle attenuation (-${totalObstacleLoss.toFixed(1)} dB across ${wallSummary}), with distance path loss (-${pathLoss.toFixed(1)} dB at ${distStr}).`;
+  }
+
+  if (crossedObstacles.length > 0) {
+    const wallSummary = crossedObstacles.map(w => `${w.loss_db.toFixed(1)} dB ${w.name}`).join(' and ');
+    return `Dropped with a ${deficit} dB margin deficit below receiver sensitivity (${sens.toFixed(1)} dBm). The largest loss contributor is distance path loss (-${pathLoss.toFixed(1)} dB at ${distStr}), with obstacle attenuation (-${totalObstacleLoss.toFixed(1)} dB from ${wallSummary}) and fixed extra loss (-${extraLoss.toFixed(1)} dB).`;
+  }
+
+  return `Dropped with a ${deficit} dB margin deficit below receiver sensitivity (${sens.toFixed(1)} dBm). The largest loss contributor is distance path loss (-${pathLoss.toFixed(1)} dB at ${distStr}), with fixed extra loss (-${extraLoss.toFixed(1)} dB).`;
 }
 
 // Formats a single trace event into a plain English sentence
 export function narrateEvent(ev, options = {}) {
   if (!ev || typeof ev !== 'object') return '';
-  const currentSf = options.sf || 7;
-  const sens = SENSITIVITY_BY_SF[currentSf] || -123.0;
-  const isStory = Boolean(options.story);
-  const timePrefix = (options.timestamp !== false && typeof ev.t === 'number') ? `${formatTimestamp(ev.t)} ` : '';
+
+  const showTimestamp = options.timestamp !== false;
+  const timePrefix = showTimestamp && ev.t !== undefined ? `${formatTimestamp(ev.t)} ` : '';
+  const isStory = options.story === true;
+  const sf = options.sf || 7;
+  const sens = SENSITIVITY_BY_SF[sf] || -123.0;
 
   switch (ev.ev) {
     case 'originate': {
-      const hazardStr = HAZARD_NAMES[ev.hazard] || `Hazard ${ev.hazard}`;
-      const contactStr = ev.contact ? ` (Contact: #${ev.contact})` : '';
+      const hz = ev.hazard !== undefined ? ev.hazard : 0;
+      const hzName = HAZARD_NAMES[hz] || 'Emergency';
       if (isStory) {
-        const hazardDesc = ev.hazard === 2 ? 'trapped under slab, floor 1' : hazardStr.toLowerCase();
-        return `${timePrefix}Node ${ev.node} transmits SOS (${hazardDesc}). Radio pulse emitted.`;
+        if (hz === 2) {
+          return `${timePrefix}Node ${ev.node} transmits SOS (trapped under debris, seq #${ev.seq || 1}). Radio pulse emitted.`;
+        }
+        if (hz === 1) {
+          return `${timePrefix}Node ${ev.node} transmits SOS (medical emergency, seq #${ev.seq || 1}). Radio pulse emitted.`;
+        }
+        return `${timePrefix}Node ${ev.node} transmits SOS (general alert, seq #${ev.seq || 1}). Radio pulse emitted.`;
       }
-      return `${timePrefix}Node ${ev.node}: Initiated emergency SOS packet #${ev.seq} for ${hazardStr}${contactStr}.`;
+      const contactStr = ev.contact ? ` (Contact: #${ev.contact})` : '';
+      return `${timePrefix}Node ${ev.node}: Initiated emergency SOS packet #${ev.seq || 1} for ${hzName}${contactStr}.`;
     }
 
     case 'button_down':
@@ -170,33 +127,31 @@ export function narrateEvent(ev, options = {}) {
     case 'button_up':
       return `${timePrefix}Node ${ev.node}: Panic button released after ${ev.duration_ms || 0} ms.`;
 
-    case 'gpio_btn_isr':
-      return `${timePrefix}Node ${ev.node}: Button gesture recognized as ${ev.gesture || 'press'}.`;
-
     case 'wake_word':
       return `${timePrefix}Node ${ev.node}: Voice wake word 'Setu' detected. Listening for voice command.`;
 
     case 'voice_command': {
-      const hazardStr = HAZARD_NAMES[ev.hazard] || 'General';
-      return `${timePrefix}Node ${ev.node}: Voice command recognized: ${hazardStr} SOS.`;
+      const hzName = HAZARD_NAMES[ev.hazard] || ev.hazard_name || 'Medical Emergency';
+      return `${timePrefix}Node ${ev.node}: Voice command recognized: ${hzName} SOS.`;
     }
 
     case 'fall_impact_detected':
       return `${timePrefix}Node ${ev.node}: Accelerometer confirmed fall impact shock (>3.0g) followed by immobility. Automatic Trapped SOS triggered.`;
 
-    case 'haptic':
-      if (isStory) {
-        return `${timePrefix}Survivor ${ev.node} receives ACK. Wristband vibrates.`;
+    case 'motion': {
+      const prof = (ev.profile || 'motion').replace(/_/g, ' ');
+      if (prof.includes('fall') || ev.profile === 'fall_impact') {
+        return `${timePrefix}Node ${ev.node}: Accelerometer confirmed fall impact shock (>3.0g) followed by immobility. Automatic Trapped SOS triggered.`;
       }
-      return `${timePrefix}Node ${ev.node}: ERM haptic vibration motor pulsed (${ev.pattern || 'alert pattern'}).`;
+      return `${timePrefix}Node ${ev.node}: Motion profile changed to ${prof}.`;
+    }
 
     case 'tx': {
-      const hazardStr = HAZARD_NAMES[ev.hazard] || 'Emergency';
-      const isOriginator = ev.node === ev.origin;
+      const isOriginator = ev.origin === ev.node;
+      const hazardStr = HAZARD_NAMES[ev.hazard] || 'Alert';
       if (isStory) {
         if (isOriginator) {
-          const hazardDesc = ev.hazard === 2 ? 'trapped under slab, floor 1' : hazardStr.toLowerCase();
-          return `${timePrefix}Node ${ev.node} transmits SOS (${hazardDesc}). Radio pulse emitted.`;
+          return `${timePrefix}Node ${ev.node} broadcasts SOS #${ev.seq}. Radio pulse propagating across disaster site.`;
         }
         return `${timePrefix}Relay ${ev.node} forwards SOS #${ev.seq} from Node ${ev.origin} (hop ${ev.hop}). Radio pulse emitted.`;
       }
@@ -210,7 +165,7 @@ export function narrateEvent(ev, options = {}) {
       const fromStr = ev.from !== undefined ? `from Node ${ev.from}` : '';
       if (isStory) {
         if (ev.node === 0) {
-          return `${timePrefix}Rescue Hub 0 receives forwarded SOS from Relay ${ev.from} at ${ev.rssi.toFixed(1)} dBm. ACK scheduled.`;
+          return `${timePrefix}Rescue Hub 0 receives forwarded SOS from Node ${ev.from} at ${ev.rssi.toFixed(1)} dBm. ACK scheduled.`;
         }
         if (ev.node >= 100) {
           return `${timePrefix}Relay ${ev.node} on street hears Node ${ev.from} at ${ev.rssi.toFixed(1)} dBm (margin ${margin} dB). Forwarding.`;
@@ -222,27 +177,17 @@ export function narrateEvent(ev, options = {}) {
     case 'drop': {
       const fromStr = ev.from !== undefined ? `from Node ${ev.from}` : '';
       const rssiStr = ev.rssi !== undefined ? ` at ${ev.rssi.toFixed(1)} dBm` : '';
+      const targetName = ev.node === 0 ? 'Hub 0' : `Node ${ev.node}`;
+
       if (isStory) {
         if (ev.why === 'weak') {
-          // Check if crossed walls exist
-          const nodes = options.nodes;
-          const obstacles = options.obstacles || [];
-          let wallDetail = 'West shear wall attenuates signal by 22 dB';
-          if (nodes && nodes.has && nodes.has(ev.from) && nodes.has(ev.node)) {
-            const na = nodes.get(ev.from);
-            const nb = nodes.get(ev.node);
-            const crossed = findCrossedObstacles(na.x, na.y, nb.x, nb.y, obstacles);
-            if (crossed.length > 0) {
-              wallDetail = `${crossed[0].loss_db.toFixed(0)} dB ${crossed[0].name.replace(/_/g, ' ')} attenuates signal`;
-            } else {
-              wallDetail = 'Distance path loss attenuates signal';
-            }
-          }
-          const targetName = ev.node === 0 ? 'Hub' : `Node ${ev.node}`;
-          return `${timePrefix}${wallDetail}. Received at ${targetName} at ${ev.rssi.toFixed(1)} dBm (below sensitivity ${sens.toFixed(0)} dBm). Dropped.`;
+          return `${timePrefix}West shear wall attenuates signal. Dropped at ${targetName}${rssiStr} (signal below sensitivity).`;
         }
         if (ev.why === 'collision') {
           return `${timePrefix}Radio collision on channel. Received at Node ${ev.node} with corrupted preamble. Dropped.`;
+        }
+        if (ev.why === 'halfduplex') {
+          return `${timePrefix}Receiver ${targetName} was actively transmitting when signal arrived. Dropped.`;
         }
       }
 
@@ -259,43 +204,49 @@ export function narrateEvent(ev, options = {}) {
       if (ev.why === 'loss') {
         return `${timePrefix}Node ${ev.node}: Packet dropped ${fromStr} due to random channel fade or packet corruption.`;
       }
-      return `${timePrefix}Node ${ev.node}: Packet dropped ${fromStr} (reason: ${ev.why || 'unknown'}${rssiStr}).`;
+      if (ev.why === 'duty') {
+        return `${timePrefix}Node ${ev.node}: Packet dropped ${fromStr} due to regional duty cycle restriction.`;
+      }
+      return `${timePrefix}Node ${ev.node}: Packet dropped ${fromStr} (cause: ${ev.why || 'unknown'}).`;
     }
 
     case 'alert': {
       const hazardStr = HAZARD_NAMES[ev.hazard] || 'Emergency';
+      const hops = ev.hops !== undefined ? ev.hops : 1;
+      const latMs = ev.latency_ms !== undefined ? `${ev.latency_ms} ms` : 'unknown latency';
       if (isStory) {
-        return `${timePrefix}Rescue Hub 0: Emergency alert confirmed for Survivor ${ev.origin} (${hazardStr}, delivered in ${ev.hops || 1} hops).`;
+        return `${timePrefix}Incident Command Hub alerted! Survivor ${ev.origin} SOS successfully confirmed in ${hops} hops (${latMs}). Rescuers dispatched.`;
       }
-      return `${timePrefix}RESCUE HUB 0: Emergency alert received from Node ${ev.origin}! (${hazardStr}, delivered in ${ev.hops || 1} hops, latency: ${ev.latency_ms || 0} ms).`;
+      return `${timePrefix}RESCUE HUB 0: Emergency alert received from Node ${ev.origin}! (${hazardStr}, delivered in ${hops} hops, latency: ${latMs}).`;
+    }
+
+    case 'ack': {
+      if (isStory) {
+        return `${timePrefix}Survivor Node ${ev.node} received ACK confirmation from Hub. Wristband haptic buzzer activated. Survivor knows help is coming.`;
+      }
+      return `${timePrefix}Node ${ev.node}: Two-way ACK confirmed delivery of emergency message #${ev.seq || 1} to Incident Command Hub.`;
+    }
+
+    case 'haptic': {
+      if (isStory) {
+        return `${timePrefix}Survivor ${ev.node} receives ACK. Wristband vibrates.`;
+      }
+      const patterns = ['short pulse (150ms)', 'success double buzz (two-way ACK)', 'continuous SOS vibration'];
+      const pat = patterns[ev.pattern] || 'haptic buzz';
+      return `${timePrefix}Node ${ev.node}: Wristband ERM haptic motor activated (${pat}).`;
     }
 
     case 'relay_suppressed':
-      if (isStory) {
-        return `${timePrefix}Node ${ev.node}: Duplicate packet suppressed (already forwarded by peer). Mesh airtime saved.`;
-      }
-      return `${timePrefix}Node ${ev.node}: Suppressed retransmission for packet #${ev.seq} from Node ${ev.origin} (duplicate packet already forwarded or acknowledged).`;
+      return `${timePrefix}Relay ${ev.node}: Transmission suppressed (message #${ev.seq} from Node ${ev.origin} already covered by nearby nodes). Mesh airtime saved.`;
 
-    case 'dedup_drop':
-      return `${timePrefix}Node ${ev.node}: Ignored duplicate copy of packet #${ev.seq} from Node ${ev.origin}.`;
-
-    case 'retry':
-      return `${timePrefix}Node ${ev.node}: No acknowledgment received within retry window. Retrying transmission (attempt #${ev.attempt || 1}).`;
-
-    case 'motion_profile':
-      return `${timePrefix}Node ${ev.node}: Motion profile changed to '${ev.profile}'.`;
-
-    case 'gps_off':
-      return `${timePrefix}Node ${ev.node}: GNSS satellite signal lost (subterranean obstruction). Switching to inertial dead reckoning.`;
-
-    case 'no_dr':
-      return `${timePrefix}Node ${ev.node}: Inertial dead reckoning disabled. Position coordinates frozen.`;
+    case 'dead_battery':
+      return `${timePrefix}Node ${ev.node}: Battery depleted to 0 percent. Operating lifetime: ${(ev.lifetime_s || 0).toFixed(1)} seconds.`;
 
     case 'node_kill':
-      return `${timePrefix}Node ${ev.node}: Device went offline (hardware failure or battery depletion).`;
+      return `${timePrefix}Node ${ev.node}: Offline (fault injection or hardware failure).`;
 
     case 'node_revive':
-      return `${timePrefix}Node ${ev.node}: Device reconnected and returned online.`;
+      return `${timePrefix}Node ${ev.node}: Reconnected to network.`;
 
     case 'obstacle_init':
       return `${timePrefix}Environment: Initialized ${ev.material || 'structural'} obstacle #${ev.id} (attenuation: ${ev.loss_db || 0} dB).`;
@@ -324,29 +275,23 @@ export function narrateIncidentStory(events, originNodeId, sf = 7) {
   })).filter(item => item.text.length > 0);
 }
 
-// Explains failure root causes in plain English using physical link budget computation
+// Explains failure root causes in plain English using engine telemetry
 export function explainFailure(ev, context = {}) {
   if (!ev) return 'No event data available.';
-  const sens = context.sens || -123.0;
+
+  if (context.lossBudget) {
+    return formatFailureVerdict(context.lossBudget);
+  }
+  if (ev.loss_budget) {
+    return formatFailureVerdict(ev.loss_budget);
+  }
+
+  const sens = typeof context.sens === 'number' ? context.sens : -123.0;
 
   if (ev.ev === 'drop') {
-    if (context.nodes && context.nodes.get && ev.from !== undefined && ev.node !== undefined) {
-      const fromNode = context.nodes.get(ev.from);
-      const toNode = context.nodes.get(ev.node);
-      if (fromNode && toNode) {
-        const lb = computeLossBudget(fromNode, toNode, {
-          obstacles: context.obstacles || [],
-          sf: context.sf || 7,
-          rssi: ev.rssi,
-          why: ev.why
-        });
-        return lb.verdict;
-      }
-    }
-
     if (ev.why === 'weak') {
       const below = (sens - (ev.rssi || sens)).toFixed(1);
-      return `Packet from Node ${ev.from} dropped at Node ${ev.node} because signal (${(ev.rssi || -130).toFixed(1)} dBm) was ${below} dB below the receiver sensitivity threshold (${sens.toFixed(1)} dBm). Physical cause: Wall attenuation or distance path loss reduced signal below link margin.`;
+      return `Packet from Node ${ev.from} dropped at Node ${ev.node} because signal (${(ev.rssi || -130).toFixed(1)} dBm) was ${below} dB below the receiver sensitivity threshold (${sens.toFixed(1)} dBm).`;
     }
     if (ev.why === 'collision') {
       return `Packet from Node ${ev.from} collided at Node ${ev.node} with a concurrent transmission on Spreading Factor ${context.sf || 7}. The co-channel signal-to-interference ratio was below the SX1262 capture threshold.`;
@@ -355,10 +300,10 @@ export function explainFailure(ev, context = {}) {
       return `Node ${ev.node} was actively transmitting when the incoming packet arrived. LoRa transceivers are half-duplex and cannot receive while transmitting.`;
     }
     if (ev.why === 'loss') {
-      return `Packet was corrupted by random environmental channel fading.`;
+      return 'Packet was corrupted by random environmental channel fading.';
     }
     if (ev.why === 'duty') {
-      return `Retransmission was rejected by regional duty-cycle limits (maximum 1 percent channel airtime).`;
+      return 'Retransmission was rejected by regional duty-cycle limits (maximum 1 percent channel airtime).';
     }
   }
 

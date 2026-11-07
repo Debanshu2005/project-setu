@@ -245,6 +245,7 @@ class WasmSimSession {
     sim::LossBudget lb = world_->get_loss_budget(from, to);
     std::ostringstream ss;
     ss << "{\"ok\":true,\"from\":" << from << ",\"to\":" << to
+       << ",\"distance_m\":" << lb.distance_m
        << ",\"tx_power_dbm\":" << lb.tx_power_dbm
        << ",\"ref_loss_db\":" << lb.ref_loss_db
        << ",\"path_loss_db\":" << lb.path_loss_db
@@ -252,7 +253,18 @@ class WasmSimSession {
        << ",\"extra_loss_db\":" << lb.extra_loss_db
        << ",\"fading_loss_db\":" << lb.fading_loss_db
        << ",\"obstacle_loss\":\"" << lb.obstacle_loss << "\""
-       << ",\"body_loss\":\"" << lb.body_loss << "\""
+       << ",\"obstacle_loss_db\":" << lb.obstacle_loss_db
+       << ",\"crossed_obstacles\":[";
+    for (size_t i = 0; i < lb.crossed_obstacles.size(); ++i) {
+      const auto& co = lb.crossed_obstacles[i];
+      if (i > 0) ss << ",";
+      ss << "{\"id\":" << co.id << ",\"name\":\"" << co.name
+         << "\",\"material\":\"" << co.material
+         << "\",\"loss_db\":" << co.loss_db << "}";
+    }
+    ss << "],\"body_loss\":\"" << lb.body_loss << "\""
+       << ",\"body_loss_db\":" << lb.body_loss_db
+       << ",\"noise_floor_dbm\":" << lb.noise_floor_dbm
        << ",\"rx_power_dbm\":" << lb.rx_power_dbm
        << ",\"sensitivity_dbm\":" << lb.sensitivity_dbm
        << ",\"link_margin_db\":" << lb.link_margin_db

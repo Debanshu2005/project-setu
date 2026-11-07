@@ -777,6 +777,13 @@ export class SetuApi {
     return await res.json();
   }
 
+  static async getLossBudget(from = 1, to = 0, timeoutMs = 8000) {
+    const base = this.getBaseUrl();
+    const res = await this.fetchWithTimeout(`${base}/api/control/loss-budget?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`, {}, timeoutMs);
+    if (!res.ok) throw new Error(`HTTP ${res.status} from /api/control/loss-budget`);
+    return await res.json();
+  }
+
   static async getControlStatus(timeoutMs = 6000) {
     await this.ensureResolved();
     const res = await this.fetchWithTimeout(`${this.requireBaseUrl()}/api/control/status`, {}, timeoutMs);

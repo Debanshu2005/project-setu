@@ -67,6 +67,11 @@ struct LossBudget {
   double sensitivity_dbm = -123.0;
   double link_margin_db = 0.0;
   bool viable = false;
+  double distance_m = 0.0;
+  double obstacle_loss_db = 0.0;
+  double body_loss_db = 0.0;
+  double noise_floor_dbm = -117.0;
+  std::vector<CrossedObstacleInfo> crossed_obstacles;
 };
 
 struct ChannelParams {
