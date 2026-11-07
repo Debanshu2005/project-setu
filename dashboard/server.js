@@ -7,6 +7,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import crypto from 'node:crypto';
+import zlib from 'node:zlib';
 import { findSimulator } from './sim_finder.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -913,8 +915,132 @@ const MIME_TYPES = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.ico': 'image/x-icon',
-  '.wasm': 'application/wasm'
+  '.wasm': 'application/wasm',
+  '.woff2': 'font/woff2',
+  '.woff': 'font/woff',
+  '.ttf': 'font/ttf'
 };
+
+const COMPRESSIBLE_EXTENSIONS = new Set([
+  '.html',
+  '.css',
+  '.js',
+  '.json',
+  '.jsonl',
+  '.svg',
+  '.wasm'
+]);
+
+const STATIC_CACHE = new Map();
+
+function getStaticAsset(absPath, reqPath) {
+  try {
+    const st = fs.statSync(absPath);
+    if (!st.isFile()) return null;
+
+    const cached = STATIC_CACHE.get(absPath);
+    if (cached && cached.mtimeMs === st.mtimeMs && cached.size === st.size) {
+      return cached;
+    }
+
+    const raw = fs.readFileSync(absPath);
+    const ext = path.extname(absPath).toLowerCase();
+    const mime = MIME_TYPES[ext] || 'application/octet-stream';
+    const isCompressible = COMPRESSIBLE_EXTENSIONS.has(ext) && raw.length > 128;
+
+    let cacheControl;
+    const normalizedReq = reqPath.replace(/\\/g, '/');
+    if (
+      normalizedReq.includes('/vendor/') ||
+      ext === '.woff2' ||
+      ext === '.woff' ||
+      ext === '.ttf'
+    ) {
+      cacheControl = 'public, max-age=31536000, immutable';
+    } else if (normalizedReq.includes('/scenarios/traces/') || normalizedReq.includes('/api/trace/')) {
+      cacheControl = 'public, max-age=86400';
+    } else {
+      cacheControl = 'no-cache';
+    }
+
+    const etag = '"' + crypto.createHash('sha256').update(raw).digest('hex').slice(0, 16) + '"';
+    let gzipBuffer = null;
+    let brBuffer = null;
+
+    if (isCompressible) {
+      try {
+        gzipBuffer = zlib.gzipSync(raw, { level: 6 });
+      } catch {
+        gzipBuffer = null;
+      }
+      try {
+        brBuffer = zlib.brotliCompressSync(raw);
+      } catch {
+        brBuffer = null;
+      }
+    }
+
+    const asset = {
+      mtimeMs: st.mtimeMs,
+      size: st.size,
+      etag,
+      raw,
+      gzip: gzipBuffer,
+      br: brBuffer,
+      mime,
+      cacheControl
+    };
+
+    STATIC_CACHE.set(absPath, asset);
+    return asset;
+  } catch {
+    return null;
+  }
+}
+
+function serveStaticFile(req, res, absPath, reqPath) {
+  const asset = getStaticAsset(absPath, reqPath);
+  if (!asset) {
+    return sendError(res, 404, 'File not found', req);
+  }
+
+  const ifNoneMatch = req.headers['if-none-match'];
+  if (ifNoneMatch && (ifNoneMatch === asset.etag || ifNoneMatch === 'W/' + asset.etag)) {
+    const headers = {
+      'ETag': asset.etag,
+      'Cache-Control': asset.cacheControl,
+      'Vary': 'Accept-Encoding'
+    };
+    applyCorsHeaders(headers, req);
+    res.writeHead(304, headers);
+    return res.end();
+  }
+
+  const acceptEncoding = req.headers['accept-encoding'] || '';
+  const headers = {
+    'Content-Type': asset.mime,
+    'ETag': asset.etag,
+    'Cache-Control': asset.cacheControl,
+    'Vary': 'Accept-Encoding'
+  };
+  applyCorsHeaders(headers, req);
+
+  if (asset.br && acceptEncoding.includes('br')) {
+    headers['Content-Encoding'] = 'br';
+    headers['Content-Length'] = asset.br.length;
+    res.writeHead(200, headers);
+    res.end(asset.br);
+  } else if (asset.gzip && acceptEncoding.includes('gzip')) {
+    headers['Content-Encoding'] = 'gzip';
+    headers['Content-Length'] = asset.gzip.length;
+    res.writeHead(200, headers);
+    res.end(asset.gzip);
+  } else {
+    headers['Content-Length'] = asset.raw.length;
+    res.writeHead(200, headers);
+    res.end(asset.raw);
+  }
+}
 
 const DEFAULT_ALLOWED_ORIGINS = [
   'https://project-setu.vercel.app',
@@ -958,17 +1084,46 @@ function applyCorsHeaders(headers, req) {
     headers['Access-Control-Allow-Headers'] = 'Content-Type, Authorization, X-Requested-With, Accept, Last-Event-ID';
     headers['Access-Control-Allow-Credentials'] = 'true';
     headers['Access-Control-Max-Age'] = '86400';
-    headers['Vary'] = 'Origin';
+    headers['Vary'] = headers['Vary'] ? headers['Vary'] + ', Origin' : 'Origin';
+  } else {
+    headers['Access-Control-Allow-Origin'] = '*';
   }
 }
 
-function sendJson(res, statusCode, data, req = null) {
+function sendJson(res, statusCode, data, req = null, extraHeaders = {}) {
+  const jsonStr = JSON.stringify(data);
+  const buf = Buffer.from(jsonStr, 'utf8');
   const headers = {
-    'Content-Type': 'application/json; charset=utf-8'
+    'Content-Type': 'application/json; charset=utf-8',
+    ...extraHeaders
   };
   applyCorsHeaders(headers, req);
+
+  const acceptEncoding = req?.headers ? (req.headers['accept-encoding'] || '') : '';
+  if (buf.length > 512 && acceptEncoding) {
+    headers['Vary'] = headers['Vary'] ? headers['Vary'] + ', Accept-Encoding' : 'Accept-Encoding';
+    if (acceptEncoding.includes('br')) {
+      try {
+        const br = zlib.brotliCompressSync(buf);
+        headers['Content-Encoding'] = 'br';
+        headers['Content-Length'] = br.length;
+        res.writeHead(statusCode, headers);
+        return res.end(br);
+      } catch {}
+    } else if (acceptEncoding.includes('gzip')) {
+      try {
+        const gz = zlib.gzipSync(buf);
+        headers['Content-Encoding'] = 'gzip';
+        headers['Content-Length'] = gz.length;
+        res.writeHead(statusCode, headers);
+        return res.end(gz);
+      } catch {}
+    }
+  }
+
+  headers['Content-Length'] = buf.length;
   res.writeHead(statusCode, headers);
-  res.end(JSON.stringify(data));
+  res.end(buf);
 }
 
 function sendError(res, statusCode, message, req = null) {
@@ -1847,7 +2002,24 @@ const server = http.createServer(async (req, res) => {
         if (b.id === 'collapse_site_demo') return 1;
         return (a.name || a.id).localeCompare(b.name || b.id);
       });
-      return sendJson(res, 200, list, req);
+      const jsonStr = JSON.stringify(list);
+      const buf = Buffer.from(jsonStr, 'utf8');
+      const etag = '"' + crypto.createHash('sha256').update(buf).digest('hex').slice(0, 16) + '"';
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === 'W/' + etag)) {
+        const headers = {
+          'ETag': etag,
+          'Cache-Control': 'public, max-age=3600',
+          'Vary': 'Accept-Encoding'
+        };
+        applyCorsHeaders(headers, req);
+        res.writeHead(304, headers);
+        return res.end();
+      }
+      return sendJson(res, 200, list, req, {
+        'ETag': etag,
+        'Cache-Control': 'public, max-age=3600'
+      });
     } catch (err) {
       return sendError(res, errorStatus(err), err.message, req);
     }
@@ -1889,16 +2061,63 @@ const server = http.createServer(async (req, res) => {
     if (!fs.existsSync(fullPath)) {
       return sendError(res, 404, 'Trace file not found', req);
     }
-    fs.readFile(fullPath, (err, data) => {
-      if (err) return sendError(res, 500, err.message, req);
+    try {
+      const st = fs.statSync(fullPath);
+      const etag = '"' + st.size.toString(16) + '-' + Math.floor(st.mtimeMs).toString(16) + '"';
+      const ifNoneMatch = req.headers['if-none-match'];
+      if (ifNoneMatch && (ifNoneMatch === etag || ifNoneMatch === 'W/' + etag)) {
+        const headers = {
+          'ETag': etag,
+          'Cache-Control': 'public, max-age=86400',
+          'Vary': 'Accept-Encoding'
+        };
+        applyCorsHeaders(headers, req);
+        res.writeHead(304, headers);
+        return res.end();
+      }
+
+      const acceptEncoding = req.headers['accept-encoding'] || '';
       const headers = {
         'Content-Type': 'text/plain; charset=utf-8',
-        'Content-Length': data.length
+        'ETag': etag,
+        'Cache-Control': 'public, max-age=86400',
+        'Vary': 'Accept-Encoding'
       };
       applyCorsHeaders(headers, req);
-      res.writeHead(200, headers);
-      res.end(data);
-    });
+
+      if (acceptEncoding.includes('gzip')) {
+        headers['Content-Encoding'] = 'gzip';
+        res.writeHead(200, headers);
+        const readStream = fs.createReadStream(fullPath);
+        const gzipStream = zlib.createGzip();
+        readStream.on('error', () => {
+          if (!res.headersSent) sendError(res, 500, 'Streaming error', req);
+          else res.destroy();
+        });
+        readStream.pipe(gzipStream).pipe(res);
+      } else if (acceptEncoding.includes('br')) {
+        headers['Content-Encoding'] = 'br';
+        res.writeHead(200, headers);
+        const readStream = fs.createReadStream(fullPath);
+        const brStream = zlib.createBrotliCompress();
+        readStream.on('error', () => {
+          if (!res.headersSent) sendError(res, 500, 'Streaming error', req);
+          else res.destroy();
+        });
+        readStream.pipe(brStream).pipe(res);
+      } else {
+        headers['Content-Length'] = st.size;
+        res.writeHead(200, headers);
+        const readStream = fs.createReadStream(fullPath);
+        readStream.on('error', () => {
+          if (!res.headersSent) sendError(res, 500, 'Streaming error', req);
+          else res.destroy();
+        });
+        readStream.pipe(res);
+      }
+    } catch (err) {
+      return sendError(res, 500, err.message, req);
+    }
     return;
   }
 
@@ -1930,30 +2149,31 @@ const server = http.createServer(async (req, res) => {
     return res.end();
   }
 
-  // --- Static Files Serving ---
+  // ===== Static Files Serving =====
   let filePath = pathname === '/' ? '/index.html' : pathname;
-  let absPath = path.join(DASHBOARD_DIR, filePath);
+  if (filePath.startsWith('/dashboard/')) {
+    filePath = filePath.slice(10);
+  }
 
-  if (!absPath.startsWith(DASHBOARD_DIR)) {
-    return sendError(res, 403, 'Forbidden');
+  let absPath;
+  if (filePath.startsWith('/scenarios/')) {
+    absPath = path.resolve(ROOT_DIR, '.' + filePath);
+    if (!absPath.startsWith(SCENARIOS_DIR)) {
+      return sendError(res, 403, 'Forbidden', req);
+    }
+  } else {
+    absPath = path.resolve(DASHBOARD_DIR, '.' + filePath);
+    if (!absPath.startsWith(DASHBOARD_DIR)) {
+      return sendError(res, 403, 'Forbidden', req);
+    }
   }
 
   if (fs.existsSync(absPath) && fs.statSync(absPath).isFile()) {
-    const ext = path.extname(absPath).toLowerCase();
-    const mime = MIME_TYPES[ext] || 'application/octet-stream';
-    fs.readFile(absPath, (err, data) => {
-      if (err) return sendError(res, 500, err.message);
-      res.writeHead(200, {
-        'Content-Type': mime,
-        'Content-Length': data.length,
-        'Access-Control-Allow-Origin': '*'
-      });
-      res.end(data);
-    });
+    serveStaticFile(req, res, absPath, filePath);
     return;
   }
 
-  sendError(res, 404, 'File not found');
+  sendError(res, 404, 'File not found', req);
 });
 
 server.listen(PORT, '0.0.0.0', () => {
