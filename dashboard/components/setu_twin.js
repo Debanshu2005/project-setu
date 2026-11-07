@@ -42,6 +42,11 @@ export class SetuTwin3DViewer {
     this.controls = null;
     this.isWebGL = false;
     this.animId = null;
+    this.isActive = true;
+    this._renderScheduled = false;
+    this._boundRender = null;
+    this._onVisibilityChange = null;
+    this._observer = null;
     this.T = null; // THREE reference
 
     // Camera modes: 'orbit', 'topdown', 'freefly', 'follow_node', 'follow_sos'
@@ -227,6 +232,7 @@ export class SetuTwin3DViewer {
     this.controls.minDistance = 5;
     this.controls.maxDistance = 3500;
     this.controls.target.set(0, 0, 0);
+    this.controls.addEventListener('change', () => this.requestRender());
 
     // Three-point balanced lighting (no dark-on-dark figures)
     const ambientLight = new t.AmbientLight(0xffffff, 0.7);
@@ -377,6 +383,7 @@ export class SetuTwin3DViewer {
       if (this.controls) this.controls.enabled = true;
       if (hint) hint.textContent = 'Drag to orbit | Wheel to zoom';
       updateBtns(btnOrbit);
+      this.requestRender();
     });
 
     if (btnTopdown) btnTopdown.addEventListener('click', () => {
@@ -389,6 +396,7 @@ export class SetuTwin3DViewer {
       }
       if (hint) hint.textContent = 'Top-down orthogonal view | Drag to pan';
       updateBtns(btnTopdown);
+      this.requestRender();
     });
 
     if (btnFreefly) btnFreefly.addEventListener('click', () => {
@@ -396,6 +404,7 @@ export class SetuTwin3DViewer {
       if (this.controls) this.controls.enabled = false;
       if (hint) hint.textContent = 'WASD move | Mouse look | Q/E down/up';
       updateBtns(btnFreefly);
+      this.requestRender();
     });
 
     if (btnFollow) btnFollow.addEventListener('click', () => {
@@ -403,6 +412,7 @@ export class SetuTwin3DViewer {
       if (this.controls) this.controls.enabled = true;
       if (hint) hint.textContent = 'Tracking selected survivor/relay';
       updateBtns(btnFollow);
+      this.requestRender();
     });
 
     if (btnReset) btnReset.addEventListener('click', () => {
@@ -412,6 +422,7 @@ export class SetuTwin3DViewer {
       this.zoom2D = 1.0;
       this.panX2D = 0;
       this.panY2D = 0;
+      this.requestRender();
     });
 
     if (btnWhyFail) btnWhyFail.addEventListener('click', () => {
@@ -440,6 +451,7 @@ export class SetuTwin3DViewer {
       }
       if (k === 'q') this.keys.q = true;
       if (k === 'e') this.keys.e = true;
+      this.requestRender();
     };
     this._onKeyUp = (e) => {
       const k = e.key.toLowerCase();
@@ -449,6 +461,7 @@ export class SetuTwin3DViewer {
       if (k === 'd') this.keys.d = false;
       if (k === 'q') this.keys.q = false;
       if (k === 'e') this.keys.e = false;
+      this.requestRender();
     };
     window.addEventListener('keydown', this._onKeyDown);
     window.addEventListener('keyup', this._onKeyUp);
@@ -503,6 +516,7 @@ export class SetuTwin3DViewer {
       if (this.hoveredNodeId !== hitId) {
         this.hoveredNodeId = hitId;
         this.mountPoint.style.cursor = hitId !== null ? 'pointer' : 'default';
+        this.requestRender();
       }
     });
   }
@@ -552,6 +566,7 @@ export class SetuTwin3DViewer {
     this.camera.aspect = width / height;
     this.camera.updateProjectionMatrix();
     this.renderer.setSize(width, height);
+    this.requestRender();
   }
 
   resizeCanvas2D() {
@@ -560,6 +575,7 @@ export class SetuTwin3DViewer {
     const rect = p && typeof p.getBoundingClientRect === 'function' ? p.getBoundingClientRect() : { width: 800, height: 500 };
     this.canvas2D.width = rect.width || 800;
     this.canvas2D.height = rect.height || 500;
+    this.requestRender();
   }
 
   resizeCanvas() {
@@ -568,6 +584,7 @@ export class SetuTwin3DViewer {
     } else {
       this.resizeCanvas2D();
     }
+    this.requestRender();
   }
 
   // --- 3D Projection for Mathematical Testing & Unit Suites ---
@@ -653,6 +670,7 @@ export class SetuTwin3DViewer {
     if (this.scene && this.T) {
       this.scene.fog = new this.T.Fog(0x0c1527, Math.max(80, span * 0.5), Math.max(2000, span * 4.5));
     }
+    this.requestRender();
   }
 
   // --- Data Setters ---
@@ -695,6 +713,7 @@ export class SetuTwin3DViewer {
       this.syncNodeMeshes();
       this.updateBoundaryOutline();
     }
+    this.requestRender();
   }
 
   setObstacles(obsList) {
@@ -703,6 +722,7 @@ export class SetuTwin3DViewer {
     if (this.isWebGL && this.T) {
       this.syncObstacleMeshes();
     }
+    this.requestRender();
   }
 
   setEnvironment(env) {
@@ -710,6 +730,7 @@ export class SetuTwin3DViewer {
     if (this.isWebGL && this.T) {
       this.syncEnvironmentMeshes();
     }
+    this.requestRender();
   }
 
   updateObstacleBadge() {
@@ -735,6 +756,7 @@ export class SetuTwin3DViewer {
     if (this.isWebGL && this.T) {
       this.syncLinkObjects();
     }
+    this.requestRender();
   }
 
   setNarratorText(text) {
@@ -787,6 +809,7 @@ export class SetuTwin3DViewer {
     if (this.waterPlane) {
       this.waterPlane.position.y = levelMeters * 2.0;
     }
+    this.requestRender();
   }
 
   selectNode(nodeId) {
@@ -800,6 +823,7 @@ export class SetuTwin3DViewer {
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new CustomEvent('setu:node-selected', { detail: { nodeId } }));
     }
+    this.requestRender();
   }
 
 
@@ -1768,6 +1792,7 @@ export class SetuTwin3DViewer {
       alpha: 1.0,
       radius: 4.0
     });
+    this.requestRender();
   }
 
   checkAndHighlightObstacles(tx_x, tx_y, rx_x, rx_y) {
@@ -1812,6 +1837,7 @@ export class SetuTwin3DViewer {
           badge,
           timer: 2.5
         });
+        this.requestRender();
       }
     }
   }
@@ -1838,6 +1864,7 @@ export class SetuTwin3DViewer {
       expansionSpeed: Math.max(70, (airtimeMs || 62) * 1.5),
       alpha: 0.85
     });
+    this.requestRender();
   }
 
   triggerPacketPulse(fromId, toId = null, hazard = 0, hop = 1, airtimeMs = 62) {
@@ -1921,6 +1948,7 @@ export class SetuTwin3DViewer {
         badge: hopBadge
       });
     }
+    this.requestRender();
   }
 
   async toggleCoverageHeatmap() {
@@ -1937,6 +1965,7 @@ export class SetuTwin3DViewer {
         this.scene.remove(this.heatmapGroup);
         this.heatmapGroup = null;
       }
+      this.requestRender();
       return;
     }
 
@@ -2025,6 +2054,7 @@ export class SetuTwin3DViewer {
     }
 
     this.scene.add(this.heatmapGroup);
+    this.requestRender();
   }
 
   syncLinkObjects() {
@@ -2124,16 +2154,49 @@ export class SetuTwin3DViewer {
 
   // --- Render Loop & LOD Updates ---
 
+  setActive(active) {
+    const prev = this.isActive;
+    this.isActive = Boolean(active);
+    if (this.isActive) {
+      if (!prev) {
+        this.requestRender();
+      }
+    } else {
+      if (this.animId && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(this.animId);
+        this.animId = null;
+      }
+      this._renderScheduled = false;
+    }
+  }
+
+  requestRender() {
+    if (this.destroyed || !this.isActive) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (typeof this._boundRender !== 'function') return;
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    if (typeof requestAnimationFrame === 'function') {
+      this.animId = requestAnimationFrame(this._boundRender);
+    }
+  }
+
   startRenderLoop() {
     if (this.destroyed) return;
+    this.isActive = true;
+    this._renderScheduled = false;
     let lastTime = (typeof performance !== 'undefined') ? performance.now() : Date.now();
     let frameCount = 0;
     let lastFpsUpdate = lastTime;
 
-    const render = (now) => {
-      if (this.destroyed) return;
+    this._boundRender = (now) => {
+      this._renderScheduled = false;
+      this.animId = null;
+      if (this.destroyed || !this.isActive) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       const currentTime = now || ((typeof performance !== 'undefined') ? performance.now() : Date.now());
-      const delta = (currentTime - lastTime) / 1000;
+      const delta = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
 
       frameCount++;
@@ -2144,44 +2207,82 @@ export class SetuTwin3DViewer {
         lastFpsUpdate = currentTime;
       }
 
+      let needMoreFrames = false;
       if (this.isWebGL && this.renderer && this.scene && this.camera) {
-        this.updateThree(delta, currentTime);
+        needMoreFrames = this.updateThree(delta, currentTime);
       } else {
         this.drawFallback2D();
       }
 
-      if (this.destroyed) return;
-      if (typeof requestAnimationFrame === 'function') {
-        this.animId = requestAnimationFrame(render);
+      if (needMoreFrames && this.isActive && (typeof document === 'undefined' || !document.hidden)) {
+        this.requestRender();
       }
     };
 
-    if (typeof requestAnimationFrame === 'function') {
-      this.animId = requestAnimationFrame(render);
+    this._onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (this.animId && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(this.animId);
+          this.animId = null;
+        }
+        this._renderScheduled = false;
+      } else if (this.isActive) {
+        this.requestRender();
+      }
+    };
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', this._onVisibilityChange);
     }
+
+    if (typeof IntersectionObserver !== 'undefined' && this.container) {
+      try {
+        this._observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) {
+              this.setActive(false);
+            } else {
+              const viewParent = this.container.closest ? this.container.closest('.view-container') : null;
+              const isViewVisible = !viewParent || viewParent.style.display !== 'none';
+              if (isViewVisible) {
+                this.setActive(true);
+              }
+            }
+          }
+        }, { threshold: 0.05 });
+        this._observer.observe(this.container);
+      } catch (e) {}
+    }
+
+    this.requestRender();
   }
 
   updateThree(delta, currentTime) {
-    if (!this.renderer || !this.scene || !this.camera || !this.T) return;
+    if (!this.renderer || !this.scene || !this.camera || !this.T) return false;
     const t = this.T;
+    let needMore = false;
 
     // 1. Navigation controls update
     if (this.cameraMode === 'freefly') {
-      const moveSpeed = 140 * delta;
-      const dir = new t.Vector3();
-      if (this.keys.w) dir.z -= 1;
-      if (this.keys.s) dir.z += 1;
-      if (this.keys.a) dir.x -= 1;
-      if (this.keys.d) dir.x += 1;
-      if (this.keys.e) dir.y += 1;
-      if (this.keys.q) dir.y -= 1;
-      dir.normalize();
+      const isAnyKeyDown = this.keys.w || this.keys.s || this.keys.a || this.keys.d || this.keys.e || this.keys.q;
+      if (isAnyKeyDown) {
+        needMore = true;
+        const moveSpeed = 140 * delta;
+        const dir = new t.Vector3();
+        if (this.keys.w) dir.z -= 1;
+        if (this.keys.s) dir.z += 1;
+        if (this.keys.a) dir.x -= 1;
+        if (this.keys.d) dir.x += 1;
+        if (this.keys.e) dir.y += 1;
+        if (this.keys.q) dir.y -= 1;
+        dir.normalize();
 
-      dir.applyEuler(this.camera.rotation);
-      this.camera.position.addScaledVector(dir, moveSpeed);
+        dir.applyEuler(this.camera.rotation);
+        this.camera.position.addScaledVector(dir, moveSpeed);
+      }
     } else if ((this.cameraMode === 'follow_node' || this.cameraMode === 'follow_sos') && this.selectedNodeId !== null) {
       const node = this.nodes.get(this.selectedNodeId);
       if (node && this.controls) {
+        needMore = true;
         const p = this.to3DCoords(node.x, node.y, node.elevation || 0);
         this.controls.target.lerp(new t.Vector3(p.x, p.y + 6, p.z), 0.1);
 
@@ -2204,24 +2305,34 @@ export class SetuTwin3DViewer {
     }
 
     if (this.controls && this.controls.enabled) {
-      this.controls.update();
+      const controlsMoved = this.controls.update();
+      if (controlsMoved) needMore = true;
     }
 
     // 2. Pulse active SOS beacons and Topper rotation
-    const pulseFactor = (Math.sin(currentTime * 0.006) + 1.0) / 2.0;
+    let hasSos = false;
     for (const [id, group] of this.nodeMeshes.entries()) {
       const node = this.nodes.get(id);
       const isSos = node && (node.sos_active || (node.hazard !== undefined && node.hazard > 0));
+      if (isSos) hasSos = true;
+    }
 
-      const topper = group.getObjectByName('beaconTopper');
-      if (topper) {
-        topper.rotation.y += delta * 1.5;
-        if (isSos) {
+    if (hasSos) {
+      needMore = true;
+      const pulseFactor = (Math.sin(currentTime * 0.006) + 1.0) / 2.0;
+      for (const [id, group] of this.nodeMeshes.entries()) {
+        const node = this.nodes.get(id);
+        const isSos = node && (node.sos_active || (node.hazard !== undefined && node.hazard > 0));
+        const topper = group.getObjectByName('beaconTopper');
+        if (topper && isSos) {
+          topper.rotation.y += delta * 1.5;
           topper.scale.setScalar(1.0 + 0.35 * pulseFactor);
         }
       }
+    }
 
-      // LOD: Swap beacon pillar for detailed human avatar when within 45m
+    // LOD: Swap beacon pillar for detailed human avatar when within 45m
+    for (const [id, group] of this.nodeMeshes.entries()) {
       const humanGroup = group.getObjectByName('humanGroup');
       const beaconGroup = group.getObjectByName('beaconGroup');
       if (humanGroup && beaconGroup) {
@@ -2237,79 +2348,92 @@ export class SetuTwin3DViewer {
     }
 
     // 3. Airtime rings expansion and propagation
-    for (let i = this.airtimeRings.length - 1; i >= 0; i--) {
-      const ring = this.airtimeRings[i];
-      ring.radius += (ring.expansionSpeed || 80) * delta;
-      ring.alpha -= 0.55 * delta;
-      if (ring.mesh) {
-        const s = ring.radius / 3.5;
-        ring.mesh.scale.set(s, s, 1);
-        if (ring.mesh.material) {
-          ring.mesh.material.opacity = Math.max(0, ring.alpha);
+    if (this.airtimeRings.length > 0) {
+      needMore = true;
+      for (let i = this.airtimeRings.length - 1; i >= 0; i--) {
+        const ring = this.airtimeRings[i];
+        ring.radius += (ring.expansionSpeed || 80) * delta;
+        ring.alpha -= 0.55 * delta;
+        if (ring.mesh) {
+          const s = ring.radius / 3.5;
+          ring.mesh.scale.set(s, s, 1);
+          if (ring.mesh.material) {
+            ring.mesh.material.opacity = Math.max(0, ring.alpha);
+          }
         }
-      }
-      if (ring.alpha <= 0 || ring.radius >= ring.maxRadius) {
-        if (ring.mesh) this.scene.remove(ring.mesh);
-        this.airtimeRings.splice(i, 1);
+        if (ring.alpha <= 0 || ring.radius >= ring.maxRadius) {
+          if (ring.mesh) this.scene.remove(ring.mesh);
+          this.airtimeRings.splice(i, 1);
+        }
       }
     }
 
     // 4. Active packet traveling pulses along links
-    for (let i = this.activePulses.length - 1; i >= 0; i--) {
-      const p = this.activePulses[i];
-      p.progress += (p.speed || 1.8) * delta;
-      if (p.progress >= 1.0) {
-        if (p.mesh) this.scene.remove(p.mesh);
-        if (p.badge) this.scene.remove(p.badge);
-        this.activePulses.splice(i, 1);
-      } else {
-        const curX = p.p1.x + (p.p2.x - p.p1.x) * p.progress;
-        const curY = p.p1.y + (p.p2.y - p.p1.y) * p.progress;
-        const curZ = p.p1.z + (p.p2.z - p.p1.z) * p.progress;
-        if (p.mesh) p.mesh.position.set(curX, curY, curZ);
-        if (p.badge) p.badge.position.set(curX, curY + 4.5, curZ);
+    if (this.activePulses.length > 0) {
+      needMore = true;
+      for (let i = this.activePulses.length - 1; i >= 0; i--) {
+        const p = this.activePulses[i];
+        p.progress += (p.speed || 1.8) * delta;
+        if (p.progress >= 1.0) {
+          if (p.mesh) this.scene.remove(p.mesh);
+          if (p.badge) this.scene.remove(p.badge);
+          this.activePulses.splice(i, 1);
+        } else {
+          const curX = p.p1.x + (p.p2.x - p.p1.x) * p.progress;
+          const curY = p.p1.y + (p.p2.y - p.p1.y) * p.progress;
+          const curZ = p.p1.z + (p.p2.z - p.p1.z) * p.progress;
+          if (p.mesh) p.mesh.position.set(curX, curY, curZ);
+          if (p.badge) p.badge.position.set(curX, curY + 4.5, curZ);
+        }
       }
     }
 
     // 5. Receiver Drop and Collision Flashes
-    for (let i = this.dropFlashes.length - 1; i >= 0; i--) {
-      const f = this.dropFlashes[i];
-      f.radius += 12 * delta;
-      f.alpha -= 0.65 * delta;
-      if (f.mesh) {
-        const s = f.radius / 6.0;
-        f.mesh.scale.set(s, s, 1);
-        if (f.mesh.material) f.mesh.material.opacity = Math.max(0, f.alpha);
-      }
-      if (f.badge && f.badge.material) {
-        f.badge.material.opacity = Math.max(0, f.alpha);
-      }
-      if (f.alpha <= 0) {
-        if (f.mesh) this.scene.remove(f.mesh);
-        if (f.badge) this.scene.remove(f.badge);
-        this.dropFlashes.splice(i, 1);
+    if (this.dropFlashes.length > 0) {
+      needMore = true;
+      for (let i = this.dropFlashes.length - 1; i >= 0; i--) {
+        const f = this.dropFlashes[i];
+        f.radius += 12 * delta;
+        f.alpha -= 0.65 * delta;
+        if (f.mesh) {
+          const s = f.radius / 6.0;
+          f.mesh.scale.set(s, s, 1);
+          if (f.mesh.material) f.mesh.material.opacity = Math.max(0, f.alpha);
+        }
+        if (f.badge && f.badge.material) {
+          f.badge.material.opacity = Math.max(0, f.alpha);
+        }
+        if (f.alpha <= 0) {
+          if (f.mesh) this.scene.remove(f.mesh);
+          if (f.badge) this.scene.remove(f.badge);
+          this.dropFlashes.splice(i, 1);
+        }
       }
     }
 
     // 6. Wall crossing highlights and minus dB badges
-    for (let i = this.wallHighlights.length - 1; i >= 0; i--) {
-      const wh = this.wallHighlights[i];
-      wh.timer -= delta;
-      if (wh.timer <= 0) {
-        if (wh.wallMesh) {
-          wh.wallMesh.traverse(child => {
-            if (child.isMesh && child.material && child.material.emissive) {
-              child.material.emissive.setHex(0x000000);
-            }
-          });
+    if (this.wallHighlights.length > 0) {
+      needMore = true;
+      for (let i = this.wallHighlights.length - 1; i >= 0; i--) {
+        const wh = this.wallHighlights[i];
+        wh.timer -= delta;
+        if (wh.timer <= 0) {
+          if (wh.wallMesh) {
+            wh.wallMesh.traverse(child => {
+              if (child.isMesh && child.material && child.material.emissive) {
+                child.material.emissive.setHex(0x000000);
+              }
+            });
+          }
+          if (wh.badge) this.scene.remove(wh.badge);
+          this.wallHighlights.splice(i, 1);
         }
-        if (wh.badge) this.scene.remove(wh.badge);
-        this.wallHighlights.splice(i, 1);
       }
     }
 
     this.updateLabelAvoidance(t);
     this.renderer.render(this.scene, this.camera);
+    return needMore;
   }
 
   drawFallback2D() {
@@ -2370,12 +2494,21 @@ export class SetuTwin3DViewer {
 
   destroy() {
     this.destroyed = true;
+    if (this._observer) {
+      this._observer.disconnect();
+      this._observer = null;
+    }
+    if (this._onVisibilityChange && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._onVisibilityChange);
+      this._onVisibilityChange = null;
+    }
     if (this.animId) {
       if (typeof cancelAnimationFrame === 'function') {
         cancelAnimationFrame(this.animId);
       }
       this.animId = null;
     }
+    this._renderScheduled = false;
     if (this.renderer && typeof this.renderer.dispose === 'function') {
       this.renderer.dispose();
     }

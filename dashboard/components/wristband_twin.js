@@ -50,6 +50,11 @@ export class WristbandTwinComponent {
     this.oledMesh = null;
     this.hapticRipples = [];
     this.animId = null;
+    this.isActive = true;
+    this._renderScheduled = false;
+    this._renderBound = null;
+    this._onVisibilityChange = null;
+    this._observer = null;
 
     if (this.container) {
       this.init();
@@ -325,12 +330,14 @@ export class WristbandTwinComponent {
       this.ledMesh.material.color.setHex(0xef4444); // Flash red
     }
     this.triggerHaptic(kind === 'long' ? 700 : 250);
+    this.requestRender();
 
     setTimeout(() => {
       this.isPressed = false;
       if (this.buttonMesh) {
         this.buttonMesh.position.y = 8.5; // Return button
       }
+      this.requestRender();
     }, 200);
 
     if (this.options.onButtonPress) {
@@ -343,6 +350,7 @@ export class WristbandTwinComponent {
       this.ledMesh.material.color.setHex(0x38bdf8); // Flash blue on voice
     }
     this.triggerHaptic(150);
+    this.requestRender();
     if (this.options.onVoiceTrigger) {
       this.options.onVoiceTrigger();
     }
@@ -370,11 +378,13 @@ export class WristbandTwinComponent {
       this.wristbandGroup.add(ripple);
       this.hapticRipples.push({ mesh: ripple, life: 1.0 });
     }
+    this.requestRender();
 
     if (this.hapticTimer) clearTimeout(this.hapticTimer);
     this.hapticTimer = setTimeout(() => {
       this.hapticActive = false;
       if (ind) ind.style.opacity = '0';
+      this.requestRender();
     }, durationMs);
   }
 
@@ -416,6 +426,7 @@ export class WristbandTwinComponent {
       const err = typeof node.pos_error_m === 'number' ? node.pos_error_m.toFixed(2) : '0.00';
       pdrEl.textContent = `${err} m`;
     }
+    this.requestRender();
   }
 
   updateLossBudget(lb) {
@@ -435,6 +446,7 @@ export class WristbandTwinComponent {
       setVal('wtBodyLoss', '0.0 dB');
       setVal('wtSens', '-123.0 dBm');
       setVal('wtLinkMargin', '+0.0 dB', '#10b981');
+      this.requestRender();
       return;
     }
 
@@ -447,26 +459,63 @@ export class WristbandTwinComponent {
     const margin = typeof lb.link_margin_db === 'number' ? lb.link_margin_db : 0.0;
     const marginColor = margin > 15 ? '#10b981' : margin > 5 ? '#f59e0b' : '#ef4444';
     setVal('wtLinkMargin', `${margin > 0 ? '+' : ''}${margin.toFixed(1)} dB`, marginColor);
+    this.requestRender();
+  }
+
+  setActive(active) {
+    const prev = this.isActive;
+    this.isActive = Boolean(active);
+    if (this.isActive) {
+      if (!prev) {
+        this.requestRender();
+      }
+    } else {
+      if (this.animId && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(this.animId);
+        this.animId = null;
+      }
+      this._renderScheduled = false;
+    }
+  }
+
+  requestRender() {
+    if (this.destroyed || !this.isActive) return;
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (typeof this._renderBound !== 'function') return;
+    if (this._renderScheduled) return;
+    this._renderScheduled = true;
+    if (typeof requestAnimationFrame === 'function') {
+      this.animId = requestAnimationFrame(this._renderBound);
+    }
   }
 
   startRenderLoop() {
     if (this.destroyed) return;
+    this.isActive = true;
+    this._renderScheduled = false;
     let lastTime = (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-    const render = (now) => {
-      if (this.destroyed) return;
+    this._renderBound = (now) => {
+      this._renderScheduled = false;
+      this.animId = null;
+      if (this.destroyed || !this.isActive) return;
+      if (typeof document !== 'undefined' && document.hidden) return;
+
       const currentTime = now || (typeof performance !== 'undefined' ? performance.now() : Date.now());
-      const delta = (currentTime - lastTime) / 1000;
+      const delta = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
 
+      let needMore = false;
       if (this.controls) {
-        this.controls.update();
+        const controlsMoving = this.controls.update();
+        if (controlsMoving) needMore = true;
       }
 
       // Haptic Vibration Jitter
       if (this.hapticActive && this.wristbandGroup) {
         this.wristbandGroup.position.x = (Math.random() - 0.5) * 0.8;
         this.wristbandGroup.position.z = (Math.random() - 0.5) * 0.8;
+        needMore = true;
       } else if (this.wristbandGroup) {
         this.wristbandGroup.position.x = 0;
         this.wristbandGroup.position.z = 0;
@@ -482,31 +531,72 @@ export class WristbandTwinComponent {
           this.wristbandGroup.remove(r.mesh);
           this.hapticRipples.splice(i, 1);
         }
+        needMore = true;
       }
 
       if (this.renderer && this.scene && this.camera) {
         this.renderer.render(this.scene, this.camera);
       }
 
-      if (this.destroyed) return;
-      if (typeof requestAnimationFrame === 'function') {
-        this.animId = requestAnimationFrame(render);
+      if (needMore && this.isActive && (typeof document === 'undefined' || !document.hidden)) {
+        this.requestRender();
       }
     };
 
-    if (typeof requestAnimationFrame === 'function') {
-      this.animId = requestAnimationFrame(render);
+    if (this.controls) {
+      this.controls.addEventListener('change', () => this.requestRender());
     }
+
+    this._onVisibilityChange = () => {
+      if (typeof document !== 'undefined' && document.hidden) {
+        if (this.animId && typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(this.animId);
+          this.animId = null;
+        }
+        this._renderScheduled = false;
+      } else if (this.isActive) {
+        this.requestRender();
+      }
+    };
+    if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+      document.addEventListener('visibilitychange', this._onVisibilityChange);
+    }
+
+    if (typeof IntersectionObserver !== 'undefined' && this.container) {
+      try {
+        this._observer = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) {
+              this.setActive(false);
+            } else {
+              this.setActive(true);
+            }
+          }
+        }, { threshold: 0.05 });
+        this._observer.observe(this.container);
+      } catch (e) {}
+    }
+
+    this.requestRender();
   }
 
   destroy() {
     this.destroyed = true;
+    if (this._observer) {
+      this._observer.disconnect();
+      this._observer = null;
+    }
+    if (this._onVisibilityChange && typeof document !== 'undefined') {
+      document.removeEventListener('visibilitychange', this._onVisibilityChange);
+      this._onVisibilityChange = null;
+    }
     if (this.animId) {
       if (typeof cancelAnimationFrame === 'function') {
         cancelAnimationFrame(this.animId);
       }
       this.animId = null;
     }
+    this._renderScheduled = false;
     if (this.hapticTimer) {
       clearTimeout(this.hapticTimer);
       this.hapticTimer = null;

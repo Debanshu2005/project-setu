@@ -86,7 +86,9 @@ async function runScenarioAudit(browser, config) {
     window.requestAnimationFrame = function(callback) {
       return origRaf.call(window, function(timestamp) {
         window.__perfData.appRafCount++;
-        callback(timestamp);
+        if (typeof callback === 'function') {
+          callback(timestamp);
+        }
       });
     };
 
