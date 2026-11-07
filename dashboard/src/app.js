@@ -736,10 +736,24 @@ class SetuDashboardApp {
       });
     }
 
-    // Export buttons
+    // Export buttons and Data dropdown
     const menuDataExport = document.getElementById('menuDataExport');
+    const btnExportToggle = document.getElementById('btnExportDropdownToggle');
+
     const closeExportMenu = () => {
-      if (menuDataExport) menuDataExport.style.display = 'none';
+      if (menuDataExport) menuDataExport.classList.remove('show');
+      if (btnExportToggle) {
+        btnExportToggle.classList.remove('active');
+        btnExportToggle.setAttribute('aria-expanded', 'false');
+      }
+    };
+
+    const openExportMenu = () => {
+      if (menuDataExport) menuDataExport.classList.add('show');
+      if (btnExportToggle) {
+        btnExportToggle.classList.add('active');
+        btnExportToggle.setAttribute('aria-expanded', 'true');
+      }
     };
 
     if (this.btnExportJson) {
@@ -777,15 +791,26 @@ class SetuDashboardApp {
       });
     }
 
-    const btnExportToggle = document.getElementById('btnExportDropdownToggle');
     if (btnExportToggle && menuDataExport) {
       btnExportToggle.addEventListener('click', (e) => {
         e.stopPropagation();
-        const isOpen = menuDataExport.style.display === 'flex';
-        menuDataExport.style.display = isOpen ? 'none' : 'flex';
+        if (menuDataExport.classList.contains('show')) {
+          closeExportMenu();
+        } else {
+          openExportMenu();
+        }
       });
-      document.addEventListener('click', () => {
-        closeExportMenu();
+
+      document.addEventListener('click', (e) => {
+        if (!menuDataExport.contains(e.target) && e.target !== btnExportToggle) {
+          closeExportMenu();
+        }
+      });
+
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeExportMenu();
+        }
       });
     }
   }

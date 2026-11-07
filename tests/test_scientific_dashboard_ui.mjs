@@ -432,6 +432,31 @@ it('Energy and battery view contains Plot 7A and Plot 7B titles and responsive g
   assert.ok(plotArea.innerHTML.includes('Subsystem Energy Breakdown'), 'Must contain breakdown section');
 });
 
+// =============================================================================
+// Test Suite 7: Header Data Dropdown Structure & Unclipped Viewport Positioning
+// =============================================================================
+console.log('\n[Test Suite 7] Header Data Dropdown Structure & Unclipped Viewport Positioning...');
+
+it('Header contains dropdownDataExport and btnExportDropdownToggle', () => {
+  assert.ok(rootHtml.includes('id="dropdownDataExport"'), 'dropdownDataExport container must exist');
+  assert.ok(rootHtml.includes('id="btnExportDropdownToggle"'), 'btnExportDropdownToggle button must exist');
+  assert.ok(rootHtml.includes('id="menuDataExport"'), 'menuDataExport dropdown menu must exist');
+});
+
+it('Data dropdown menu contains all export buttons and upload trace input', () => {
+  assert.ok(rootHtml.includes('id="btnExportJson"'), 'btnExportJson must exist');
+  assert.ok(rootHtml.includes('id="btnExportCsv"'), 'btnExportCsv must exist');
+  assert.ok(rootHtml.includes('id="btnExportRawCsv"'), 'btnExportRawCsv must exist');
+  assert.ok(rootHtml.includes('id="fileTraceUpload"'), 'fileTraceUpload input must exist');
+});
+
+it('Main stylesheet configures app-header and header-dropdown-menu for unclipped display', () => {
+  const css = fs.readFileSync(path.join(__dirname, '../dashboard/styles/main.css'), 'utf8');
+  assert.ok(css.includes('.header-dropdown-menu'), 'CSS must define .header-dropdown-menu');
+  assert.ok(css.includes('.header-dropdown-menu.show'), 'CSS must define .header-dropdown-menu.show');
+  assert.ok(css.includes('.app-header {') && css.includes('overflow: visible;'), 'app-header must set overflow: visible');
+});
+
 // -----------------------------------------------------------------------------
 // Summary
 // -----------------------------------------------------------------------------

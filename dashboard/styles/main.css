@@ -68,7 +68,7 @@ body {
   z-index: 50;
   position: relative;
   gap: 8px;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .brand-section {
@@ -165,11 +165,6 @@ body {
   gap: 6px;
   flex-shrink: 1;
   min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-.header-actions::-webkit-scrollbar {
-  display: none;
 }
 
 .header-actions .btn {
@@ -179,9 +174,58 @@ body {
   flex-shrink: 0;
 }
 
+/* Header Data Dropdown */
+.header-dropdown {
+  position: relative;
+  display: inline-block;
+}
+
+.header-dropdown-menu {
+  display: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 4px);
+  background: var(--bg-surface-elevated);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  min-width: 160px;
+  z-index: 1000;
+  padding: 4px;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.header-dropdown-menu.show {
+  display: flex !important;
+}
+
+.header-dropdown-menu .dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 11px;
+  background: none;
+  border: none;
+  color: var(--text-main);
+  cursor: pointer;
+  border-radius: 4px;
+  user-select: none;
+  transition: all 0.15s ease;
+}
+
 .header-dropdown-menu .dropdown-item:hover {
   background: var(--bg-surface-hover) !important;
   color: var(--cyan-main) !important;
+}
+
+.dropdown-toggle.active {
+  background: var(--bg-surface-elevated);
+  border-color: var(--cyan-main);
+  color: var(--cyan-main);
 }
 
 /* Primary Layout Grid */
