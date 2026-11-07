@@ -88,7 +88,19 @@ export class ChartExplainerController {
       if (existingBtn) {
         existingBtn.remove();
       }
-      this.titleEl.parentElement.insertBefore(this.buttonEl, this.titleEl.nextSibling);
+
+      const p = this.titleEl.parentElement;
+      if (p) {
+        let group = p.classList?.contains('chart-title-group') ? p : p.querySelector('.chart-title-group');
+        if (!group) {
+          group = document.createElement('div');
+          group.className = 'chart-title-group';
+          group.style.cssText = 'display:inline-flex; align-items:center; gap:6px; flex-shrink:0;';
+          p.insertBefore(group, this.titleEl);
+          group.appendChild(this.titleEl);
+        }
+        group.appendChild(this.buttonEl);
+      }
 
       this.titleEl.style.cursor = 'help';
       this.titleEl.addEventListener('mouseenter', () => this.scheduleOpen(120));
@@ -512,10 +524,23 @@ export class ScientificLineChart {
         ctx.lineTo(padLeft + plotW, yPos);
         ctx.stroke();
 
-        ctx.fillStyle = th.color || '#ef4444';
-        ctx.font = '10px "JetBrains Mono", monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(th.label || '', padLeft + 6, yPos - 5);
+        let labelText = th.label || '';
+        const yFormatted = th.y.toFixed(th.y % 1 === 0 ? 0 : 1);
+        if (labelText && !labelText.includes(String(th.y)) && !labelText.includes(yFormatted)) {
+          labelText = `${labelText} (${yFormatted}${this.options.yUnit ? ' ' + this.options.yUnit : ''})`;
+        }
+
+        if (labelText) {
+          ctx.font = '10px "JetBrains Mono", monospace';
+          const textW = ctx.measureText(labelText).width;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          ctx.fillRect(padLeft + 6, yPos - 11, textW + 8, 14);
+
+          ctx.fillStyle = th.color || '#ef4444';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, padLeft + 10, yPos - 4);
+        }
         ctx.restore();
       }
     }
@@ -653,6 +678,7 @@ export class ScientificLineChart {
       let boxY = this.hoverPos.y - 20;
 
       if (boxX + boxW > width - 10) boxX = this.hoverPos.x - boxW - 12;
+      if (boxX < 10) boxX = 10;
       if (boxY + boxH > height - 10) boxY = height - boxH - 10;
       if (boxY < 10) boxY = 10;
 
@@ -751,9 +777,10 @@ export class ScientificScatterPlot {
     const { ctx, width, height } = setupCanvas(this.canvas);
     ctx.clearRect(0, 0, width, height);
 
+    const hasTheoryCurve = (typeof this.options.theoryCurve === 'function');
     const padLeft = 65;
     const padRight = 30;
-    const padTop = 32;
+    const padTop = hasTheoryCurve ? 44 : 32;
     const padBottom = 40;
     const plotW = width - padLeft - padRight;
     const plotH = height - padTop - padBottom;
@@ -822,28 +849,7 @@ export class ScientificScatterPlot {
       ctx.fillText(`${xVal.toFixed(0)}m`, xPos, padTop + plotH + 6);
     }
 
-    // 2. Threshold Lines (e.g. Sensitivity)
-    for (const th of this.options.thresholds) {
-      if (th.y >= minY && th.y <= maxY) {
-        const yPos = scaleY(th.y);
-        ctx.save();
-        ctx.strokeStyle = th.color || '#ef4444';
-        ctx.lineWidth = 1.5;
-        ctx.setLineDash(th.dash || [5, 4]);
-        ctx.beginPath();
-        ctx.moveTo(padLeft, yPos);
-        ctx.lineTo(padLeft + plotW, yPos);
-        ctx.stroke();
-
-        ctx.fillStyle = th.color || '#ef4444';
-        ctx.font = '10px "JetBrains Mono", monospace';
-        ctx.textAlign = 'left';
-        ctx.fillText(`${th.label} (${th.y} ${this.options.yUnit})`, padLeft + 8, yPos - 5);
-        ctx.restore();
-      }
-    }
-
-    // 3. Theoretical Function Curve
+    // 2. Theoretical Function Curve
     if (typeof this.options.theoryCurve === 'function') {
       ctx.save();
       ctx.strokeStyle = '#06b6d4';
@@ -863,7 +869,7 @@ export class ScientificScatterPlot {
       ctx.restore();
     }
 
-    // 4. Scatter observations
+    // 3. Scatter observations
     for (const pt of validPts) {
       const px = scaleX(pt.x);
       const py = scaleY(pt.y);
@@ -885,6 +891,40 @@ export class ScientificScatterPlot {
       ctx.restore();
     }
 
+    // 4. Threshold Lines (e.g. Sensitivity) - Drawn on top of observations
+    for (const th of this.options.thresholds) {
+      if (th.y >= minY && th.y <= maxY) {
+        const yPos = scaleY(th.y);
+        ctx.save();
+        ctx.strokeStyle = th.color || '#ef4444';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash(th.dash || [5, 4]);
+        ctx.beginPath();
+        ctx.moveTo(padLeft, yPos);
+        ctx.lineTo(padLeft + plotW, yPos);
+        ctx.stroke();
+
+        let labelText = th.label || '';
+        const yFormatted = th.y.toFixed(th.y % 1 === 0 ? 0 : 1);
+        if (labelText && !labelText.includes(String(th.y)) && !labelText.includes(yFormatted)) {
+          labelText = `${labelText} (${yFormatted} ${this.options.yUnit})`.trim();
+        }
+
+        if (labelText) {
+          ctx.font = '10px "JetBrains Mono", monospace';
+          const textW = ctx.measureText(labelText).width;
+          ctx.fillStyle = 'rgba(15, 23, 42, 0.9)';
+          ctx.fillRect(padLeft + 6, yPos - 11, textW + 8, 14);
+
+          ctx.fillStyle = th.color || '#ef4444';
+          ctx.textAlign = 'left';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(labelText, padLeft + 10, yPos - 4);
+        }
+        ctx.restore();
+      }
+    }
+
     // 5. Border
     ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
     ctx.lineWidth = 1;
@@ -893,7 +933,7 @@ export class ScientificScatterPlot {
     // 6. Title and Labels
     if (this.options.title) {
       ctx.fillStyle = '#f1f5f9';
-      ctx.font = '700 12px "Outfit", sans-serif';
+      ctx.font = '700 11px "Outfit", sans-serif';
       ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       ctx.fillText(`${this.options.title} [n=${validPts.length} observations]`, padLeft, 8);
@@ -910,11 +950,23 @@ export class ScientificScatterPlot {
     ctx.fillText(this.options.yLabel, 0, 0);
     ctx.restore();
 
-    // 7. Legend
-    ctx.font = '10px "JetBrains Mono", monospace';
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#06b6d4';
-    ctx.fillText(this.options.theoryLabel, width - padRight, 14);
+    // 7. Legend for Theoretical Curve
+    if (hasTheoryCurve && this.options.theoryLabel) {
+      ctx.save();
+      ctx.strokeStyle = '#06b6d4';
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(padLeft, 27);
+      ctx.lineTo(padLeft + 16, 27);
+      ctx.stroke();
+
+      ctx.font = '10px "JetBrains Mono", monospace';
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#06b6d4';
+      ctx.fillText(this.options.theoryLabel, padLeft + 22, 27);
+      ctx.restore();
+    }
 
     // 8. Hover inspection
     if (this.hoverPos) {
@@ -953,6 +1005,7 @@ export class ScientificScatterPlot {
         let bx = nx + 10;
         let by = ny - 20;
         if (bx + boxW > width - 10) bx = nx - boxW - 10;
+        if (bx < 10) bx = 10;
         if (by + boxH > height - 10) by = height - boxH - 10;
         if (by < 10) by = 10;
 
@@ -1296,13 +1349,13 @@ export class ScientificHeatmap {
     const n = nodeIds.length;
 
     const padLeft = 40;
-    const padTop = 35;
-    const padRight = 80;
+    const padTop = 46;
+    const padRight = 130;
     const padBottom = 20;
 
     const availW = width - padLeft - padRight;
     const availH = height - padTop - padBottom;
-    const cellSize = Math.max(12, Math.min(availW / n, availH / n));
+    const cellSize = Math.max(10, Math.floor(Math.min(availW / n, availH / n)));
     this.layout = { padLeft, padTop, cellSize, n };
 
     // Metric color mapper
@@ -1367,10 +1420,16 @@ export class ScientificHeatmap {
     // Node ID Row/Col Labels
     ctx.fillStyle = '#94a3b8';
     ctx.font = '9px "JetBrains Mono", monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'bottom';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
     for (let c = 0; c < n; c++) {
-      ctx.fillText(nodeIds[c], padLeft + c * cellSize + cellSize / 2, padTop - 4);
+      const cx = padLeft + c * cellSize + cellSize / 2;
+      const cy = padTop - 6;
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(-Math.PI / 4);
+      ctx.fillText(nodeIds[c], 0, 0);
+      ctx.restore();
     }
 
     ctx.textAlign = 'right';
@@ -1387,7 +1446,7 @@ export class ScientificHeatmap {
     ctx.fillText(`${this.options.title} [Metric: ${this.options.metricType.toUpperCase()}]`, padLeft, 8);
 
     // Legend sidebar
-    const legX = width - padRight + 12;
+    const legX = width - padRight + 10;
     ctx.font = '9px "JetBrains Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
@@ -1446,6 +1505,7 @@ export class ScientificHeatmap {
       let bx = mx + 12;
       let by = my - 10;
       if (bx + boxW > width - 10) bx = mx - boxW - 12;
+      if (bx < 10) bx = 10;
       if (by + boxH > height - 10) by = height - boxH - 10;
       if (by < 10) by = 10;
 

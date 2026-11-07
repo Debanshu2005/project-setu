@@ -89,40 +89,43 @@ export class AnalyticsWorkspaceComponent {
   initLayout() {
     this.container.innerHTML = `
       <div class="analytics-workspace-root" style="display:flex; flex-direction:column; height:100%; width:100%; background:var(--bg-darkest); color:var(--text-main); font-family:var(--font-sans); overflow-y:auto; overflow-x:hidden;">
-        <!-- Top Scientific Toolbar -->
-        <div class="analytics-toolbar" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; padding:10px 14px; background:var(--bg-base); border-bottom:1px solid var(--border-subtle); position:sticky; top:0; z-index:20;">
-          <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
-            <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px;">Workspace Domain:</span>
-            <div class="domain-pill-group" style="display:flex; gap:4px; flex-wrap:wrap;">
-              <button class="domain-pill active" data-domain="radio">📡 Radio & Propagation</button>
-              <button class="domain-pill" data-domain="delivery">📦 Packet Delivery & PDR</button>
-              <button class="domain-pill" data-domain="topology">🕸️ Topology & Routing</button>
-              <button class="domain-pill" data-domain="congestion">💥 Collisions & Congestion</button>
-              <button class="domain-pill" data-domain="energy">🔋 Energy & Battery</button>
-              <button class="domain-pill" data-domain="positioning">📍 Position & GNSS</button>
-              <button class="domain-pill" data-domain="sos_ack">🚨 Rescue SOS & ACK</button>
-              <button class="domain-pill" data-domain="comparison">⚖️ Multi-Run Comparison</button>
+        <!-- Pinned Sticky Top Header -->
+        <div class="analytics-sticky-header" style="position:sticky; top:0; z-index:20; background:var(--bg-base); border-bottom:1px solid var(--border-subtle); box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+          <!-- Top Scientific Toolbar -->
+          <div class="analytics-toolbar" style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:center; gap:8px; padding:10px 14px;">
+            <div style="display:flex; align-items:center; gap:6px; flex-wrap:wrap;">
+              <span style="font-size:11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px;">Workspace Domain:</span>
+              <div class="domain-pill-group" style="display:flex; gap:4px; flex-wrap:wrap;">
+                <button class="domain-pill active" data-domain="radio">📡 Radio & Propagation</button>
+                <button class="domain-pill" data-domain="delivery">📦 Packet Delivery & PDR</button>
+                <button class="domain-pill" data-domain="topology">🕸️ Topology & Routing</button>
+                <button class="domain-pill" data-domain="congestion">💥 Collisions & Congestion</button>
+                <button class="domain-pill" data-domain="energy">🔋 Energy & Battery</button>
+                <button class="domain-pill" data-domain="positioning">📍 Position & GNSS</button>
+                <button class="domain-pill" data-domain="sos_ack">🚨 Rescue SOS & ACK</button>
+                <button class="domain-pill" data-domain="comparison">⚖️ Multi-Run Comparison</button>
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:8px;">
+              <!-- Filter by Node -->
+              <select class="select-input" id="selAnalyticsNodeFilter" style="font-size:11px; padding:3px 8px; width:130px;" aria-label="Filter analytics by node">
+                <option value="all">All Nodes</option>
+              </select>
+
+              <!-- Save Current Run to Comparison Store -->
+              <button class="btn" id="btnSaveExperiment" style="font-size:11px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc;" title="Save current simulation snapshot for cross-run comparison">
+                💾 Snapshot Run
+              </button>
             </div>
           </div>
 
-          <div style="display:flex; align-items:center; gap:8px;">
-            <!-- Filter by Node -->
-            <select class="select-input" id="selAnalyticsNodeFilter" style="font-size:11px; padding:3px 8px; width:130px;" aria-label="Filter analytics by node">
-              <option value="all">All Nodes</option>
-            </select>
-
-            <!-- Save Current Run to Comparison Store -->
-            <button class="btn" id="btnSaveExperiment" style="font-size:11px; padding:3px 8px; border-color:#38bdf8; color:#7dd3fc;" title="Save current simulation snapshot for cross-run comparison">
-              💾 Snapshot Run
-            </button>
-          </div>
+          <!-- Dynamic Scientific KPI Ribbon -->
+          <div id="analyticsKpiRibbon" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; padding:8px 14px; background:rgba(0,0,0,0.25); border-top:1px solid var(--border-subtle);"></div>
         </div>
 
-        <!-- Dynamic Scientific KPI Ribbon -->
-        <div id="analyticsKpiRibbon" style="display:grid; grid-template-columns:repeat(auto-fit, minmax(130px, 1fr)); gap:8px; padding:10px 14px; background:rgba(0,0,0,0.25); border-bottom:1px solid var(--border-subtle);"></div>
-
         <!-- Main Workspace Plot Viewport -->
-        <div id="analyticsPlotArea" style="flex:1; padding:12px 14px; display:flex; flex-direction:column; gap:14px;"></div>
+        <div id="analyticsPlotArea" style="flex:1; padding:12px 14px 40px 14px; display:flex; flex-direction:column; gap:14px;"></div>
       </div>
     `;
 
@@ -321,12 +324,12 @@ export class AnalyticsWorkspaceComponent {
     const noiseFloor = LORA_RADIO_CONSTANTS.noiseFloorDbm || -117.0;
 
     container.innerHTML = `
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(440px, 1fr)); gap:12px;">
         <!-- Plot 3A: RSSI vs Distance with Theory Curve -->
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3A: Received Signal Strength (RSSI) vs Distance</span>
-            <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:10px;">
+            <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:10px; white-space:nowrap;">
               Model: Log-Distance (n=${pathExp})
             </span>
           </div>
@@ -340,9 +343,9 @@ export class AnalyticsWorkspaceComponent {
 
         <!-- Plot 3B: Path Loss vs Distance -->
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3B: Channel Path Loss (dB) vs Distance</span>
-            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px;">
+            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px; white-space:nowrap;">
               PL_0 = 31.2 dB, L_extra = 15.0 dB
             </span>
           </div>
@@ -355,12 +358,12 @@ export class AnalyticsWorkspaceComponent {
         </div>
       </div>
 
-      <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:12px;">
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(440px, 1fr)); gap:12px; margin-top:12px;">
         <!-- Plot 3C: Signal-to-Noise Ratio (SNR) vs Distance -->
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3C: Signal-to-Noise Ratio (SNR) vs Distance</span>
-            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px; white-space:nowrap;">
               Noise Floor: -119 dBm (125 kHz)
             </span>
           </div>
@@ -374,14 +377,16 @@ export class AnalyticsWorkspaceComponent {
 
         <!-- Plot 3D: Link-Quality Matrix Heatmap -->
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:6px; gap:8px;">
             <div>
-              <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3D: Node-to-Node Link Quality Matrix Heatmap</span>
-              <div style="font-size:10px; color:var(--text-dim);">
+              <div class="chart-title-group" style="display:inline-flex; align-items:center; gap:6px;">
+                <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3D: Node-to-Node Link Quality Matrix Heatmap</span>
+              </div>
+              <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">
                 Pairwise link telemetry across mesh nodes. Distinguishes Absent, Unobserved, and Observed links.
               </div>
             </div>
-            <div style="display:flex; align-items:center; gap:6px;">
+            <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
               <label for="selHeatmapMetric" style="font-size:10px; color:var(--text-muted);">Metric:</label>
               <select class="select-input" id="selHeatmapMetric" style="font-size:10px; padding:2px 6px;">
                 <option value="rssi" ${this.heatmapMetric === 'rssi' ? 'selected' : ''}>RSSI (dBm)</option>
@@ -561,7 +566,7 @@ export class AnalyticsWorkspaceComponent {
         theoryCurve: (d) => calculateTheoreticalPathLoss(d, pathExp),
         theoryLabel: `Theoretical Attenuation (n=${pathExp})`,
         thresholds: [
-          { y: LORA_RADIO_CONSTANTS.txPowerDbm - sens, label: `Max Budget Margin (${(LORA_RADIO_CONSTANTS.txPowerDbm - sens).toFixed(0)} dB)`, color: '#f59e0b' }
+          { y: LORA_RADIO_CONSTANTS.txPowerDbm - sens, label: 'Max Budget Margin', color: '#f59e0b' }
         ]
       });
       plot3B.setData(pathLossPoints);
@@ -578,9 +583,9 @@ export class AnalyticsWorkspaceComponent {
         yMin: -25,
         yMax: 20,
         thresholds: [
-          { y: -7.5, label: 'SF7 Demod Limit (-7.5 dB)', color: '#10b981' },
-          { y: -15.0, label: 'SF10 Demod Limit (-15.0 dB)', color: '#f59e0b' },
-          { y: -20.0, label: 'SF12 Sensitivity Floor (-20.0 dB)', color: '#ef4444' }
+          { y: -7.5, label: 'SF7 Demod Limit', color: '#10b981' },
+          { y: -15.0, label: 'SF10 Demod Limit', color: '#f59e0b' },
+          { y: -20.0, label: 'SF12 Sensitivity Floor', color: '#ef4444' }
         ]
       });
       plot3C.setData(snrPoints);
