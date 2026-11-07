@@ -778,7 +778,7 @@ export class ScientificScatterPlot {
     ctx.clearRect(0, 0, width, height);
 
     const hasTheoryCurve = (typeof this.options.theoryCurve === 'function');
-    const padLeft = 65;
+    const padLeft = (this.options.yUnit === 'mAh' || (this.options.yLabel && this.options.yLabel.length > 20)) ? 76 : 65;
     const padRight = 30;
     const padTop = hasTheoryCurve ? 44 : 32;
     const padBottom = 40;
@@ -798,8 +798,9 @@ export class ScientificScatterPlot {
       return;
     }
 
-    const minX = Math.max(1, this.options.xMin !== undefined ? this.options.xMin : (validPts.length ? Math.min(...validPts.map(p => p.x)) : 10));
-    const maxX = this.options.xMax !== undefined ? this.options.xMax : (validPts.length ? Math.max(...validPts.map(p => p.x), 800) : 1000);
+    const defaultMaxX = (hasTheoryCurve || this.options.xUnit === 'm') ? 800 : (validPts.length ? Math.max(...validPts.map(p => p.x), 5) : 10);
+    const minX = Math.max(0, this.options.xMin !== undefined ? this.options.xMin : (validPts.length ? Math.min(...validPts.map(p => p.x)) : 0));
+    const maxX = this.options.xMax !== undefined ? this.options.xMax : (validPts.length ? Math.max(...validPts.map(p => p.x), defaultMaxX) : 1000);
 
     const minY = this.options.yMin !== undefined ? this.options.yMin : (validPts.length ? Math.min(...validPts.map(p => p.y), -140) : -140);
     const maxY = this.options.yMax !== undefined ? this.options.yMax : (validPts.length ? Math.max(...validPts.map(p => p.y), -40) : -40);
@@ -821,6 +822,8 @@ export class ScientificScatterPlot {
 
     // Y ticks
     const yTicks = 5;
+    const yRange = Math.abs(maxY - minY);
+    const yDecimals = yRange < 0.1 ? 3 : (yRange < 2 ? 2 : (yRange < 15 && yRange % 1 !== 0 ? 1 : 0));
     ctx.fillStyle = '#64748b';
     ctx.font = '10px "JetBrains Mono", monospace';
     ctx.textAlign = 'right';
@@ -832,11 +835,13 @@ export class ScientificScatterPlot {
       ctx.moveTo(padLeft, yPos);
       ctx.lineTo(padLeft + plotW, yPos);
       ctx.stroke();
-      ctx.fillText(`${yVal.toFixed(0)} ${this.options.yUnit}`, padLeft - 6, yPos);
+      const unitPart = this.options.yUnit ? ' ' + this.options.yUnit : '';
+      ctx.fillText(`${yVal.toFixed(yDecimals)}${unitPart}`, padLeft - 6, yPos);
     }
 
     // X ticks
     const xTicks = 5;
+    const unitPartX = this.options.xUnit !== undefined ? (this.options.xUnit ? ' ' + this.options.xUnit : '') : 'm';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     for (let i = 0; i <= xTicks; i++) {
@@ -846,7 +851,7 @@ export class ScientificScatterPlot {
       ctx.moveTo(xPos, padTop);
       ctx.lineTo(xPos, padTop + plotH);
       ctx.stroke();
-      ctx.fillText(`${xVal.toFixed(0)}m`, xPos, padTop + plotH + 6);
+      ctx.fillText(`${xVal.toFixed(0)}${unitPartX}`, xPos, padTop + plotH + 6);
     }
 
     // 2. Theoretical Function Curve

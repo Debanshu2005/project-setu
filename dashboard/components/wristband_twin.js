@@ -4,6 +4,8 @@
 // 1000 mAh LiPo pouch, tactile SOS button, OLED display, RGB status LED, and haptic vibration ripple.
 // Supports direct controls: button press, voice trigger, battery level, motion profile.
 
+import { getWebGLQualityTier, disposeThreeObject } from '../src/webgl_tier.js';
+
 let THREE = null;
 let OrbitControls = null;
 
@@ -51,6 +53,7 @@ export class WristbandTwinComponent {
     this.hapticRipples = [];
     this.animId = null;
     this.isActive = true;
+    this.qualityTier = null;
     this._renderScheduled = false;
     this._renderBound = null;
     this._onVisibilityChange = null;
@@ -174,11 +177,18 @@ export class WristbandTwinComponent {
     const width = this.mountPoint.clientWidth || 340;
     const height = this.mountPoint.clientHeight || 220;
 
+    // Detect quality tier
+    this.qualityTier = getWebGLQualityTier();
+
     // Renderer
-    this.renderer = new t.WebGLRenderer({ antialias: true, alpha: false });
+    this.renderer = new t.WebGLRenderer({
+      antialias: this.qualityTier.antialias,
+      alpha: false,
+      powerPreference: this.qualityTier.isMobile ? 'low-power' : 'high-performance'
+    });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, 2));
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.setPixelRatio(Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.qualityTier.dprCap));
+    this.renderer.shadowMap.enabled = this.qualityTier.shadows;
     this.mountPoint.appendChild(this.renderer.domElement);
 
     // Scene
@@ -600,6 +610,14 @@ export class WristbandTwinComponent {
     if (this.hapticTimer) {
       clearTimeout(this.hapticTimer);
       this.hapticTimer = null;
+    }
+    for (const r of this.hapticRipples) {
+      if (r && r.mesh) disposeThreeObject(r.mesh);
+    }
+    this.hapticRipples = [];
+    if (this.wristbandGroup) {
+      disposeThreeObject(this.wristbandGroup);
+      this.wristbandGroup = null;
     }
     if (this.renderer && typeof this.renderer.dispose === 'function') {
       this.renderer.dispose();

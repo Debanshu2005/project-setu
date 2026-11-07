@@ -427,6 +427,9 @@ class SetuDashboardApp {
       if (twin3dContainer) {
         const { SetuTwin3DViewer } = await import('../components/setu_twin.js');
         this.setuTwin = new SetuTwin3DViewer(twin3dContainer);
+        if (this.setuTwin._initPromise) {
+          await this.setuTwin._initPromise;
+        }
         if (this.sim && this.sim.nodes) {
           this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
           const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
