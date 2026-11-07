@@ -459,3 +459,37 @@ Visual inspection of user feedback on the Energy and Battery domain revealed thr
 - `docs/screens/V_energy_workspace_with_sidebars.png`: Verified split view with left and right sidebars restored via toolbar toggle.
 - `docs/screens/V_energy_workspace_compact_top.png`: Verified compact 1024x462 viewport rendering without top clipping.
 - `docs/screens/V_energy_workspace_compact_no_kpi.png`: Verified maximum chart area on compact viewport with KPI ribbon collapsed.
+
+## IX. Top Navbar and Sidebar Tabs Compact Screen Responsiveness Audit
+
+### 1. Issues Identified from User Screenshot (1024x458 Viewport)
+
+Visual inspection of user feedback on compact screens (1024x458 viewport) revealed two horizontal overflow and clipping defects:
+1. Top navbar horizontal clipping: The top header contained 14 controls on a single horizontal flex line without compact mode styling. The brand section consumed up to 694px and actions consumed 1114px, totaling over 1700px. On 1024px screens, 714px of controls were clipped off the right edge: the scenario dropdown was partially cut off, and the mode toggle, Trigger All Survivors, Run Simulation, Backend, and all data export/upload buttons were pushed entirely off-screen.
+2. Sidebar tab truncation: The right sidebar tabs header (340px wide) contained 6 tabs (Inspector, Setu Twin, Timeline, Analytics, Scientific, Fleet Health). Long text strings and fixed uppercase labels caused the 5th tab to be truncated as SCIE... and the 6th tab to be pushed off.
+
+### 2. Implemented Resolutions
+
+1. Grouped data export actions into a compact dropdown:
+   - Consolidated Export JSON, Export CSV, Raw CSV, and Upload Trace into a single Data dropdown (id dropdownDataExport).
+   - Retained all existing button IDs, accessibility titles, and event listeners intact.
+2. Dual-mode responsive button labels and media queries:
+   - Added responsive span pairs (view-label-full / view-label-short, mode-label-full / mode-label-short, trigger-label-full / trigger-label-short, run-label-full / run-label-short, backend-label-full / backend-label-short).
+   - On screens <= 1600px, labels automatically switch to concise versions (Topo, Twin, Analytics, Live, Trigger SOS, Run, API).
+   - Hid redundant Scenario text label at <= 1600px while keeping the native select with its full aria-label and compact width.
+   - Constrained system status indicator to 85px with text ellipsis and hid the decorative engine badge at <= 1120px.
+   - Prevented app-header and header-actions horizontal overflow using overflow: hidden on header and min-width: 0.
+3. Sidebar tabs optimization:
+   - Streamlined tab labels to concise, readable titles: Inspect, Twin, Timeline, Analytics, Scientific, Fleet.
+   - Adjusted tab button font size to 9.5px, padding to 8px 1px, and added hidden overflow scrolling on tabs header.
+   - All 6 tabs fit across 340px with zero text truncation.
+
+### 3. Verification Across Resolutions
+
+Measured using automated Playwright inspector (scripts/inspect_header_width.mjs):
+- 1440px viewport: 0 clipped buttons, 0 truncated tabs.
+- 1280px viewport: 0 clipped buttons, 0 truncated tabs.
+- 1120px viewport: 0 clipped buttons, 0 truncated tabs.
+- 1024px viewport (user screen): 0 clipped buttons, 0 truncated tabs (total actions width 646px, rightmost button ends at 1012px, safely inside 1024px).
+- Verification screenshot saved to docs/screens/header_after_1024.png.
+
