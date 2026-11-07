@@ -159,6 +159,15 @@ body {
   background: var(--bg-darkest);
 }
 
+/* Full-width scientific analytics layout */
+.main-layout.analytics-mode {
+  grid-template-columns: 1fr;
+}
+.main-layout.analytics-mode .sidebar-left,
+.main-layout.analytics-mode .sidebar-right {
+  display: none !important;
+}
+
 /* Left Sidebar: Overview & SOS Console */
 .sidebar-left {
   background: var(--bg-base);

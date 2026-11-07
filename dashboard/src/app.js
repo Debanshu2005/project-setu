@@ -961,6 +961,11 @@ class SetuDashboardApp {
       this.btnModeAnalytics.style.color = isAnalytics ? '#38bdf8' : 'var(--text-muted)';
     }
 
+    const mainLayout = document.querySelector('.main-layout');
+    if (mainLayout) {
+      mainLayout.classList.toggle('analytics-mode', isAnalytics);
+    }
+
     if (this.containerTopologyView) this.containerTopologyView.style.display = isTopo ? 'block' : 'none';
     if (this.containerSetuTwinView) this.containerSetuTwinView.style.display = isTwin ? 'block' : 'none';
     if (this.containerAnalyticsView) {

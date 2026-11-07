@@ -392,3 +392,38 @@ Every scientific chart across the dashboard now provides clear, instant explanat
    - Launched headless Chrome across all workspace domains and sidebar.
    - Captured 20 screenshots of every explainer card to `docs/screens/charts/<explainerId>.png`.
    - Verified that data point tooltips and dwell hints function without collision.
+
+## VII. Scientific Analytics Workspace Visual Alignment and Layout Audit
+
+### 1. Issues Identified from Field Visual Inspection
+
+Visual inspection of the Scientific Analytics Workspace revealed five layout and rendering defects:
+1. Canvas title and theoretical curve collision: in Plot 3A, Plot 3B, and Plot 3C, the observation count title and the theoretical log-distance path loss formula were rendered on the same horizontal line (y=8 and y=14) within a narrow 32px top margin. This caused the white title text and cyan formula text to collide and become unreadable.
+2. Threshold line number duplication and strike-through: dashed threshold lines (demodulation sensitivity, max link budget margin, and SF demodulation limits) had two problems. First, the dashed line was drawn directly through the text glyphs without a background pill. Second, the numeric values were printed twice (for example "SF7 Demod Limit (-7.5 dB) (-7.5 dB)" and "Max Budget Margin (137 dB) (137 dB)").
+3. Chart info button alignment: the info button (ℹ️) was inserted as an unstyled sibling inside flex containers configured with `justify-content: space-between`. This detached the button from the title and pushed it into badges on the far right or floated it across empty space. In Plot 3D, it caused the title to wrap across two lines.
+4. Heatmap column label collision, legend truncation, and negative tooltip clipping: in Plot 3D, three-digit node IDs ("100", "101", "102") collided horizontally because each cell is only 12px wide. The legend scale on the right was clipped by the canvas border due to an 80px right padding constraint. Furthermore, when hovering over the lower matrix cells, tooltip x coordinates lacked a lower bound check, causing tooltips to render off-screen at negative x coordinates ("airwise link with observed packets").
+5. Sticky header and viewport scrolling: scrolling down inside the workspace allowed plot axes to bleed through transparent gaps while the KPI ribbon scrolled off-screen.
+
+### 2. Implemented Resolutions
+
+1. Two-tier canvas header layout in `ScientificScatterPlot`:
+   - Line 1 (y=8): chart title and observation sample count.
+   - Line 2 (y=27): dedicated cyan curve marker and formula legend (`Theory: P_rx = 14 - (31.2 + 10(3.5)log10(d) + 15)`).
+   - Expanded canvas top padding from 32px to 44px when a theoretical curve is present. Phantom theoretical curve labels on Plot 3C were removed.
+2. Protected threshold badges and normalized labels:
+   - Threshold lines render behind scatter observations with an opaque backdrop pill (`rgba(15, 23, 42, 0.9)`) so dashed strokes never strike through text glyphs.
+   - Numeric label formatting checks existing strings to prevent duplicate value suffixes.
+3. Anchored `.chart-title-group` flex container:
+   - Grouped chart title and info button inside an inline flex container with 6px gap. The button remains permanently anchored to the title and badges stay right-aligned.
+4. Heatmap matrix geometric improvements:
+   - Column node ID labels are rotated by -45 degrees, eliminating horizontal overlap for multi-digit node IDs.
+   - Right canvas padding increased from 80px to 130px, ensuring all seven scale tiers render without clipping.
+   - Added lower bound check (`if (bx < 10) bx = 10;`) to tooltip placement, preventing off-screen clipping.
+5. Pinned `.analytics-sticky-header` container:
+   - Grouped domain toolbar and KPI ribbon in a sticky top container with solid background (`var(--bg-base)`), preventing content bleed during scroll.
+   - Added `.main-layout.analytics-mode` to give the analytics workspace 100% full viewport width.
+
+### 3. Verification Screenshots
+
+- `docs/screens/V_radio_workspace_top.png`: verified Plot 3A and Plot 3B top section with two-tier headers, non-overlapping theoretical curves, and protected threshold pills.
+- `docs/screens/V_radio_workspace_bottom.png`: verified Plot 3C and Plot 3D bottom section with rotated node labels, unclipped legend, clean single-line title grouping, and solid sticky header.
