@@ -168,6 +168,37 @@ body {
   display: none !important;
 }
 
+/* Scientific chart panels scroll margin and clear boundary */
+.chart-panel {
+  scroll-margin-top: 52px;
+}
+
+/* Scientific toolbar tools and action buttons */
+.analytics-toolbar .btn-tool {
+  font-size: 11px;
+  padding: 3px 8px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  border-radius: 4px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+.analytics-toolbar .btn-tool:hover {
+  background: var(--bg-surface-elevated);
+  color: var(--text-main);
+  border-color: #38bdf8;
+}
+.analytics-toolbar .btn-tool.active {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #38bdf8;
+}
+
 /* Left Sidebar: Overview & SOS Console */
 .sidebar-left {
   background: var(--bg-base);
