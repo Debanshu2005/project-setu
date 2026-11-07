@@ -56,6 +56,21 @@ function xyToE6(x, y) {
   return { lat, lon };
 }
 
+export function segmentsIntersect(ax, ay, bx, by, cx, cy, dx, dy) {
+  const rx = bx - ax;
+  const ry = by - ay;
+  const sx = dx - cx;
+  const sy = dy - cy;
+  const rxs = rx * sy - ry * sx;
+  if (Math.abs(rxs) < 1e-9) return false;
+  const invRxs = 1.0 / rxs;
+  const qpx = cx - ax;
+  const qpy = cy - ay;
+  const t = (qpx * sy - qpy * sx) * invRxs;
+  const u = (qpx * ry - qpy * rx) * invRxs;
+  return t >= 0.0 && t <= 1.0 && u >= 0.0 && u <= 1.0;
+}
+
 export class SetuSimulator {
   constructor(params = {}) {
     this.survivors = Math.min(100, Math.max(1, parseInt(params.survivors, 10) || 20));
@@ -97,6 +112,7 @@ export class SetuSimulator {
       suppressed: 0,
       retries: 0
     };
+    this.obstacles = Array.isArray(params.obstacles) ? params.obstacles : [];
 
     this.initTopology();
   }
@@ -206,6 +222,99 @@ export class SetuSimulator {
     const gaussLink = makeGaussian(prngLink);
     const pl = this.refLossDb + 10.0 * this.pathExp * Math.log10(d) + this.extraLossDb + gaussLink(0, this.shadowSigmaDb);
     return this.txDbm - pl;
+  }
+
+  getLossBudget(fromId, toId) {
+    const na = this.nodes.get(fromId);
+    const nb = this.nodes.get(toId);
+    if (!na || !nb || fromId === toId) {
+      return {
+        ok: false,
+        from: fromId,
+        to: toId,
+        viable: false,
+        rx_power_dbm: -Infinity,
+        link_margin_db: -Infinity
+      };
+    }
+    const k = fromId < toId ? `${fromId}-${toId}` : `${toId}-${fromId}`;
+    if (this.blockedLinks.has(k)) {
+      return {
+        ok: true,
+        from: fromId,
+        to: toId,
+        distance_m: 0,
+        tx_power_dbm: this.txDbm,
+        ref_loss_db: this.refLossDb,
+        path_loss_db: 0,
+        shadow_loss_db: 0,
+        extra_loss_db: this.extraLossDb,
+        fading_loss_db: 0,
+        obstacle_loss: 'blocked link',
+        obstacle_loss_db: 0,
+        crossed_obstacles: [],
+        body_loss: 'blocked link',
+        body_loss_db: 0,
+        noise_floor_dbm: -174.0 + 10.0 * Math.log10(this.bwHz) + 6.0,
+        rx_power_dbm: -Infinity,
+        sensitivity_dbm: this.sens,
+        link_margin_db: -Infinity,
+        viable: false
+      };
+    }
+
+    const dist = Math.max(1.0, Math.hypot(na.x - nb.x, na.y - nb.y));
+    const pathLoss = 10.0 * this.pathExp * Math.log10(dist);
+    const prngLink = makePrng(this.seed ^ (Math.min(fromId, toId) * 65537 + Math.max(fromId, toId) * 2246822));
+    const gaussLink = makeGaussian(prngLink);
+    const shadowLoss = this.shadowSigmaDb > 0 ? gaussLink(0, this.shadowSigmaDb) : 0.0;
+
+    const crossedObstacles = [];
+    let obstacleLoss = 0.0;
+    if (Array.isArray(this.obstacles)) {
+      for (const obs of this.obstacles) {
+        if (segmentsIntersect(na.x, na.y, nb.x, nb.y, obs.x1, obs.y1, obs.x2, obs.y2)) {
+          const loss = typeof obs.attenuation_db === 'number' ? obs.attenuation_db : 20.0;
+          obstacleLoss += loss;
+          crossedObstacles.push({
+            id: obs.id,
+            name: obs.label || obs.name || `obs_${obs.id}`,
+            material: obs.material || 'concrete',
+            loss_db: loss
+          });
+        }
+      }
+    }
+
+    const bodyLoss = 0.0;
+    const noiseFloor = -174.0 + 10.0 * Math.log10(this.bwHz) + 6.0;
+    const totalPl = this.refLossDb + pathLoss + shadowLoss + this.extraLossDb + obstacleLoss + bodyLoss;
+    const rxPower = this.txDbm - totalPl;
+    const margin = rxPower - this.sens;
+    const viable = margin >= 0.0;
+
+    return {
+      ok: true,
+      from: fromId,
+      to: toId,
+      distance_m: dist,
+      tx_power_dbm: this.txDbm,
+      ref_loss_db: this.refLossDb,
+      path_loss_db: pathLoss,
+      shadow_loss_db: shadowLoss,
+      extra_loss_db: this.extraLossDb,
+      fading_loss_db: 0.0,
+      obstacle_loss: crossedObstacles.length > 0 ? `${obstacleLoss.toFixed(1)} dB (${crossedObstacles.length}x intersected)` : '0.0 dB (line of sight)',
+      obstacle_loss_db: obstacleLoss,
+      crossed_obstacles: crossedObstacles,
+      body_loss: '0.0 dB (unshadowed)',
+      body_loss_db: bodyLoss,
+      noise_floor_dbm: noiseFloor,
+      rx_power_dbm: rxPower,
+      sensitivity_dbm: this.sens,
+      link_margin_db: margin,
+      viable
+    };
   }
 
   addTrigger(nodeId, kind, atMs) {

@@ -340,7 +340,7 @@ void run_global_sensitivity_analysis(uint32_t seed) {
             << "]\n}\n" << std::flush;
 }
 
-int run_interactive(int survivors, int relays, double zone, ChannelParams ch, uint32_t seed) {
+int run_interactive(int survivors, int relays, double zone, ChannelParams ch, uint32_t seed, const std::vector<Obstacle>& initial_obstacles = {}) {
   std::unique_ptr<World> w;
   bool allow_disconnected = false;
   std::map<uint16_t, uint8_t> initial_batteries;
@@ -352,6 +352,9 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
   auto init_world = [&](int s_count, int r_count, double z, ChannelParams c, uint32_t sd, const std::map<uint16_t, uint8_t>& batts) {
     w = make_demo_world(s_count, r_count, z, c, sd, setu::NodeConfig(), batts, allow_disconnected);
     w->set_trace(&std::cout);
+    for (const auto& obs : initial_obstacles) {
+      w->add_obstacle(obs);
+    }
     for (const auto& kv : initial_motion_profiles) {
       w->set_motion_profile(kv.first, kv.second);
     }
@@ -543,6 +546,7 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
       uint16_t b = static_cast<uint16_t>(json_get_int(line, "to", 1));
       LossBudget lb = w->get_loss_budget(a, b);
       std::cout << "{\"ok\":true,\"cmd\":\"get_loss_budget\",\"from\":" << a << ",\"to\":" << b
+                << ",\"distance_m\":" << lb.distance_m
                 << ",\"tx_power_dbm\":" << lb.tx_power_dbm
                 << ",\"ref_loss_db\":" << lb.ref_loss_db
                 << ",\"path_loss_db\":" << lb.path_loss_db
@@ -550,7 +554,18 @@ int run_interactive(int survivors, int relays, double zone, ChannelParams ch, ui
                 << ",\"extra_loss_db\":" << lb.extra_loss_db
                 << ",\"fading_loss_db\":" << lb.fading_loss_db
                 << ",\"obstacle_loss\":\"" << lb.obstacle_loss << "\""
-                << ",\"body_loss\":\"" << lb.body_loss << "\""
+                << ",\"obstacle_loss_db\":" << lb.obstacle_loss_db
+                << ",\"crossed_obstacles\":[";
+      for (size_t i = 0; i < lb.crossed_obstacles.size(); ++i) {
+        const auto& co = lb.crossed_obstacles[i];
+        if (i > 0) std::cout << ",";
+        std::cout << "{\"id\":" << co.id << ",\"name\":\"" << co.name
+                  << "\",\"material\":\"" << co.material
+                  << "\",\"loss_db\":" << co.loss_db << "}";
+      }
+      std::cout << "],\"body_loss\":\"" << lb.body_loss << "\""
+                << ",\"body_loss_db\":" << lb.body_loss_db
+                << ",\"noise_floor_dbm\":" << lb.noise_floor_dbm
                 << ",\"rx_power_dbm\":" << lb.rx_power_dbm
                 << ",\"sensitivity_dbm\":" << lb.sensitivity_dbm
                 << ",\"link_margin_db\":" << lb.link_margin_db
@@ -791,7 +806,13 @@ int main(int argc, char** argv) {
       if (c2 == std::string::npos) die("--obstacle needs ID:MATERIAL:X1,Y1,X2,Y2[@ATTEN]");
       uint16_t obs_id = static_cast<uint16_t>(std::stoi(val.substr(0, c1)));
       std::string mat_str = val.substr(c1 + 1, c2 - c1 - 1);
+      std::string obs_label = "obs_" + std::to_string(obs_id);
       std::string coords_str = val.substr(c2 + 1);
+      auto c3 = val.find(':', c2 + 1);
+      if (c3 != std::string::npos) {
+        obs_label = val.substr(c2 + 1, c3 - c2 - 1);
+        coords_str = val.substr(c3 + 1);
+      }
       std::stringstream ss(coords_str);
       std::string seg;
       std::vector<double> coords;
@@ -801,7 +822,7 @@ int main(int argc, char** argv) {
       if (coords.size() != 4) die("--obstacle coordinates must be X1,Y1,X2,Y2");
       Obstacle obs;
       obs.id = obs_id;
-      obs.label = "obs_" + std::to_string(obs_id);
+      obs.label = obs_label;
       obs.material = parse_material(mat_str);
       obs.x1 = coords[0];
       obs.y1 = coords[1];
@@ -836,7 +857,7 @@ int main(int argc, char** argv) {
   }
 
   if (interactive) {
-    return run_interactive(survivors, relays, zone, ch, seed);
+    return run_interactive(survivors, relays, zone, ch, seed, obstacles_to_add);
   }
 
   std::unique_ptr<World> w;

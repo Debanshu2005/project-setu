@@ -1,7 +1,7 @@
 // Project Setu: Setu Twin Viewer, Narrator, and Loss Budget Unit & DOM Tests
 // Validates plain-English narration, link-margin waterfall decomposition, and 3D projection.
 
-import { narrateEvent, narrateIncidentStory, HAZARD_NAMES, SENSITIVITY_BY_SF } from '../dashboard/src/narrator.js';
+import { narrateEvent, narrateIncidentStory, formatFailureVerdict, formatTimestamp, HAZARD_NAMES, SENSITIVITY_BY_SF } from '../dashboard/src/narrator.js';
 import { LossWaterfallComponent } from '../dashboard/components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../dashboard/components/setu_twin.js';
 import fs from 'node:fs';
@@ -156,23 +156,86 @@ async function runTests() {
   const waterfall = new LossWaterfallComponent(mockContainer);
   assert(typeof waterfall.update === 'function', 'LossWaterfallComponent exposes update method');
 
-  waterfall.update({
-    from: 3,
-    to: 100,
-    dist: 120.0,
-    tx_dbm: 14.0,
-    path_loss: 93.7,
+  const engineBudgetWall = {
+    distance_m: 143.38,
+    tx_power_dbm: 14.0,
+    ref_loss_db: 31.2,
+    path_loss_db: 81.9,
+    shadow_loss_db: -4.2,
+    extra_loss_db: 15.0,
+    fading_loss_db: 0.0,
     obstacle_loss_db: 22.0,
-    body_loss_db: 15.0,
-    shadow: 4.0,
-    sensitivity_dbm: -128.5
-  });
+    crossed_obstacles: [
+      { id: 2, name: 'exterior_south_shear_wall', material: 'concrete', loss_db: 22.0 }
+    ],
+    body_loss_db: 0.0,
+    noise_floor_dbm: -117.0,
+    rx_power_dbm: -131.9,
+    sensitivity_dbm: -126.0,
+    link_margin_db: -5.9,
+    viable: false,
+    from: 1,
+    to: 0
+  };
+
+  waterfall.update(engineBudgetWall);
 
   const descEl = document.getElementById('lwLinkDescription');
-  assert(descEl && descEl.textContent.includes('Path: Node 3 -> Node 100'), 'Link path description updated');
+  assert(descEl && descEl.textContent.includes('Path: Node 1 -> Node 0'), 'Link path description updated');
 
   const badgeEl = document.getElementById('lwViableBadge');
-  assert(badgeEl && badgeEl.textContent.length > 0, 'Viability badge rendered with margin');
+  assert(badgeEl && (badgeEl.textContent.includes('DROPPED') || badgeEl.textContent.includes('Below Sens')), 'Viability badge rendered with margin deficit');
+
+  // Test formatFailureVerdict for wall-impacted link
+  console.log('Testing formatFailureVerdict for wall-impacted link...');
+  const verdictWall = formatFailureVerdict(engineBudgetWall);
+  assert(verdictWall.includes('exterior_south_shear_wall'), 'Verdict mentions crossed wall');
+  assert(verdictWall.includes('distance path loss'), 'Verdict identifies distance path loss as largest contributor');
+  assert(verdictWall.includes('-5.9 dB margin deficit'), 'Verdict correctly states margin deficit');
+
+  // Test formatFailureVerdict for distance-blocked link
+  console.log('Testing formatFailureVerdict for distance-blocked link...');
+  const engineBudgetDistance = {
+    distance_m: 117.8,
+    tx_power_dbm: 14.0,
+    ref_loss_db: 31.2,
+    path_loss_db: 75.5,
+    shadow_loss_db: 3.2,
+    extra_loss_db: 15.0,
+    fading_loss_db: 0.0,
+    obstacle_loss_db: 0.0,
+    crossed_obstacles: [],
+    body_loss_db: 0.0,
+    noise_floor_dbm: -117.0,
+    rx_power_dbm: -130.9,
+    sensitivity_dbm: -126.0,
+    link_margin_db: -4.9,
+    viable: false,
+    from: 9,
+    to: 6
+  };
+
+  const verdictDistance = formatFailureVerdict(engineBudgetDistance);
+  assert(verdictDistance.includes('distance path loss'), 'Verdict identifies distance path loss');
+  assert(verdictDistance.includes('-4.9 dB margin deficit'), 'Verdict correctly states -4.9 dB deficit');
+
+  // Test Plain English Disaster Story Narration
+  console.log('Testing narrative timeline disaster story formatting...');
+  const storyTx = narrateEvent({ t: 3100, ev: 'originate', node: 1, hazard: 2 }, { story: true });
+  assert(storyTx.includes('00:03.1') && storyTx.includes('Node 1 transmits SOS') && storyTx.includes('Radio pulse emitted'), 'Narrates initial SOS transmission with timestamp');
+
+  const storyDrop = narrateEvent({ t: 3200, ev: 'drop', node: 0, from: 1, rssi: -127.9, why: 'weak' }, { story: true });
+  assert(storyDrop.includes('00:03.2') && storyDrop.includes('West shear wall attenuates signal') && storyDrop.includes('Dropped'), 'Narrates wall attenuation drop at Hub');
+
+  const storyRelay = narrateEvent({ t: 8200, ev: 'rx', node: 101, from: 1, rssi: -105.7 }, { story: true });
+  assert(storyRelay.includes('00:08.2') && storyRelay.includes('Relay 101 on street hears Node 1') && storyRelay.includes('Forwarding'), 'Narrates relay reception and forwarding');
+
+  const storyAck = narrateEvent({ t: 9600, ev: 'haptic', node: 1 }, { story: true });
+  assert(storyAck.includes('00:09.6') && storyAck.includes('Survivor 1 receives ACK') && storyAck.includes('Wristband vibrates'), 'Narrates ACK arrival and wristband buzz');
+
+  // Test Stop Crying Wolf
+  const storySuppressed = narrateEvent({ t: 8500, ev: 'relay_suppressed', node: 3, origin: 1, seq: 1 }, { story: true });
+  assert(!storySuppressed.includes('FAILED') && !storySuppressed.includes('Error') && storySuppressed.includes('Mesh airtime saved'), 'Suppression narrated as normal airtime optimization without failure alarm');
 
   // -------------------------------------------------------------
   // Test Suite 4: Setu Twin 3D Projection & Coordinates

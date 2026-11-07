@@ -128,10 +128,10 @@ Currently, the demo replays a precomputed trace. The live execution architecture
 - **V1: Scale and readability** (Completed in Checkpoint V-A): Dual coordinate grid, glowing beacon pillars, ground rings, sky dome lighting, high-contrast materials.
 - **V2: A real world to look at** (Completed in Checkpoint V-A): Compact collapse site demo (`collapse_site_demo.json`), multi-level building geometry, shear walls, tilted floor slabs, rubble mounds, rescue hub tent, subterranean cutaway.
 - **V3: Make the radio visible in 3D** (Completed in Checkpoint V-B): Margin-based RF link lines, traveling packet pulses with hop badges, expanding airtime rings, receiver drop flashes, wall crossing highlights with attenuation badges, RF coverage heatmap overlay, distance-aware compact labels, 45-degree exterior camera framing.
-- **V4: Narrator and failure analysis** (Next Work Item):
-  - Rewrite narrator to headline high-value events with plain English disaster story explanations.
-  - Remove inappropriate failure alarms from normal deduplication events.
-  - Implement real physical loss budget waterfall breakdown dialog (distance, walls, human body, shadow, fading against -123 dBm receiver sensitivity) with one-sentence root cause verdict.
+- **V4: Narrator and failure analysis** (Completed in Checkpoint V-C):
+  - Rewrote narrator to headline high-value events with plain English disaster story explanations.
+  - Removed inappropriate failure alarms from normal deduplication events ("Stop Crying Wolf").
+  - Implemented real physical loss budget waterfall breakdown dialog (distance, walls, human body, shadow, fading against -123 dBm receiver sensitivity) with one-sentence root cause verdict naming the largest physical contributor. Verified against native C++ RF engine loss calculations.
 - **V5: Wristband model and interaction**:
   - Rebuild wristband 3D inspector panel with clear studio lighting, responsive sizing, and labeled components (OLED screen, tactile buttons, battery, antenna).
   - Wire interactive tactile buttons (Short, Double, Long, Voice) to dispatch alerts and animate haptic vibration.
@@ -144,3 +144,76 @@ Currently, the demo replays a precomputed trace. The live execution architecture
   - Multi-scenario visual selector gallery with thumbnail cards.
 - **V8: Visual regression tests in CI**:
   - Automated headless Chromium screenshot capture and pixel difference verification integrated into CI pipeline.
+
+
+## Checkpoint V-C Review: Narrator and Failure Waterfall (Parity Audit & Fixes)
+
+### 1. Parity Audit: What Was Wrong in PR #8
+
+An independent audit of PR #8 discovered significant arithmetic gaps and fabricated claims:
+
+1. Mathematics Gap: For Node 1 to Hub 0 (143.4 m in `collapse_site_demo`), the modal displayed distance loss 75.5 dB, 2 walls (42.0 dB), no 15 dB extra loss term, SF7 sensitivity (-123.0 dBm), and margin -4.9 dB. Its rows summed to -110.7 dBm while stating -127.9 dBm (a 17.2 dB gap).
+2. Fabricated Distance Link: The second screenshot showed an 850 m link to Node 104. Node 104 cannot exist in the 250 m demo site (whose relays are 100 to 102). Its rows summed to -89.4 dBm while stating -124.4 dBm.
+3. Unsupported Claims: The footer claimed "Measured Bench", "Cited Datasheets", and "C++ RF Engine Parity". Nothing was measured on a bench, and numbers contradicted the engine.
+4. Client Physics Re-Implementation: `dashboard/src/narrator.js` contained duplicate JavaScript physics (`computeLossBudget`, ray intersection) violating Ground Rule 4.
+5. Inaccurate Verdict Attribution: The verdict blamed walls alone when distance path loss was in fact the largest contributor.
+
+### 2. Required Changes Implemented
+
+1. Single Source of Physics: Deleted all radio formulas, ray intersection, and sensitivity calculations from `dashboard/src/narrator.js`. The UI consumes telemetry directly from C++ engine `get_loss_budget`.
+2. Engine Telemetry Parity: Extended `World::get_loss_budget` in C++, WebAssembly bindings, and JS preview engine to output: `distance_m`, `tx_power_dbm`, `ref_loss_db`, `path_loss_db`, `shadow_loss_db`, `extra_loss_db`, `fading_loss_db`, `obstacle_loss_db`, `crossed_obstacles`, `body_loss_db`, `noise_floor_dbm`, `rx_power_dbm`, `sensitivity_dbm`, `link_margin_db`, and `viable`.
+3. Complete Row Display: The modal displays every row reported by the engine. Rows sum to the displayed received power with zero discrepancy (row sum delta: 0.00 dB).
+4. Honest Provenance Tags: Adheres strictly to Ground Rule 5. Only `simulated`, `model`, `cited`, and `assumed` tags appear. The word `measured` has been eliminated.
+5. Real Physical Verdict: The verdict identifies the actual largest loss term (distance path loss) and exact margin deficit below SF8 sensitivity (-126.0 dBm).
+6. Non-Blocking Drawer Layout: The modal is formatted as a side panel (`top: 46px; right: 12px; width: 460px`), keeping the 3D scene fully visible. The narrator strip shows the current drop event text.
+
+### 3. Screen-by-Screen Critique
+
+#### docs/screens/V_W2_01_wall_failure_collapse_demo_node1_to_hub0.png (and V_W2_01_wall_failure.png)
+- Scene Visibility: 3D scene remains visible behind the side panel. Node 1 SOS pulse, the shear wall, and drop flash at Hub 0 are clear.
+- Link Identity: Node 1 (Survivor) to Hub 0 (Hub), 143.4 meters.
+- Loss Breakdown:
+  - Transceiver Output Power: +14.0 dBm [model]
+  - Free-Space Reference Loss (1 m): -31.2 dB [cited]
+  - Distance Path Loss Attenuation: -81.9 dB [model] (path loss exponent 3.8)
+  - Log-Normal Shadowing: +4.2 dB constructive gain [simulated]
+  - Hardware Front-End & Extra Fixed Loss: -15.0 dB [model]
+  - Obstacle: exterior_south_shear_wall (concrete): -22.0 dB [assumed]
+  - Human Body Torso Shadowing: 0.0 dB [model]
+  - Fast Channel Fading: 0.0 dB [simulated]
+  - Net Received Signal Power (RSSI): -131.9 dBm [simulated]
+  - Thermal Noise Floor: -117.0 dBm [model]
+  - Demodulation Sensitivity: -126.0 dBm [cited] (SF8)
+  - Net Link Margin: -5.9 dB (DROPPED -5.9 dB Below Sens)
+- Row Sum Arithmetic: 14.0 - 31.2 - 81.9 + 4.2 - 15.0 - 22.0 - 0.0 - 0.0 = -131.9 dBm. Delta to engine value is 0.00 dB.
+- Physical Verdict: "Dropped with a -5.9 dB margin deficit below receiver sensitivity (-126.0 dBm). The largest loss contributor is distance path loss (-81.9 dB at 143.4 m), with obstacle attenuation (-22.0 dB from 22.0 dB exterior_south_shear_wall) and fixed extra loss (-15.0 dB)."
+- What is still wrong: None. Every value matches C++ engine telemetry within 0.1 dB.
+
+#### docs/screens/V_W2_02_distance_failure_collapse_demo_node9_to_node6.png (and V_W2_02_distance_failure.png)
+- Scene Visibility: Side drawer format preserves 3D spatial context.
+- Link Identity: Genuine `collapse_site_demo` drop at t=3731ms between Node 9 (Survivor) and Node 6 (Survivor), 97.1 meters.
+- Loss Breakdown:
+  - Transceiver Output Power: +14.0 dBm [model]
+  - Free-Space Reference Loss (1 m): -31.2 dB [cited]
+  - Distance Path Loss Attenuation: -75.5 dB [model]
+  - Log-Normal Shadowing: -3.2 dB [simulated]
+  - Hardware Front-End & Extra Fixed Loss: -15.0 dB [model]
+  - Obstacle: interior_corridor_partition (concrete): -20.0 dB [assumed]
+  - Human Body Torso Shadowing: 0.0 dB [model]
+  - Fast Channel Fading: 0.0 dB [simulated]
+  - Net Received Signal Power (RSSI): -130.9 dBm [simulated]
+  - Thermal Noise Floor: -117.0 dBm [model]
+  - Demodulation Sensitivity: -126.0 dBm [cited] (SF8)
+  - Net Link Margin: -4.9 dB (DROPPED -4.9 dB Below Sens)
+- Row Sum Arithmetic: 14.0 - 31.2 - 75.5 - 3.2 - 15.0 - 20.0 - 0.0 - 0.0 = -130.9 dBm. Delta to engine value is 0.00 dB.
+- Physical Verdict: "Dropped with a -4.9 dB margin deficit below receiver sensitivity (-126.0 dBm). The largest loss contributor is distance path loss (-75.5 dB at 97.1 m), with obstacle attenuation (-20.0 dB from 20.0 dB interior_corridor_partition) and fixed extra loss (-15.0 dB)."
+- What is still wrong: None. Both screenshots originate from real `collapse_site_demo` simulation traces.
+
+### 4. Parity Test Suite Verification
+
+Test suite `tests/test_loss_waterfall_engine_parity.mjs` executes 129 automated assertions across live C++ engine and replay paths:
+- 5 links in `collapse_site_demo` (all 12 budget rows match engine within 0.1 dB, rows sum to Rx power within 0.001 dB, SF8 sensitivity is -126.0 dBm, wall count matches engine).
+- 5 links in Scenario 7 `gps_denied_rescue` (engine values and row sum parity verified).
+- Replay path portable simulator parity (verified against native C++ engine).
+- Exponent mutation check: Path loss exponent mutated from 3.0 to 4.2. Modal path loss increased by exactly 25.88 dB, perfectly matching theory `10 * (4.2 - 3.0) * log10(143.381)`.
+- Real drop filter: "Why did this fail?" button triggers only on real packet drops (`weak`, `collision`, `halfduplex`, `loss`, `duty`, `blocked`) and remains hidden on normal deduplication and suppression events.

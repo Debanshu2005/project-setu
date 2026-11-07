@@ -73,6 +73,13 @@ struct Obstacle {
   double attenuation_db = 22.0; // explicit override or computed from material
 };
 
+struct CrossedObstacleInfo {
+  uint16_t id = 0;
+  std::string name;
+  std::string material;
+  double loss_db = 0.0;
+};
+
 // 2D Line segment intersection helper
 // Returns true if segment AB intersects segment CD, and computes intersection point
 inline bool segments_intersect(double ax, double ay, double bx, double by,
@@ -107,13 +114,17 @@ inline bool segments_intersect(double ax, double ay, double bx, double by,
 // Status label: Cited from geometrical ray-tracing attenuation standards.
 inline double calculate_obstacle_attenuation(double tx_x, double tx_y, double rx_x, double rx_y,
                                             const std::vector<Obstacle>& obstacles,
-                                            int* out_count = nullptr) {
+                                            int* out_count = nullptr,
+                                            std::vector<CrossedObstacleInfo>* out_crossed = nullptr) {
   double total_loss_db = 0.0;
   int count = 0;
   for (const auto& obs : obstacles) {
     if (segments_intersect(tx_x, tx_y, rx_x, rx_y, obs.x1, obs.y1, obs.x2, obs.y2)) {
       total_loss_db += obs.attenuation_db;
       count++;
+      if (out_crossed) {
+        out_crossed->push_back({obs.id, obs.label, material_name(obs.material), obs.attenuation_db});
+      }
     }
   }
   if (out_count) *out_count = count;

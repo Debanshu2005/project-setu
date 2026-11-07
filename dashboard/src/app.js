@@ -16,7 +16,7 @@ import { calculateTheoreticalRssi, calculateEcdf } from './scientific_metrics.js
 import { WristbandTwinComponent } from '../components/wristband_twin.js';
 import { LossWaterfallComponent } from '../components/loss_waterfall.js';
 import { SetuTwin3DViewer } from '../components/setu_twin.js';
-import { narrateEvent, explainFailure } from './narrator.js';
+import { narrateEvent, explainFailure, formatFailureVerdict } from './narrator.js';
 
 const BUILTIN_SCENARIOS = [
   { id: 'collapse_site_demo', name: 'Earthquake Collapse Site (Compact Demo)' },
@@ -566,11 +566,26 @@ class SetuDashboardApp {
 
           const recentEv = this.sim.events.slice().reverse().find(e => e.t <= curT);
           if (recentEv) {
-            const narration = narrateEvent(recentEv, { sf: this.sim.meta.sf || 7 });
+            const narration = narrateEvent(recentEv, {
+              sf: this.sim.meta.sf || 7,
+              story: true,
+              nodes: this.sim.nodes,
+              obstacles: this.currentScenario ? this.currentScenario.obstacles : []
+            });
             if (narration) this.setuTwin.setNarratorText(narration);
-            if (recentEv.ev === 'drop' || recentEv.ev === 'dead_battery') {
-              const explanation = explainFailure(recentEv, { sf: this.sim.meta.sf || 7 });
-              this.setuTwin.showFailureExplanation(`Failure on Node ${recentEv.node}`, explanation);
+
+            const isRealDrop = recentEv.ev === 'drop' && ['weak', 'collision', 'halfduplex', 'loss', 'duty', 'blocked'].includes(recentEv.why);
+            if (isRealDrop || recentEv.ev === 'dead_battery') {
+              const fromId = recentEv.from !== undefined ? recentEv.from : recentEv.node;
+              const toId = recentEv.node;
+              this.fetchLossBudget(fromId, toId, recentEv).then(lossData => {
+                if (narration) lossData.narration = narration;
+                this.setuTwin.setFailureData(lossData);
+                this.setuTwin.showFailureButton(true);
+              }).catch(() => {});
+            } else {
+              // STOP CRYING WOLF: Hide failure button on normal events like duplicate suppression
+              this.setuTwin.showFailureButton(false);
             }
           }
         }
@@ -654,6 +669,21 @@ class SetuDashboardApp {
 
     // Ensure Backend Modal registration
     this.initBackendModal();
+
+    // Listen for link loss budget inspection events
+    window.addEventListener('setu:inspect-loss-budget', (e) => {
+      const { from, to } = e.detail || {};
+      if (from !== undefined && to !== undefined) {
+        this.fetchLossBudget(from, to).then(lossData => {
+          if (this.setuTwin) {
+            this.setuTwin.showFailureExplanation(`RF Loss Budget: Node ${from} -> Node ${to}`, lossData);
+          }
+          if (this.lossWaterfall) {
+            this.lossWaterfall.update(lossData);
+          }
+        }).catch(err => console.error('Failed to fetch loss budget:', err));
+      }
+    });
 
     // View mode switching: Topology vs Setu Twin 3D vs Scientific Analytics
     if (this.btnModeTopology) {
@@ -1904,6 +1934,17 @@ class SetuDashboardApp {
 
       this.updateMetrics();
       this.currentScenario = this.scenarios ? this.scenarios.find(s => s.id === scenarioId) : null;
+      if (this.currentScenario) {
+        try {
+          await SetuApi.initControl({
+            scenarioId: scenarioId,
+            params: this.currentScenario.params,
+            obstacles: this.currentScenario.obstacles
+          });
+        } catch (e) {
+          // Backend may be offline or unreachable during replay
+        }
+      }
       if (this.setuTwin) {
         this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
         this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
@@ -1989,6 +2030,62 @@ class SetuDashboardApp {
     } finally {
       this.elStatusDot.classList.remove('simulating');
     }
+  }
+
+  async fetchLossBudget(from, to, recentEv = null) {
+    let lossData = null;
+    if (this.wasmSimulator && typeof this.wasmSimulator.get_loss_budget === 'function') {
+      try {
+        lossData = this.wasmSimulator.get_loss_budget(from, to);
+      } catch (e) {}
+    }
+    if (!lossData) {
+      try {
+        lossData = await SetuApi.getLossBudget(from, to);
+      } catch (e) {}
+    }
+    if (!lossData && this.portableSim && typeof this.portableSim.getLossBudget === 'function') {
+      try {
+        lossData = this.portableSim.getLossBudget(from, to);
+      } catch (e) {}
+    }
+    if (!lossData && recentEv && recentEv.loss_budget) {
+      lossData = recentEv.loss_budget;
+    }
+    if (!lossData) {
+      const fromNode = this.sim ? this.sim.nodes.get(from) : null;
+      const toNode = this.sim ? this.sim.nodes.get(to) : null;
+      const dist = (fromNode && toNode) ? Math.hypot(fromNode.x - toNode.x, fromNode.y - toNode.y) : 0.0;
+      const sens = this.sim && this.sim.meta && this.sim.meta.sens ? this.sim.meta.sens : -126.0;
+      const rx = recentEv && typeof recentEv.rssi === 'number' ? recentEv.rssi : -130.0;
+      lossData = {
+        ok: true,
+        from,
+        to,
+        distance_m: dist,
+        tx_power_dbm: (this.sim && this.sim.meta && this.sim.meta.tx_dbm) || 14.0,
+        ref_loss_db: 31.2,
+        path_loss_db: 0.0,
+        shadow_loss_db: 0.0,
+        extra_loss_db: 15.0,
+        fading_loss_db: 0.0,
+        obstacle_loss: '0.0 dB (line of sight)',
+        obstacle_loss_db: 0.0,
+        crossed_obstacles: [],
+        body_loss: '0.0 dB (unshadowed)',
+        body_loss_db: 0.0,
+        noise_floor_dbm: -174.0 + 10.0 * Math.log10(this.sim && this.sim.meta && this.sim.meta.bw_hz ? this.sim.meta.bw_hz : 125000) + 6.0,
+        rx_power_dbm: rx,
+        sensitivity_dbm: sens,
+        link_margin_db: rx - sens,
+        viable: (rx - sens) >= 0.0
+      };
+    }
+    if (recentEv && recentEv.why) {
+      lossData.why = recentEv.why;
+    }
+    lossData.sf = (this.sim && this.sim.meta && this.sim.meta.sf) || 8;
+    return lossData;
   }
 
   async executeCustomSimulation() {

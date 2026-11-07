@@ -1,3 +1,4 @@
+import { LossWaterfallComponent } from './loss_waterfall.js';
 // Project Setu: Setu Twin 3D Navigable World Visualizer
 // Provides a real WebGL 3D environment for disaster simulation inspection via Three.js.
 // Renders physical 3D disaster terrain (collapsed floor slabs, broken walls, rubble mounds, subterranean levels),
@@ -47,6 +48,8 @@ export class SetuTwin3DViewer {
     this.cameraMode = 'orbit';
     this.selectedNodeId = null;
     this.hoveredNodeId = null;
+    this.lossWaterfallModal = null;
+    this.activeFailureData = null;
     this.trackedIncidentNodeId = null;
     this.initialFitDone = false;
 
@@ -151,13 +154,13 @@ export class SetuTwin3DViewer {
           <button id="stBtnWhyFail" style="display:none; background:#dc2626; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:10px; cursor:pointer; font-weight:bold;">Why did this fail?</button>
         </div>
 
-        <!-- Failure Explainer Modal -->
-        <div id="stFailModal" style="display:none; position:absolute; top:60px; right:12px; z-index:20; width:360px; background:rgba(15,23,42,0.96); border:1px solid #ef4444; border-radius:8px; padding:14px; box-shadow:0 8px 24px rgba(0,0,0,0.7); backdrop-filter:blur(8px);">
-          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-            <span style="color:#ef4444; font-weight:bold; font-size:12px;">FAILURE ROOT-CAUSE ANALYSIS</span>
-            <button id="stBtnCloseFailModal" style="background:transparent; border:none; color:#94a3b8; cursor:pointer; font-size:14px;">x</button>
+        <!-- Failure Explainer Modal (RF Loss Budget Waterfall) -->
+        <div id="stFailModal" style="display:none; position:absolute; top:46px; right:12px; z-index:25; width:460px; max-width:calc(100% - 24px); max-height:calc(100% - 56px); overflow-y:auto; background:rgba(15,23,42,0.98); border:1px solid #ef4444; border-radius:8px; padding:10px; box-shadow:0 12px 32px rgba(0,0,0,0.8); backdrop-filter:blur(10px);">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px; padding-bottom:6px; border-bottom:1px solid #334155;">
+            <span style="color:#ef4444; font-weight:bold; font-size:11px; letter-spacing:0.05em; text-transform:uppercase;">RF Loss Budget Waterfall (Failure Analysis)</span>
+            <button id="stBtnCloseFailModal" style="background:rgba(255,255,255,0.08); border:1px solid #475569; color:#f8fafc; border-radius:4px; cursor:pointer; font-size:12px; padding:2px 8px; font-weight:bold;" title="Close failure analysis">&times;</button>
           </div>
-          <div id="stFailModalBody" style="font-size:11px; color:#cbd5e1; line-height:1.5;"></div>
+          <div id="stFailModalBody" style="font-size:11px; color:#cbd5e1;"></div>
         </div>
       </div>
     `;
@@ -165,6 +168,11 @@ export class SetuTwin3DViewer {
     this.mountPoint = document.getElementById('setuTwinMount');
     const canvas2DEl = document.getElementById('setuTwinCanvas2D');
     if (canvas2DEl) this.canvas2D = canvas2DEl;
+
+    const failBodyEl = document.getElementById('stFailModalBody');
+    if (failBodyEl) {
+      this.lossWaterfallModal = new LossWaterfallComponent(failBodyEl);
+    }
 
     if (this.destroyed) return;
 
@@ -407,6 +415,9 @@ export class SetuTwin3DViewer {
     });
 
     if (btnWhyFail) btnWhyFail.addEventListener('click', () => {
+      if (this.activeFailureData && this.lossWaterfallModal) {
+        this.lossWaterfallModal.update(this.activeFailureData);
+      }
       if (failModal) failModal.style.display = 'block';
     });
 
@@ -423,6 +434,10 @@ export class SetuTwin3DViewer {
       if (k === 'a') this.keys.a = true;
       if (k === 's') this.keys.s = true;
       if (k === 'd') this.keys.d = true;
+      if (k === 'escape') {
+        const fm = document.getElementById('stFailModal');
+        if (fm) fm.style.display = 'none';
+      }
       if (k === 'q') this.keys.q = true;
       if (k === 'e') this.keys.e = true;
     };
@@ -730,16 +745,41 @@ export class SetuTwin3DViewer {
     }
   }
 
-  showFailureExplanation(title, message) {
+  setFailureData(data) {
+    this.activeFailureData = data;
+    if (this.lossWaterfallModal && data) {
+      this.lossWaterfallModal.update(data);
+    }
+  }
+
+  showFailureButton(visible) {
+    if (typeof document === 'undefined') return;
+    const btn = document.getElementById('stBtnWhyFail');
+    if (btn) btn.style.display = visible ? 'inline-block' : 'none';
+  }
+
+  showFailureExplanation(title, linkDataOrMessage) {
     if (typeof document === 'undefined') return;
     const modal = document.getElementById('stFailModal');
     const body = document.getElementById('stFailModalBody');
     const btn = document.getElementById('stBtnWhyFail');
-    if (body) {
-      body.innerHTML = `<strong>${title}</strong><br><br>${message}`;
-    }
     if (btn) btn.style.display = 'inline-block';
+
+    if (typeof linkDataOrMessage === 'object' && linkDataOrMessage !== null) {
+      this.activeFailureData = linkDataOrMessage;
+      if (this.lossWaterfallModal) {
+        this.lossWaterfallModal.update(linkDataOrMessage);
+      }
+    } else if (body) {
+      body.innerHTML = `<div style="padding:10px; font-size:12px; line-height:1.5;"><strong>${title}</strong><br><br>${linkDataOrMessage}</div>`;
+    }
     if (modal) modal.style.display = 'block';
+  }
+
+  hideFailureExplanation() {
+    if (typeof document === 'undefined') return;
+    const modal = document.getElementById('stFailModal');
+    if (modal) modal.style.display = 'none';
   }
 
   setWaterElevation(levelMeters) {
