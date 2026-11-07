@@ -10,13 +10,6 @@ import { fileURLToPath } from 'node:url';
 import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 import { findSimulator } from './sim_finder.js';
-import { buildCss } from '../scripts/build_css.mjs';
-
-try {
-  buildCss();
-} catch (cssErr) {
-  console.warn('[Setu CSS] Failed to build bundle.css on startup:', cssErr.message);
-}
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,6 +19,24 @@ const ROOT_DIR = path.resolve(__dirname, '..');
 const DASHBOARD_DIR = __dirname;
 const SCENARIOS_DIR = path.join(ROOT_DIR, 'scenarios');
 const TRACES_DIR = path.join(SCENARIOS_DIR, 'traces');
+
+// Ensure production bundle.css exists
+const bundleCssPath = path.join(DASHBOARD_DIR, 'styles', 'bundle.css');
+if (!fs.existsSync(bundleCssPath)) {
+  try {
+    const cssFiles = ['main.css', 'topology.css', 'controls.css', 'inspector.css'];
+    const chunks = ['/* Project Setu Combined Application Stylesheet */\n'];
+    for (const f of cssFiles) {
+      const p = path.join(DASHBOARD_DIR, 'styles', f);
+      if (fs.existsSync(p)) {
+        chunks.push(fs.readFileSync(p, 'utf8'));
+      }
+    }
+    fs.writeFileSync(bundleCssPath, chunks.join('\n'), 'utf8');
+  } catch (cssErr) {
+    console.warn('[Setu CSS] Could not generate bundle.css fallback:', cssErr.message);
+  }
+}
 
 class RequestError extends Error {
   constructor(statusCode, message) {
