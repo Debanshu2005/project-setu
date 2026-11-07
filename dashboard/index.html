@@ -295,6 +295,10 @@
           <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
             <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
               <span style="font-weight:700; font-size:11px; color:#fff;" id="lblSidebarQuickChart">Quick Plot: RSSI vs Distance</span>
+              <select class="select-input" id="sidebarDomainSelector" style="font-size:9px; padding:1px 4px; background:rgba(0,0,0,0.4); border:1px solid #334155; color:#cbd5e1; border-radius:3px;">
+                <option value="radio_propagation">RSSI vs Distance</option>
+                <option value="packet_delivery">Latency CDF</option>
+              </select>
               <span class="badge" id="badgeSidebarMetric" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:9px;">
                 Log-Distance Model
               </span>

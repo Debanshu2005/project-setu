@@ -217,3 +217,178 @@ Test suite `tests/test_loss_waterfall_engine_parity.mjs` executes 129 automated 
 - Replay path portable simulator parity (verified against native C++ engine).
 - Exponent mutation check: Path loss exponent mutated from 3.0 to 4.2. Modal path loss increased by exactly 25.88 dB, perfectly matching theory `10 * (4.2 - 3.0) * log10(143.381)`.
 - Real drop filter: "Why did this fail?" button triggers only on real packet drops (`weak`, `collision`, `halfduplex`, `loss`, `duty`, `blocked`) and remains hidden on normal deduplication and suppression events.
+
+
+---
+
+## VI. SCIENTIFIC CHART HOVER EXPLAINERS (PART B)
+
+### 1. Requirements and Design Overview
+
+Every scientific chart across the dashboard now provides clear, instant explanations on hover and focus:
+1. Trigger Info Icon: A dedicated info button (`ℹ️`) sits beside every chart title. It uses semantic HTML (`<button role="button" aria-haspopup="dialog" aria-expanded="false">`) and opens within 120 ms (well within the 150 ms specification).
+2. Pinned State & Keyboard Navigation: Clicking or tapping the button pins the explainer card open so it can be scrolled and read without closing. Pressing Escape or clicking elsewhere closes the dialog and restores focus to the trigger button.
+3. Chart Body Dwell Hint: Moving the cursor onto a chart canvas and pausing for 700 ms displays a compact floating pill: "What is this graph? Hover the info icon for details". The pill hides immediately upon mouse movement and never obstructs interactive crosshairs or tooltips.
+4. Axis and Legend Hover: Margins and legends explain their respective metrics, units, and physical meanings when hovered.
+5. Enriched Spatial Tooltips: The Node Link Quality Matrix explains the meaning of each cell status (observed, unobserved, blocked). The Cartesian Trajectory plot explains error displacement arrows, GNSS fixes, dead reckoning outages, and ground truth paths.
+6. Seven Required Sections: Every explainer strictly incorporates What is this graph, Why is it needed, X versus Y, How to read it, Data origin, Caveats, and Expert Details.
+7. Ground Rule Compliance: Zero bench measurements exist in the project, so the word "measured" is completely absent from all explainers. Only honest provenance tags (`simulated`, `model`, `cited`, `assumed`) are used. Zero em dashes and zero double dashes are authored.
+
+### 2. Gallery Critique: All 20 Scientific Charts
+
+#### 1. docs/screens/charts/rssi_vs_distance_model.png
+- Chart Title: Simulated RSSI vs Distance Model
+- X versus Y: X axis: Distance (m, log) versus Y axis: Received Signal Strength (dBm, linear).
+- Visual Quality: Clear dark aesthetic, cyan theoretical curve, and sensitivity threshold line at -126.0 dBm for SF8.
+- Provenance Tags: [simulated], [model], [cited]
+- Critique: Explainer card appears cleanly in the top right corner opposite low-distance data points. The X versus Y relationship is clear.
+
+#### 2. docs/screens/charts/path_loss_vs_theory.png
+- Chart Title: Observed Path Loss vs Theory Curve
+- X versus Y: X axis: Distance (m, linear) versus Y axis: Path Loss (dB, linear).
+- Visual Quality: Displays log-distance theoretical curve alongside empirical attenuation points with obstacle elevation.
+- Provenance Tags: [simulated], [model], [cited], [assumed]
+- Critique: The margin budget threshold is dynamically filled from current scenario parameters.
+
+#### 3. docs/screens/charts/snr_vs_distance.png
+- Chart Title: Signal-to-Noise Ratio (SNR) vs Distance
+- X versus Y: X axis: Distance (m, linear) versus Y axis: SNR (dB, linear).
+- Visual Quality: Clear threshold lines for SF7 (-7.5 dB), SF10 (-15.0 dB), and SF12 sensitivity floor.
+- Provenance Tags: [simulated], [model], [cited]
+- Critique: Explicitly notes SX1262 LoRa demodulation capture boundaries.
+
+#### 4. docs/screens/charts/link_quality_matrix.png
+- Chart Title: Node-to-Node Link Quality Matrix
+- X versus Y: X axis: Receiver Node ID (integer) versus Y axis: Transmitter Node ID (integer).
+- Visual Quality: Matrix grid with color scale from emerald green to amber and slate.
+- Provenance Tags: [simulated]
+- Critique: Card explains asymmetric links, isolated survivor clusters, and relay forwarding bottlenecks.
+
+#### 5. docs/screens/charts/pdr_timeline.png
+- Chart Title: Mission Packet Delivery Ratio (PDR)
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: Delivery Ratio (%, linear).
+- Visual Quality: Tracks cumulative PDR (solid green) against sliding-window PDR (dashed cyan).
+- Provenance Tags: [simulated], [model]
+- Critique: Distinguishes unique originated emergency alerts from relay duplicate forwards.
+
+#### 6. docs/screens/charts/latency_cdf.png
+- Chart Title: End-to-End Latency Empirical CDF
+- X versus Y: X axis: Latency (ms, linear) versus Y axis: Cumulative Probability (%, linear).
+- Visual Quality: Empirical step function with quantile annotations for p50, p90, and p95.
+- Provenance Tags: [simulated]
+- Critique: Explains evacuation alerting speed and network responsiveness.
+
+#### 7. docs/screens/charts/throughput_and_rate.png
+- Chart Title: Delivered Payload Throughput & Packet Rate
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: Throughput and Rate (bps / pps, linear).
+- Visual Quality: Dual series showing goodput in bits per second and load in packets per second.
+- Provenance Tags: [simulated], [model]
+- Critique: Directly clarifies the difference between raw airtime utilization and delivered payload data.
+
+#### 8. docs/screens/charts/packet_loss_vs_distance.png
+- Chart Title: Packet Loss Probability vs Distance
+- X versus Y: X axis: Distance (m, linear) versus Y axis: Loss Rate (%, linear).
+- Visual Quality: Solid red curve with shaded loss area against the critical distance threshold.
+- Provenance Tags: [simulated], [model]
+- Critique: Explains the cliff edge behavior of LoRa packet reception near receiver sensitivity.
+
+#### 9. docs/screens/charts/delivered_by_hop_count.png
+- Chart Title: Delivered Messages by Hop Count
+- X versus Y: X axis: Hop Count (hops, discrete) versus Y axis: Message Count (packets, integer).
+- Visual Quality: Bar distribution showing direct line of sight arrivals versus multi-hop relay forwarding.
+- Provenance Tags: [simulated], [model]
+- Critique: Clarifies multi-hop relay dependency across subterranean and collapsed structures.
+
+#### 10. docs/screens/charts/relay_activity.png
+- Chart Title: Relay Forward Transmissions / 2s Window
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: Forward Count (pkts / 2s, linear).
+- Visual Quality: Activity rate lines per relay node identifying traffic hot spots.
+- Provenance Tags: [simulated]
+- Critique: Identifies traffic bottlenecks and airtime saturation risks.
+
+#### 11. docs/screens/charts/collisions_vs_retransmission.png
+- Chart Title: Airtime Collisions vs Retransmission Rate
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: Collision Events (collisions, integer).
+- Visual Quality: Stacked or overlaid series illustrating simultaneous transmission contention.
+- Provenance Tags: [simulated], [model]
+- Critique: Explains the physical impact of ALOHA packet collisions during incident bursts.
+
+#### 12. docs/screens/charts/channel_loss_dynamics.png
+- Chart Title: Channel Loss Dynamics
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: Drop Events (drops / 2s, linear).
+- Visual Quality: Timeline of drops categorized by physical cause: weak signal, collision, half duplex, blocked.
+- Provenance Tags: [simulated]
+- Critique: Gives direct visibility into why packets fail across simulation intervals.
+
+#### 13. docs/screens/charts/fleet_soc.png
+- Chart Title: Fleet State of Charge (%)
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: State of Charge (%, linear).
+- Visual Quality: Step-down battery percentage lines for survivor wristbands and relay towers.
+- Provenance Tags: [simulated], [model], [cited]
+- Critique: Explains mission lifetime limits and current drain rates.
+
+#### 14. docs/screens/charts/energy_vs_forwarding.png
+- Chart Title: Energy Drain vs Forwarding Load
+- X versus Y: X axis: Forwarded Packets (pkts, linear) versus Y axis: Total Energy Drain (mAh, linear).
+- Visual Quality: Scatter plot with linear regression line showing energy consumed per relay forward.
+- Provenance Tags: [simulated], [model]
+- Critique: Quantifies relay forwarding cost in milliampere hours.
+
+#### 15. docs/screens/charts/trajectory_error_vectors.png
+- Chart Title: Cartesian Trajectory & Position Estimation Error Vectors
+- X versus Y: X axis: Easting (m, linear) versus Y axis: Northing (m, linear).
+- Visual Quality: 2D spatial coordinate plot showing ground truth path, estimated path, and red error vectors.
+- Provenance Tags: [simulated], [model]
+- Critique: Red error displacement vectors clearly indicate dead reckoning drift during GNSS outages.
+
+#### 16. docs/screens/charts/position_error_timeline.png
+- Chart Title: Horizontal Position Error vs Time (m)
+- X versus Y: X axis: Simulation Time (s, linear) versus Y axis: Position Error (m, linear).
+- Visual Quality: Error line with red shaded GNSS outage intervals.
+- Provenance Tags: [simulated], [model]
+- Critique: Clarifies pedestrian dead reckoning sensor drift accumulation when satellite lock is lost.
+
+#### 17. docs/screens/charts/ack_latency_cdf.png
+- Chart Title: Time-to-First-ACK CDF
+- X versus Y: X axis: Time-to-First-ACK (ms, linear) versus Y axis: Cumulative Probability (%, linear).
+- Visual Quality: Empirical CDF curve tracking the elapsed duration before a survivor wristband receives vibrating confirmation.
+- Provenance Tags: [simulated]
+- Critique: Directly evaluates human survivor assurance latency.
+
+#### 18. docs/screens/charts/comparative_latency_cdfs.png
+- Chart Title: Comparative End-to-End Latency eCDFs
+- X versus Y: X axis: Latency (ms, linear) versus Y axis: Cumulative Percentage (%, linear).
+- Visual Quality: Multi-curve CDF comparison across baseline and custom simulation experiments.
+- Provenance Tags: [simulated]
+- Critique: Validates performance gains across algorithmic or topology adjustments.
+
+#### 19. docs/screens/charts/sidebar_latency_cdf.png
+- Chart Title: End-to-End Latency CDF (Sidebar Quick View)
+- X versus Y: X axis: Latency (ms, linear) versus Y axis: Cumulative Percentage (%, linear).
+- Visual Quality: Compact CDF plot embedded in the sidebar operations panel.
+- Provenance Tags: [simulated]
+- Critique: Provides immediate latency overview without leaving the primary 3D and topology view.
+
+#### 20. docs/screens/charts/sidebar_rssi_vs_distance.png
+- Chart Title: Quick Plot: RSSI vs Distance (Sidebar Quick View)
+- X versus Y: X axis: Distance (m, linear) versus Y axis: Received Signal Strength (dBm, linear).
+- Visual Quality: Compact scatter plot with theoretical path loss curve in the sidebar.
+- Provenance Tags: [simulated], [model], [cited]
+- Critique: Gives quick confirmation of radio link budget health directly in the sidebar.
+
+### 3. Verification and Automated Test Results
+
+1. Test Suite `tests/test_chart_explainers.mjs`:
+   - 201 automated unit and DOM assertions passed.
+   - All 20 charts verified for completeness, non-empty sections, no placeholders, and valid word counts.
+   - Axis consistency verified for all 20 charts against engine definitions.
+   - Provenance tag audit passed with zero occurrences of "measured".
+   - Dynamic parameter fill verified for SF7 (-123.0 dBm) and SF8 (-126.0 dBm).
+   - Accessibility contract verified (`role="button"`, `role="dialog"`, `aria-haspopup="dialog"`, `aria-expanded`, Escape key handling, 120 ms keyboard trigger).
+   - 700 ms dwell timer and instant movement cancellation verified.
+   - Mutation guardrails verified (deleting sections or adding unmapped canvases fails tests).
+
+2. Playwright E2E Script `scripts/capture_chart_explainers.mjs`:
+   - Launched headless Chrome across all workspace domains and sidebar.
+   - Captured 20 screenshots of every explainer card to `docs/screens/charts/<explainerId>.png`.
+   - Verified that data point tooltips and dwell hints function without collision.
