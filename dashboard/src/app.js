@@ -10,13 +10,6 @@ import { InspectorComponent } from '../components/inspector.js';
 import { SosConsoleComponent } from '../components/console.js';
 import { ChartsComponent } from '../components/charts.js';
 import { NodeHealthComponent } from '../components/node_health.js';
-import { AnalyticsWorkspaceComponent } from '../components/analytics_workspace.js';
-import { ScientificScatterPlot, ScientificCdfPlot } from '../components/scientific_charts.js';
-import { calculateTheoreticalRssi, calculateEcdf } from './scientific_metrics.js';
-import { WristbandTwinComponent } from '../components/wristband_twin.js';
-import { LossWaterfallComponent } from '../components/loss_waterfall.js';
-import { SetuTwin3DViewer } from '../components/setu_twin.js';
-import { narrateEvent, explainFailure, formatFailureVerdict } from './narrator.js';
 
 const BUILTIN_SCENARIOS = [
   { id: 'collapse_site_demo', name: 'Earthquake Collapse Site (Compact Demo)' },
@@ -355,22 +348,46 @@ class SetuDashboardApp {
       console.error('SosConsole initialization error:', consoleErr);
     }
 
-    // 7. Full-Screen Scientific Analytics Workspace
+    // Heavy visualizers (Analytics, 3D Twin, Wristband Twin, Loss Waterfall) load on demand.
+    this.analyticsWorkspace = null;
+    this.wristbandTwin = null;
+    this.lossWaterfall = null;
+    this.setuTwin = null;
+    this._narratorModule = null;
+  }
+
+  async getNarrator() {
+    if (!this._narratorModule) {
+      this._narratorModule = await import('./narrator.js');
+    }
+    return this._narratorModule;
+  }
+
+  async ensureAnalyticsWorkspace() {
+    if (this.analyticsWorkspace) return this.analyticsWorkspace;
     try {
       const analyticsContainer = document.getElementById('containerAnalyticsView');
       if (analyticsContainer) {
+        const { AnalyticsWorkspaceComponent } = await import('../components/analytics_workspace.js');
         this.analyticsWorkspace = new AnalyticsWorkspaceComponent(analyticsContainer, this.sim, () => {
           this.switchTab('tab-timeline');
         });
+        if (this.sim) {
+          this.analyticsWorkspace.refresh();
+        }
       }
     } catch (wsErr) {
-      console.error('AnalyticsWorkspace initialization error:', wsErr);
+      console.error('AnalyticsWorkspace dynamic import error:', wsErr);
     }
+    return this.analyticsWorkspace;
+  }
 
-    // 8. Setu Twin: Procedural Wristband Twin Component
+  async ensureWristbandTwin() {
+    if (this.wristbandTwin) return this.wristbandTwin;
     try {
       const twinContainer = document.getElementById('containerWristbandTwin');
       if (twinContainer) {
+        const { WristbandTwinComponent } = await import('../components/wristband_twin.js');
         this.wristbandTwin = new WristbandTwinComponent(twinContainer, {
           onTrigger: async (nodeId, kind) => {
             if (this.mode === 'live') {
@@ -378,30 +395,53 @@ class SetuDashboardApp {
             }
           }
         });
+        if (this.selectedNodeId !== null && this.sim && this.sim.nodes) {
+          const node = this.sim.nodes.get(this.selectedNodeId);
+          if (node) this.updateInspectorNodeDetails(node);
+        }
       }
     } catch (twinErr) {
-      console.error('WristbandTwin initialization error:', twinErr);
+      console.error('WristbandTwin dynamic import error:', twinErr);
     }
+    return this.wristbandTwin;
+  }
 
-    // 9. Setu Twin: Loss Budget Waterfall Component
+  async ensureLossWaterfall() {
+    if (this.lossWaterfall) return this.lossWaterfall;
     try {
       const waterfallContainer = document.getElementById('containerLossWaterfall');
       if (waterfallContainer) {
+        const { LossWaterfallComponent } = await import('../components/loss_waterfall.js');
         this.lossWaterfall = new LossWaterfallComponent(waterfallContainer);
       }
     } catch (wfErr) {
-      console.error('LossWaterfall initialization error:', wfErr);
+      console.error('LossWaterfall dynamic import error:', wfErr);
     }
+    return this.lossWaterfall;
+  }
 
-    // 10. Setu Twin: 3D Navigable World Visualizer
+  async ensureTwin3D() {
+    if (this.setuTwin) return this.setuTwin;
     try {
       const twin3dContainer = document.getElementById('containerSetuTwinView');
       if (twin3dContainer) {
+        const { SetuTwin3DViewer } = await import('../components/setu_twin.js');
         this.setuTwin = new SetuTwin3DViewer(twin3dContainer);
+        if (this.sim && this.sim.nodes) {
+          this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
+          const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
+          this.setuTwin.setObstacles(sc ? (sc.obstacles || []) : []);
+          if (sc && sc.environment) {
+            this.setuTwin.setEnvironment(sc.environment);
+          }
+          this.setuTwin.setLinks(this.sim.links || []);
+          this.setuTwin.fitCameraToScene();
+        }
       }
     } catch (t3dErr) {
-      console.error('SetuTwin3DViewer initialization error:', t3dErr);
+      console.error('SetuTwin3DViewer dynamic import error:', t3dErr);
     }
+    return this.setuTwin;
   }
 
   initEvents() {
@@ -565,28 +605,32 @@ class SetuDashboardApp {
           this._lastProcessedSimTime = curT;
 
           const recentEv = this.sim.events.slice().reverse().find(e => e.t <= curT);
-          if (recentEv) {
-            const narration = narrateEvent(recentEv, {
-              sf: this.sim.meta.sf || 7,
-              story: true,
-              nodes: this.sim.nodes,
-              obstacles: this.currentScenario ? this.currentScenario.obstacles : []
-            });
-            if (narration) this.setuTwin.setNarratorText(narration);
+          if (recentEv && this.setuTwin) {
+            this.getNarrator().then(({ narrateEvent }) => {
+              const narration = narrateEvent(recentEv, {
+                sf: this.sim.meta.sf || 7,
+                story: true,
+                nodes: this.sim.nodes,
+                obstacles: this.currentScenario ? this.currentScenario.obstacles : []
+              });
+              if (narration && this.setuTwin) this.setuTwin.setNarratorText(narration);
 
-            const isRealDrop = recentEv.ev === 'drop' && ['weak', 'collision', 'halfduplex', 'loss', 'duty', 'blocked'].includes(recentEv.why);
-            if (isRealDrop || recentEv.ev === 'dead_battery') {
-              const fromId = recentEv.from !== undefined ? recentEv.from : recentEv.node;
-              const toId = recentEv.node;
-              this.fetchLossBudget(fromId, toId, recentEv).then(lossData => {
-                if (narration) lossData.narration = narration;
-                this.setuTwin.setFailureData(lossData);
-                this.setuTwin.showFailureButton(true);
-              }).catch(() => {});
-            } else {
-              // STOP CRYING WOLF: Hide failure button on normal events like duplicate suppression
-              this.setuTwin.showFailureButton(false);
-            }
+              const isRealDrop = recentEv.ev === 'drop' && ['weak', 'collision', 'halfduplex', 'loss', 'duty', 'blocked'].includes(recentEv.why);
+              if (isRealDrop || recentEv.ev === 'dead_battery') {
+                const fromId = recentEv.from !== undefined ? recentEv.from : recentEv.node;
+                const toId = recentEv.node;
+                this.fetchLossBudget(fromId, toId, recentEv).then(lossData => {
+                  if (narration) lossData.narration = narration;
+                  if (this.setuTwin) {
+                    this.setuTwin.setFailureData(lossData);
+                    this.setuTwin.showFailureButton(true);
+                  }
+                }).catch(() => {});
+              } else if (this.setuTwin) {
+                // STOP CRYING WOLF: Hide failure button on normal events like duplicate suppression
+                this.setuTwin.showFailureButton(false);
+              }
+            }).catch(() => {});
           }
         }
       }
@@ -674,12 +718,13 @@ class SetuDashboardApp {
     window.addEventListener('setu:inspect-loss-budget', (e) => {
       const { from, to } = e.detail || {};
       if (from !== undefined && to !== undefined) {
-        this.fetchLossBudget(from, to).then(lossData => {
+        this.fetchLossBudget(from, to).then(async lossData => {
           if (this.setuTwin) {
             this.setuTwin.showFailureExplanation(`RF Loss Budget: Node ${from} -> Node ${to}`, lossData);
           }
-          if (this.lossWaterfall) {
-            this.lossWaterfall.update(lossData);
+          const waterfall = await this.ensureLossWaterfall();
+          if (waterfall) {
+            waterfall.update(lossData);
           }
         }).catch(err => console.error('Failed to fetch loss budget:', err));
       }
@@ -981,6 +1026,9 @@ class SetuDashboardApp {
     if (tabId === 'tab-charts' && this.charts) {
       this.charts.render();
     }
+    if (tabId === 'tab-twin') {
+      this.ensureWristbandTwin();
+    }
     if (tabId === 'tab-scientific') {
       this.renderSidebarQuickChart();
     }
@@ -1016,20 +1064,27 @@ class SetuDashboardApp {
     if (this.containerSetuTwinView) this.containerSetuTwinView.style.display = isTwin ? 'block' : 'none';
     if (this.containerAnalyticsView) {
       this.containerAnalyticsView.style.display = isAnalytics ? 'block' : 'none';
-      if (isAnalytics && this.analyticsWorkspace) {
-        this.analyticsWorkspace.refresh();
-      }
     }
 
-    if (isTwin && this.setuTwin) {
-      this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
-      const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
-      this.setuTwin.setObstacles(sc ? (sc.obstacles || []) : []);
-      if (sc && sc.environment) {
-        this.setuTwin.setEnvironment(sc.environment);
-      }
-      this.setuTwin.setLinks(this.sim.links || []);
-      this.setuTwin.resizeCanvas();
+    if (isAnalytics) {
+      this.ensureAnalyticsWorkspace().then(ws => {
+        if (ws) ws.refresh();
+      });
+    }
+
+    if (isTwin) {
+      this.ensureTwin3D().then(twin => {
+        if (twin) {
+          twin.setNodes(Array.from(this.sim.nodes.values()));
+          const sc = this.currentScenario || (this.scenarios ? this.scenarios.find(s => s.id === (this.elScenarioSelect ? this.elScenarioSelect.value : '')) : null);
+          twin.setObstacles(sc ? (sc.obstacles || []) : []);
+          if (sc && sc.environment) {
+            twin.setEnvironment(sc.environment);
+          }
+          twin.setLinks(this.sim.links || []);
+          twin.resizeCanvas();
+        }
+      });
     }
 
     if (isTopo && this.topo) {
@@ -1077,8 +1132,10 @@ class SetuDashboardApp {
     }
   }
 
-  renderSidebarQuickChart() {
+  async renderSidebarQuickChart() {
     if (!this.canvasSidebarQuick) return;
+    const { ScientificScatterPlot, ScientificCdfPlot } = await import('../components/scientific_charts.js');
+    const { calculateTheoreticalRssi, calculateEcdf } = await import('./scientific_metrics.js');
     const domain = this.sidebarDomainSelector ? this.sidebarDomainSelector.value : 'radio_propagation';
     const ctx = this.canvasSidebarQuick.getContext('2d');
     if (!ctx) return;

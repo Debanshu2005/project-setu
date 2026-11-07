@@ -454,7 +454,7 @@ export class SetuApi {
     }
 
     const text = await res.text();
-    const events = this.parseJsonl(text);
+    const events = await this.parseJsonlAsync(text);
     if (!events || events.length === 0) {
       throw new Error(`Trace file "${filename}" is empty or contains no valid events`);
     }
@@ -814,6 +814,35 @@ export class SetuApi {
       if (onError) onError(err);
     });
     return source;
+  }
+
+  static parseJsonlAsync(text) {
+    if (!text || typeof text !== 'string') return Promise.resolve([]);
+    if (typeof Worker !== 'undefined') {
+      return new Promise((resolve) => {
+        try {
+          if (!this._traceWorker) {
+            this._traceWorker = new Worker(new URL('./trace_worker.js', import.meta.url), { type: 'module' });
+          }
+          const id = Date.now() + '_' + Math.random().toString(36).slice(2);
+          const handleMsg = (e) => {
+            if (e.data?.id === id) {
+              this._traceWorker.removeEventListener('message', handleMsg);
+              if (e.data.success) {
+                resolve(e.data.events);
+              } else {
+                resolve(this.parseJsonl(text));
+              }
+            }
+          };
+          this._traceWorker.addEventListener('message', handleMsg);
+          this._traceWorker.postMessage({ id, text });
+        } catch {
+          resolve(this.parseJsonl(text));
+        }
+      });
+    }
+    return Promise.resolve(this.parseJsonl(text));
   }
 
   static parseJsonl(text) {
