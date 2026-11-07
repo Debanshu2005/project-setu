@@ -1,0 +1,142 @@
+{
+  "390x844": {
+    "totalClickables": 148,
+    "smallTargets": 87,
+    "smallFonts": 2705,
+    "headerH": 98,
+    "sampleSmallTargets": [
+      {
+        "tag": "BUTTON",
+        "id": "btnModeTopology",
+        "class": "btn view-toggle-btn active",
+        "w": 61,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "id": "btnModeTwin",
+        "class": "btn view-toggle-btn",
+        "w": 58,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "id": "btnModeAnalytics",
+        "class": "btn view-toggle-btn",
+        "w": 80,
+        "h": 21
+      },
+      {
+        "tag": "SELECT",
+        "id": "scenarioSelect",
+        "class": "select-input",
+        "w": 115,
+        "h": 20
+      },
+      {
+        "tag": "BUTTON",
+        "id": "btnToggleMode",
+        "class": "btn",
+        "w": 59,
+        "h": 22
+      }
+    ],
+    "sampleSmallFonts": [
+      {
+        "tag": "SPAN",
+        "text": "DISASTER OPERATIONS ",
+        "fs": 10
+      },
+      {
+        "tag": "SPAN",
+        "text": "CORE C++ ENGINE ONLI",
+        "fs": 10
+      },
+      {
+        "tag": "SPAN",
+        "text": "Engine: Native REST",
+        "fs": 10
+      },
+      {
+        "tag": "OPTION",
+        "text": "Earthquake Collapse ",
+        "fs": 10
+      },
+      {
+        "tag": "OPTION",
+        "text": "1. Basic Minimal Net",
+        "fs": 10
+      }
+    ]
+  },
+  "360x740": {
+    "totalClickables": 148,
+    "smallTargets": 87,
+    "smallFonts": 2705,
+    "headerH": 98,
+    "sampleSmallTargets": [
+      {
+        "tag": "BUTTON",
+        "id": "btnModeTopology",
+        "class": "btn view-toggle-btn active",
+        "w": 61,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "id": "btnModeTwin",
+        "class": "btn view-toggle-btn",
+        "w": 58,
+        "h": 21
+      },
+      {
+        "tag": "BUTTON",
+        "id": "btnModeAnalytics",
+        "class": "btn view-toggle-btn",
+        "w": 80,
+        "h": 21
+      },
+      {
+        "tag": "SELECT",
+        "id": "scenarioSelect",
+        "class": "select-input",
+        "w": 115,
+        "h": 20
+      },
+      {
+        "tag": "BUTTON",
+        "id": "btnToggleMode",
+        "class": "btn",
+        "w": 59,
+        "h": 22
+      }
+    ],
+    "sampleSmallFonts": [
+      {
+        "tag": "SPAN",
+        "text": "DISASTER OPERATIONS ",
+        "fs": 10
+      },
+      {
+        "tag": "SPAN",
+        "text": "CORE C++ ENGINE ONLI",
+        "fs": 10
+      },
+      {
+        "tag": "SPAN",
+        "text": "Engine: Native REST",
+        "fs": 10
+      },
+      {
+        "tag": "OPTION",
+        "text": "Earthquake Collapse ",
+        "fs": 10
+      },
+      {
+        "tag": "OPTION",
+        "text": "1. Basic Minimal Net",
+        "fs": 10
+      }
+    ]
+  }
+}

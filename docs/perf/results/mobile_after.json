@@ -1,0 +1,22 @@
+{
+  "390x844": {
+    "totalClickables": 155,
+    "smallTargets": 0,
+    "smallFonts": 0,
+    "headerH": 48,
+    "thumbH": 56,
+    "sheetH": 72,
+    "sampleSmallTargets": [],
+    "sampleSmallFonts": []
+  },
+  "360x740": {
+    "totalClickables": 155,
+    "smallTargets": 0,
+    "smallFonts": 0,
+    "headerH": 48,
+    "thumbH": 56,
+    "sheetH": 72,
+    "sampleSmallTargets": [],
+    "sampleSmallFonts": []
+  }
+}

@@ -40,7 +40,7 @@ export class TimelineComponent {
       <!-- Custom Analytics Filter Banner -->
       <div id="customFilterBanner" style="display:none; margin-bottom:8px; padding:6px 10px; background:rgba(56,189,248,0.12); border:1px solid #38bdf8; border-radius:var(--radius-sm); font-size:11px; justify-content:space-between; align-items:center;">
         <span>Filter: <strong id="lblCustomFilter" style="color:#38bdf8;"></strong></span>
-        <button id="btnClearCustomFilter" class="btn" style="padding:2px 8px; font-size:10px; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5;">Clear</button>
+        <button id="btnClearCustomFilter" class="btn" style="padding:2px 8px; font-size: 11px; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5;">Clear</button>
       </div>
 
       <!-- Event Explainability Inspector Card -->
@@ -50,10 +50,10 @@ export class TimelineComponent {
             <span class="badge" id="eventDetailBadge" style="background:rgba(56,189,248,0.2); border:1px solid #38bdf8; color:#7dd3fc; font-weight:700;">EVENT</span>
             <span style="font-weight:700; color:#fff;" id="eventDetailTitle">Event Explainability</span>
           </div>
-          <button id="btnCloseEventDetail" class="btn" style="padding:2px 6px; font-size:10px;">&times; Close</button>
+          <button id="btnCloseEventDetail" class="btn" style="padding:2px 6px; font-size: 11px;">&times; Close</button>
         </div>
         <div id="eventDetailExplanation" style="color:#e2e8f0; font-size:11px; margin-bottom:8px; line-height:1.4;"></div>
-        <div id="eventDetailMeta" style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim); background:rgba(0,0,0,0.25); padding:6px; border-radius:4px;"></div>
+        <div id="eventDetailMeta" style="font-family:var(--font-mono); font-size: 11px; color:var(--text-dim); background:rgba(0,0,0,0.25); padding:6px; border-radius:4px;"></div>
       </div>
 
       <div class="timeline-list" id="timelineList"></div>

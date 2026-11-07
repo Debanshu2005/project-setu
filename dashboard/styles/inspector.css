@@ -68,7 +68,7 @@
 .field-table th {
   text-align: left;
   padding: 4px 6px;
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   border-bottom: 1px solid var(--border-subtle);
   text-transform: uppercase;
@@ -141,13 +141,13 @@
 
 .timeline-time {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-dim);
   min-width: 52px;
 }
 
 .timeline-tag {
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
   padding: 2px 4px;
@@ -170,7 +170,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: 11px;
   color: var(--text-muted);
 }
 
@@ -216,7 +216,7 @@
 }
 
 .chart-label {
-  font-size: 9px;
+  font-size: 11px;
   fill: var(--text-dim);
   font-family: var(--font-mono);
 }

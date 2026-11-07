@@ -246,7 +246,7 @@ export class TopologyVisualizer {
     const txPackets = node.stats && typeof node.stats.tx === 'number' ? node.stats.tx : 0;
     const rxDelivered = node.stats && typeof node.stats.rx === 'number' ? node.stats.rx : 0;
 
-    titleEl.innerHTML = `<span>Node ${node.id}</span> <span style="color:${statusColor}; font-size:10px">${statusText}</span>`;
+    titleEl.innerHTML = `<span>Node ${node.id}</span> <span style="color:${statusColor}; font-size: 11px">${statusText}</span>`;
     contentEl.innerHTML = `
       <div class="tooltip-row"><span>Role:</span> <span>${roleName}</span></div>
       <div class="tooltip-row"><span>Battery:</span> <span>${batt}%</span></div>

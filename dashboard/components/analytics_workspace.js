@@ -337,28 +337,28 @@ export class AnalyticsWorkspaceComponent {
 
     ribbon.innerHTML = `
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 10px;">
-        <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Path-Loss Exponent</div>
-        <div style="font-size:14px; font-weight:700; color:var(--cyan-main); font-family:var(--font-mono);">${pathExp} <span style="font-size:10px; color:#94a3b8;">(n)</span></div>
+        <div style="font-size: 11px; color:var(--text-dim); text-transform:uppercase;">Path-Loss Exponent</div>
+        <div style="font-size:14px; font-weight:700; color:var(--cyan-main); font-family:var(--font-mono);">${pathExp} <span style="font-size: 11px; color:#94a3b8;">(n)</span></div>
       </div>
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 10px;">
-        <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Sens / SF (125kHz)</div>
-        <div style="font-size:14px; font-weight:700; color:#38bdf8; font-family:var(--font-mono);">${sens} <span style="font-size:10px; color:#94a3b8;">dBm (SF${sf})</span></div>
+        <div style="font-size: 11px; color:var(--text-dim); text-transform:uppercase;">Sens / SF (125kHz)</div>
+        <div style="font-size:14px; font-weight:700; color:#38bdf8; font-family:var(--font-mono);">${sens} <span style="font-size: 11px; color:#94a3b8;">dBm (SF${sf})</span></div>
       </div>
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 10px;">
-        <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">True Mission PDR</div>
+        <div style="font-size: 11px; color:var(--text-dim); text-transform:uppercase;">True Mission PDR</div>
         <div style="font-size:14px; font-weight:700; color:#10b981; font-family:var(--font-mono);">${pdrStr}</div>
       </div>
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 10px;">
-        <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Latency (Avg / P95)</div>
-        <div style="font-size:14px; font-weight:700; color:#f59e0b; font-family:var(--font-mono);">${latAvg} <span style="font-size:10px; color:#94a3b8;">/ ${latP95}</span></div>
+        <div style="font-size: 11px; color:var(--text-dim); text-transform:uppercase;">Latency (Avg / P95)</div>
+        <div style="font-size:14px; font-weight:700; color:#f59e0b; font-family:var(--font-mono);">${latAvg} <span style="font-size: 11px; color:#94a3b8;">/ ${latP95}</span></div>
       </div>
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 10px;">
-        <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Fleet Energy Drain</div>
-        <div style="font-size:14px; font-weight:700; color:#c084fc; font-family:var(--font-mono);">${totalMah.toFixed(2)} <span style="font-size:10px; color:#94a3b8;">mAh</span></div>
+        <div style="font-size: 11px; color:var(--text-dim); text-transform:uppercase;">Fleet Energy Drain</div>
+        <div style="font-size:14px; font-weight:700; color:#c084fc; font-family:var(--font-mono);">${totalMah.toFixed(2)} <span style="font-size: 11px; color:#94a3b8;">mAh</span></div>
       </div>
       <div style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:4px; padding:6px 10px;">
-        <div style="font-size:10px; color:var(--text-dim); text-transform:uppercase;">Radio Collisions</div>
-        <div style="font-size:14px; font-weight:700; color:#f87171; font-family:var(--font-mono);">${m.radio.dropCauses.collision} <span style="font-size:10px; color:#94a3b8;">drops</span></div>
+        <div style="font-size: 11px; color:var(--text-dim); text-transform:uppercase;">Radio Collisions</div>
+        <div style="font-size:14px; font-weight:700; color:#f87171; font-family:var(--font-mono);">${m.radio.dropCauses.collision} <span style="font-size: 11px; color:#94a3b8;">drops</span></div>
       </div>
     `;
   }
@@ -420,11 +420,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3A: Received Signal Strength (RSSI) vs Distance</span>
-            <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:10px; white-space:nowrap;">
+            <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size: 11px; white-space:nowrap;">
               Model: Log-Distance (n=${pathExp})
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Compares observed packet RSSI samples (dots) against theoretical log-distance path loss prediction (solid cyan curve) and receiver sensitivity (${sens} dBm).
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -436,11 +436,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3B: Channel Path Loss (dB) vs Distance</span>
-            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px; white-space:nowrap;">
+            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size: 11px; white-space:nowrap;">
               PL_0 = 31.2 dB, L_extra = 15.0 dB
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Attenuation over distance with configured rubble exponent (n=${pathExp}) and log-normal shadowing spread (&sigma;=4.0 dB).
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -454,11 +454,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3C: Signal-to-Noise Ratio (SNR) vs Distance</span>
-            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px; white-space:nowrap;">
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size: 11px; white-space:nowrap;">
               Noise Floor: -119 dBm (125 kHz)
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Observed radio SNR compared against SX1262 LoRa demodulation limits across Spreading Factors (SF7/SF10/SF12).
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -473,13 +473,13 @@ export class AnalyticsWorkspaceComponent {
               <div class="chart-title-group" style="display:inline-flex; align-items:center; gap:6px;">
                 <span style="font-weight:700; font-size:12px; color:#fff;">Plot 3D: Node-to-Node Link Quality Matrix Heatmap</span>
               </div>
-              <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">
+              <div style="font-size: 11px; color:var(--text-dim); margin-top:2px;">
                 Pairwise link telemetry across mesh nodes. Distinguishes Absent, Unobserved, and Observed links.
               </div>
             </div>
             <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
-              <label for="selHeatmapMetric" style="font-size:10px; color:var(--text-muted);">Metric:</label>
-              <select class="select-input" id="selHeatmapMetric" style="font-size:10px; padding:2px 6px;">
+              <label for="selHeatmapMetric" style="font-size: 11px; color:var(--text-muted);">Metric:</label>
+              <select class="select-input" id="selHeatmapMetric" style="font-size: 11px; padding:2px 6px;">
                 <option value="rssi" ${this.heatmapMetric === 'rssi' ? 'selected' : ''}>RSSI (dBm)</option>
                 <option value="prr" ${this.heatmapMetric === 'prr' ? 'selected' : ''}>Packet Reception Rate (PRR %)</option>
                 <option value="loss_rate" ${this.heatmapMetric === 'loss_rate' ? 'selected' : ''}>Packet Loss Rate (%)</option>
@@ -713,11 +713,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4A: Delivery Ratio vs Simulation Time</span>
-            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size: 11px;">
               Denominator: Unique Originated SOS
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Tracks Cumulative PDR (solid green) against 2.0s Sliding-Window PDR (dashed cyan). Duplicate forwards are excluded from denominator.
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -729,11 +729,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4B: End-to-End Latency Empirical CDF</span>
-            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px;">
+            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size: 11px;">
               Percentiles: p50, p90, p95, p99
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Cumulative distribution of delivered survivor alerts from trigger to Rescue Hub arrival. Excludes undelivered messages.
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -748,11 +748,11 @@ export class AnalyticsWorkspaceComponent {
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <div>
               <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4C: Delivered Network Throughput vs Time</span>
-              <div style="font-size:10px; color:var(--text-dim);">
+              <div style="font-size: 11px; color:var(--text-dim);">
                 Windowed rate of delivered payload data (bps) and offered packet load (pps) over a 2.0s window.
               </div>
             </div>
-            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;">
+            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size: 11px;">
               Payload: 200 bits/packet
             </span>
           </div>
@@ -766,11 +766,11 @@ export class AnalyticsWorkspaceComponent {
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <div>
               <span style="font-weight:700; font-size:12px; color:#fff;">Plot 4D: Packet Loss Rate vs Distance</span>
-              <div style="font-size:10px; color:var(--text-dim);">
+              <div style="font-size: 11px; color:var(--text-dim);">
                 Observed radio drop probability binned across transmission distances.
               </div>
             </div>
-            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size:10px;">
+            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size: 11px;">
               Channel Loss Curve
             </span>
           </div>
@@ -941,11 +941,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 5A: End-to-End Hop-Count Distribution</span>
-            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px;">
+            <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size: 11px;">
               Path Length (Hops)
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Distribution of network hops required for survivor messages to reach the Rescue Hub sink.
           </div>
           <div style="flex:1; min-height:220px; position:relative;">
@@ -956,11 +956,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 5B: Relay Forwarding Traffic Activity vs Time</span>
-            <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24; font-size:10px;">
+            <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24; font-size: 11px;">
               Tower Forward Dynamics
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Rate of re-broadcast forwarded packets across active relay towers over simulation time.
           </div>
           <div style="flex:1; min-height:220px; position:relative;">
@@ -974,11 +974,11 @@ export class AnalyticsWorkspaceComponent {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div>
             <span style="font-weight:700; font-size:12px; color:#fff;">Relay Tower Analytics & Bottleneck Identification</span>
-            <div style="font-size:10px; color:var(--text-dim);">
+            <div style="font-size: 11px; color:var(--text-dim);">
               Bottleneck Index Formula: B = 0.40(Load) + 0.35(Drop Rate) + 0.25(Queue Saturation). Score &ge; 0.50 denotes a true operational bottleneck.
             </div>
           </div>
-          <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24; font-size:10px;">
+          <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fbbf24; font-size: 11px;">
             ${relayStats.filter(r => r.isBottleneck).length} Bottlenecks Detected
           </span>
         </div>
@@ -986,7 +986,7 @@ export class AnalyticsWorkspaceComponent {
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left; font-family:var(--font-mono);">
             <thead>
-              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size:10px;">
+              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size: 11px;">
                 <th style="padding:6px;">Relay ID</th>
                 <th style="padding:6px;">Position</th>
                 <th style="padding:6px;">Forwards</th>
@@ -1020,7 +1020,7 @@ export class AnalyticsWorkspaceComponent {
                       </div>
                     </td>
                     <td style="padding:6px;">
-                      ${r.isBottleneck ? '<span class="badge" style="background:#ef4444; color:#fff; font-weight:700; font-size:9px;">BOTTLENECK</span>' : '<span style="color:#10b981;">NOMINAL</span>'}
+                      ${r.isBottleneck ? '<span class="badge" style="background:#ef4444; color:#fff; font-weight:700; font-size: 11px;">BOTTLENECK</span>' : '<span style="color:#10b981;">NOMINAL</span>'}
                     </td>
                   </tr>
                 `).join('')}
@@ -1034,11 +1034,11 @@ export class AnalyticsWorkspaceComponent {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div>
             <span style="font-weight:700; font-size:12px; color:#fff;">Actual Multi-Hop Packet Routes & Delivery Hops</span>
-            <div style="font-size:10px; color:var(--text-dim);">
+            <div style="font-size: 11px; color:var(--text-dim);">
               Reconstructed end-to-end paths traversed by SOS packets from origin wristband to Rescue Hub.
             </div>
           </div>
-          <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px;">
+          <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size: 11px;">
             ${routes.length} Episodes Tracked
           </span>
         </div>
@@ -1046,7 +1046,7 @@ export class AnalyticsWorkspaceComponent {
         <div style="max-height:220px; overflow-y:auto;">
           <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left; font-family:var(--font-mono);">
             <thead>
-              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size:10px;">
+              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size: 11px;">
                 <th style="padding:6px;">Origin</th>
                 <th style="padding:6px;">Trigger Time</th>
                 <th style="padding:6px;">Traversed Route Path</th>
@@ -1068,8 +1068,8 @@ export class AnalyticsWorkspaceComponent {
                     <td style="padding:6px; color:#fbbf24;">${r.latencyMs !== null ? r.latencyMs + 'ms' : 'N/A'}</td>
                     <td style="padding:6px;">
                       ${r.status === 'delivered' || r.status === 'acked' ?
-                        '<span class="badge" style="background:#10b981; color:#fff; font-size:9px;">DELIVERED TO HUB</span>' :
-                        (r.status === 'failed' ? '<span class="badge" style="background:#ef4444; color:#fff; font-size:9px;">FAILED</span>' : '<span class="badge" style="background:#38bdf8; color:#fff; font-size:9px;">IN FLIGHT</span>')}
+                        '<span class="badge" style="background:#10b981; color:#fff; font-size: 11px;">DELIVERED TO HUB</span>' :
+                        (r.status === 'failed' ? '<span class="badge" style="background:#ef4444; color:#fff; font-size: 11px;">FAILED</span>' : '<span class="badge" style="background:#38bdf8; color:#fff; font-size: 11px;">IN FLIGHT</span>')}
                     </td>
                   </tr>
                 `).join('')}
@@ -1143,11 +1143,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Co-Channel Collision & Retry Rate Timeline</span>
-            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size:10px;">
+            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size: 11px;">
               Capture Delta &lt; 6.0 dB
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Overlapping airtime packet collisions (crimson) and exponential backoff protocol retries (amber).
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -1159,11 +1159,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Physical Radio Reception Failures by Cause</span>
-            <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fcd34d; font-size:10px;">
+            <span class="badge" style="background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fcd34d; font-size: 11px;">
               SX1262 PHY Layer
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Categorized channel drop counts: sub-sensitivity signal, co-channel collision, half-duplex blocking, and obstacle loss.
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -1245,11 +1245,11 @@ export class AnalyticsWorkspaceComponent {
             <div class="chart-title-group" style="display:inline-flex; align-items:center; gap:6px;">
               <span style="font-weight:700; font-size:12px; color:#fff;">Plot 7A: Node Battery State of Charge (SoC) vs Time</span>
             </div>
-            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px; white-space:nowrap;">
+            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size: 11px; white-space:nowrap;">
               300 mAh 1S LiPo Model
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Per-node and fleet average battery depletion (%) accounting for LoRa TX (120mA), RX listening (15mA), and MCU standby.
           </div>
           <div style="flex:1; min-height:220px; position:relative;">
@@ -1262,11 +1262,11 @@ export class AnalyticsWorkspaceComponent {
             <div class="chart-title-group" style="display:inline-flex; align-items:center; gap:6px;">
               <span style="font-weight:700; font-size:12px; color:#fff;">Plot 7B: Energy Consumed (mAh) vs Relay Forwarding Load</span>
             </div>
-            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px; white-space:nowrap;">
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size: 11px; white-space:nowrap;">
               SX1262 Power Profile
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Validates proportional energy drain against packets forwarded across relay towers.
           </div>
           <div style="flex:1; min-height:220px; position:relative;">
@@ -1279,11 +1279,11 @@ export class AnalyticsWorkspaceComponent {
         <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px; margin-bottom:8px;">
           <div>
             <span style="font-weight:700; font-size:12px; color:#fff;">Subsystem Energy Breakdown & Battery Life Projections</span>
-            <div style="font-size:10px; color:var(--text-dim); margin-top:2px;">
+            <div style="font-size: 11px; color:var(--text-dim); margin-top:2px;">
               Energy apportioned across LoRa TX (120 mA @ +14 dBm), LoRa RX listening (15 mA), and MCU standby / sensing (1.5 mA).
             </div>
           </div>
-          <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px; white-space:nowrap;" id="badgeTotalEnergy">
+          <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size: 11px; white-space:nowrap;" id="badgeTotalEnergy">
             Fleet Energy Drain
           </span>
         </div>
@@ -1392,24 +1392,24 @@ export class AnalyticsWorkspaceComponent {
 
       breakdownGrid.innerHTML = `
         <div style="background:rgba(239,68,68,0.06); border:1px solid rgba(239,68,68,0.2); border-radius:4px; padding:8px 10px;">
-          <div style="font-size:10px; color:var(--text-dim);">LoRa TX (120 mA)</div>
+          <div style="font-size: 11px; color:var(--text-dim);">LoRa TX (120 mA)</div>
           <div style="font-size:16px; font-weight:700; color:#ef4444; font-family:var(--font-mono); margin:2px 0;">${txEnergyMah.toFixed(3)} mAh</div>
-          <div style="font-size:10px; color:#f87171;">${txPct}% of total drain (${totalTxEvents} bursts)</div>
+          <div style="font-size: 11px; color:#f87171;">${txPct}% of total drain (${totalTxEvents} bursts)</div>
         </div>
         <div style="background:rgba(56,189,248,0.06); border:1px solid rgba(56,189,248,0.2); border-radius:4px; padding:8px 10px;">
-          <div style="font-size:10px; color:var(--text-dim);">LoRa RX (15 mA)</div>
+          <div style="font-size: 11px; color:var(--text-dim);">LoRa RX (15 mA)</div>
           <div style="font-size:16px; font-weight:700; color:#38bdf8; font-family:var(--font-mono); margin:2px 0;">${rxEnergyMah.toFixed(3)} mAh</div>
-          <div style="font-size:10px; color:#7dd3fc;">${rxPct}% of total drain (${totalRxEvents} pkts)</div>
+          <div style="font-size: 11px; color:#7dd3fc;">${rxPct}% of total drain (${totalRxEvents} pkts)</div>
         </div>
         <div style="background:rgba(16,185,129,0.06); border:1px solid rgba(16,185,129,0.2); border-radius:4px; padding:8px 10px;">
-          <div style="font-size:10px; color:var(--text-dim);">MCU Standby (1.5 mA)</div>
+          <div style="font-size: 11px; color:var(--text-dim);">MCU Standby (1.5 mA)</div>
           <div style="font-size:16px; font-weight:700; color:#10b981; font-family:var(--font-mono); margin:2px 0;">${standbyEnergyMah.toFixed(3)} mAh</div>
-          <div style="font-size:10px; color:#34d399;">${standbyPct}% of total drain (idle baseline)</div>
+          <div style="font-size: 11px; color:#34d399;">${standbyPct}% of total drain (idle baseline)</div>
         </div>
         <div style="background:rgba(192,132,252,0.06); border:1px solid rgba(192,132,252,0.2); border-radius:4px; padding:8px 10px;">
-          <div style="font-size:10px; color:var(--text-dim);">Mean Battery Projection</div>
+          <div style="font-size: 11px; color:var(--text-dim);">Mean Battery Projection</div>
           <div style="font-size:16px; font-weight:700; color:#c084fc; font-family:var(--font-mono); margin:2px 0;">${projectedLifeHours}h</div>
-          <div style="font-size:10px; color:#e9d5ff;">Estimated survivor node endurance</div>
+          <div style="font-size: 11px; color:#e9d5ff;">Estimated survivor node endurance</div>
         </div>
       `;
 
@@ -1430,11 +1430,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 8A: Ground-Truth vs Estimated Trajectory (Cartesian)</span>
-            <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size:10px;">
+            <span class="badge" style="background:rgba(6,182,212,0.15); border:1px solid #06b6d4; color:#67e8f9; font-size: 11px;">
               Origin: (22.5726°, 88.4338°)
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Ground truth path (dashed cyan), estimated path (solid amber/green), and red error displacement vectors.
           </div>
           <div style="flex:1; min-height:280px; position:relative;">
@@ -1446,11 +1446,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Plot 8B: Horizontal Position Error vs Time (m)</span>
-            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size:10px;">
+            <span class="badge" style="background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#f87171; font-size: 11px;">
               GNSS Outages Shaded
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Instantaneous horizontal Euclidean error ||p_est - p_gt|| in meters. Shaded red zones mark GNSS outage intervals.
           </div>
           <div style="flex:1; min-height:280px; position:relative;">
@@ -1579,11 +1579,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Two-Way Rescue Communication Verification Loop</span>
-            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+            <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size: 11px;">
               Survivor ➔ Hub ➔ Survivor ACK
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Distinguishes SOS reaching the Hub from the originating wristband successfully receiving confirmed ACK haptics.
           </div>
           <div id="sosAckLoopContainer" style="padding:10px 0;"></div>
@@ -1593,11 +1593,11 @@ export class AnalyticsWorkspaceComponent {
         <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <span style="font-weight:700; font-size:12px; color:#fff;">Time-to-First-ACK Cumulative Distribution</span>
-            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size:10px;">
+            <span class="badge" style="background:rgba(192,132,252,0.15); border:1px solid #c084fc; color:#e9d5ff; font-size: 11px;">
               Two-Way Round Trip
             </span>
           </div>
-          <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+          <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
             Distribution of elapsed time between survivor SOS button press and physical reception of confirmation ACK.
           </div>
           <div style="flex:1; min-height:260px; position:relative;">
@@ -1611,11 +1611,11 @@ export class AnalyticsWorkspaceComponent {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
           <div>
             <span style="font-weight:700; font-size:12px; color:#fff;">SOS Retries vs Eventual Delivery & Confirmation</span>
-            <div style="font-size:10px; color:var(--text-dim);">
+            <div style="font-size: 11px; color:var(--text-dim);">
               Correlation between exponential backoff retransmission count and ultimate two-way delivery success.
             </div>
           </div>
-          <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+          <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size: 11px;">
             Protocol Reliability
           </span>
         </div>
@@ -1651,7 +1651,7 @@ export class AnalyticsWorkspaceComponent {
             <span>4. ACK Received at Originating Node:</span>
             <strong style="color:#38bdf8;">${uAcked} confirmed (${pdrAck}%)</strong>
           </div>
-          <div style="padding:6px; font-size:10px; color:var(--text-dim); line-height:1.4;">
+          <div style="padding:6px; font-size: 11px; color:var(--text-dim); line-height:1.4;">
             ⚠️ An SOS reaching Node 0 proves uplink mesh reachability, but does not guarantee the survivor device received downlink ACK due to asymmetric relay availability or antenna orientation.
           </div>
         </div>
@@ -1740,7 +1740,7 @@ export class AnalyticsWorkspaceComponent {
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left; font-family:var(--font-mono);">
             <thead>
-              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size:10px;">
+              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size: 11px;">
                 <th style="padding:6px;">Retransmission Tier</th>
                 <th style="padding:6px;">Episodes</th>
                 <th style="padding:6px;">Share (%)</th>
@@ -1790,11 +1790,11 @@ export class AnalyticsWorkspaceComponent {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <div>
             <span style="font-weight:700; font-size:12px; color:#fff;">Multi-Run Experiment Repository & Sensitivity Analysis</span>
-            <div style="font-size:10px; color:var(--text-dim);">
+            <div style="font-size: 11px; color:var(--text-dim);">
               Compare results across varied path-loss exponents (2.0 vs 3.5 vs 4.5), relay tower counts, and deterministic seeds.
             </div>
           </div>
-          <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size:10px;">
+          <span class="badge" style="background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc; font-size: 11px;">
             ${runs.length} Runs In Repository
           </span>
         </div>
@@ -1802,7 +1802,7 @@ export class AnalyticsWorkspaceComponent {
         <div style="overflow-x:auto;">
           <table style="width:100%; border-collapse:collapse; font-size:11px; text-align:left; font-family:var(--font-mono);">
             <thead>
-              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size:10px;">
+              <tr style="border-bottom:1px solid var(--border-subtle); color:var(--text-dim); text-transform:uppercase; font-size: 11px;">
                 <th style="padding:6px;">Experiment Identifier</th>
                 <th style="padding:6px;">Saved At</th>
                 <th style="padding:6px;">Path Exp (n)</th>
@@ -1838,11 +1838,11 @@ export class AnalyticsWorkspaceComponent {
       <div class="chart-panel" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:6px; padding:10px; display:flex; flex-direction:column;">
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <span style="font-weight:700; font-size:12px; color:#fff;">Cross-Run Comparative Latency eCDF Overlay</span>
-          <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size:10px;">
+          <span class="badge" style="background:rgba(16,185,129,0.15); border:1px solid #10b981; color:#34d399; font-size: 11px;">
             Multi-Experiment Overlay
           </span>
         </div>
-        <div style="font-size:10px; color:var(--text-dim); margin-bottom:8px;">
+        <div style="font-size: 11px; color:var(--text-dim); margin-bottom:8px;">
           Overlays empirical cumulative distribution functions from saved experiment runs to compare latency profiles under different RF channel conditions.
         </div>
         <div style="height:280px; position:relative;">

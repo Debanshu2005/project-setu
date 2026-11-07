@@ -51,7 +51,7 @@ export class NodeHealthComponent {
               ${metrics.fleet.onlineNodes} / ${metrics.fleet.totalNodes} Online
             </span>
           </div>
-          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; font-size:10px; font-family:var(--font-mono);">
+          <div style="display:grid; grid-template-columns:repeat(3, 1fr); gap:6px; font-size: 11px; font-family:var(--font-mono);">
             <div style="background:rgba(255,255,255,0.02); padding:4px 6px; border-radius:4px;">
               <span style="color:var(--text-dim);">Avg Battery:</span>
               <strong style="color:#38bdf8; margin-left:4px;">${metrics.fleet.avgBatteryPct !== null ? metrics.fleet.avgBatteryPct + '%' : 'N/A'}</strong>
@@ -122,7 +122,7 @@ export class NodeHealthComponent {
         <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
           <div style="display:flex; align-items:center; gap:6px;">
             <strong style="font-size:12px; color:#fff;">Node ${node.id}</strong>
-            <span class="badge" style="background:rgba(255,255,255,0.05); border:1px solid ${roleColor}; color:${roleColor}; font-size:9px;">
+            <span class="badge" style="background:rgba(255,255,255,0.05); border:1px solid ${roleColor}; color:${roleColor}; font-size: 11px;">
               ${roleName}
             </span>
           </div>
@@ -131,7 +131,7 @@ export class NodeHealthComponent {
 
         <!-- Battery Bar Row -->
         <div style="margin-bottom:6px;">
-          <div style="display:flex; justify-content:space-between; font-size:10px; font-family:var(--font-mono); margin-bottom:2px;">
+          <div style="display:flex; justify-content:space-between; font-size: 11px; font-family:var(--font-mono); margin-bottom:2px;">
             <span style="color:var(--text-dim);">Battery: <strong style="color:${battBarColor};">${battPct}%</strong> (Init: ${initBattPct}%)</span>
             <span style="color:var(--text-dim);">Used: <strong style="color:#f59e0b;">${energyMah} mAh</strong></span>
           </div>
@@ -141,7 +141,7 @@ export class NodeHealthComponent {
         </div>
 
         <!-- Hardware & Sensor Telemetry Badges -->
-        <div style="display:flex; gap:6px; flex-wrap:wrap; font-size:9px; font-family:var(--font-mono); margin-bottom:6px;">
+        <div style="display:flex; gap:6px; flex-wrap:wrap; font-size: 11px; font-family:var(--font-mono); margin-bottom:6px;">
           <span style="background:rgba(255,255,255,0.03); padding:2px 5px; border-radius:3px; border:1px solid var(--border-subtle);">
             🛰️ GNSS: <strong style="color:${node.gnss_on ? '#10b981' : '#ef4444'};">${node.gnss_on ? 'FIX' : 'LOST'}</strong>
           </span>
@@ -154,7 +154,7 @@ export class NodeHealthComponent {
         </div>
 
         <!-- Radio Activity Counter Row -->
-        <div style="display:flex; justify-content:space-between; font-size:10px; font-family:var(--font-mono); color:var(--text-dim); background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:4px;">
+        <div style="display:flex; justify-content:space-between; font-size: 11px; font-family:var(--font-mono); color:var(--text-dim); background:rgba(0,0,0,0.2); padding:4px 6px; border-radius:4px;">
           <span>TX: <strong style="color:#38bdf8;">${tx}</strong></span>
           <span>Retries: <strong style="color:#f59e0b;">${retries}</strong></span>
           <span>RX: <strong style="color:#34d399;">${rx}</strong></span>

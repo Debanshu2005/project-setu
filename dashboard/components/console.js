@@ -38,7 +38,7 @@ export class SosConsoleComponent {
         </div>
 
         <!-- Target Summary Pill -->
-        <div id="targetSummaryPill" style="font-size:10px; font-family:var(--font-mono); color:var(--text-muted); background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:4px 8px; display:flex; justify-content:space-between;">
+        <div id="targetSummaryPill" style="font-size: 11px; font-family:var(--font-mono); color:var(--text-muted); background:rgba(255,255,255,0.03); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:4px 8px; display:flex; justify-content:space-between;">
           <span>Status: <strong id="lblTargetStatus" style="color:#10b981;">ONLINE</strong></span>
           <span>Batt: <strong id="lblTargetBatt" style="color:#38bdf8;">100%</strong></span>
           <span>Role: <strong id="lblTargetRole" style="color:#f59e0b;">SURVIVOR</strong></span>
@@ -46,7 +46,7 @@ export class SosConsoleComponent {
 
         <!-- Section 1: Emergency & Voice Triggers -->
         <div>
-          <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
+          <div style="font-size: 11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
             🚨 Emergency & Voice SOS Triggers
           </div>
           <div class="sos-trigger-grid" style="display:grid; grid-template-columns:1fr 1fr; gap:6px;">
@@ -79,46 +79,46 @@ export class SosConsoleComponent {
 
         <!-- Section 2: Hardware Telemetry & Fault Injections -->
         <div>
-          <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
+          <div style="font-size: 11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
             ⚡ Hardware & Fault Injection
           </div>
           <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
-            <button class="btn" id="btnTogglePower" style="font-size:10px; padding:5px 6px; background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#fca5a5;">
+            <button class="btn" id="btnTogglePower" style="font-size: 11px; padding:5px 6px; background:rgba(239,68,68,0.15); border:1px solid #ef4444; color:#fca5a5;">
               ⚡ Kill / Revive Node
             </button>
-            <button class="btn" id="btnToggleGnss" style="font-size:10px; padding:5px 6px; background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fcd34d;">
+            <button class="btn" id="btnToggleGnss" style="font-size: 11px; padding:5px 6px; background:rgba(245,158,11,0.15); border:1px solid #f59e0b; color:#fcd34d;">
               🛰️ Toggle GNSS Fix
             </button>
-            <button class="btn" id="btnToggleDr" style="font-size:10px; padding:5px 6px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc;">
+            <button class="btn" id="btnToggleDr" style="font-size: 11px; padding:5px 6px; background:rgba(56,189,248,0.15); border:1px solid #38bdf8; color:#7dd3fc;">
               🧭 Toggle IMU (DR)
             </button>
-            <button class="btn" id="btnTriggerAllSurv" style="font-size:10px; padding:5px 6px; background:rgba(168,85,247,0.15); border:1px solid #a855f7; color:#d8b4fe;">
+            <button class="btn" id="btnTriggerAllSurv" style="font-size: 11px; padding:5px 6px; background:rgba(168,85,247,0.15); border:1px solid #a855f7; color:#d8b4fe;">
               🌊 Broadcast Wave
             </button>
           </div>
 
           <!-- Battery Configuration Row -->
           <div style="display:flex; align-items:center; gap:6px; background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:5px 8px;">
-            <span style="font-size:10px; color:var(--text-muted); min-width:55px;">Battery:</span>
+            <span style="font-size: 11px; color:var(--text-muted); min-width:55px;">Battery:</span>
             <input type="range" id="consoleBattSlider" min="0" max="100" value="100" style="flex:1; cursor:pointer;" />
             <span id="lblConsoleBattVal" style="font-size:11px; font-family:var(--font-mono); font-weight:700; color:#38bdf8; min-width:32px;">100%</span>
-            <button class="btn btn-primary" id="btnApplyBatt" style="font-size:10px; padding:3px 8px;">Apply</button>
+            <button class="btn btn-primary" id="btnApplyBatt" style="font-size: 11px; padding:3px 8px;">Apply</button>
           </div>
         </div>
 
         <!-- Section 3: RF Link Impairments -->
         <div>
-          <div style="font-size:10px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
+          <div style="font-size: 11px; font-weight:700; color:var(--text-dim); text-transform:uppercase; letter-spacing:0.5px; margin-bottom:5px;">
             📡 RF Link Impairment
           </div>
           <div style="display:flex; gap:6px; align-items:center;">
-            <select class="select-input" id="selPeerNode" style="flex:1; font-size:10px;">
+            <select class="select-input" id="selPeerNode" style="flex:1; font-size: 11px;">
               <option value="">Select Peer Node...</option>
             </select>
-            <button class="btn" id="btnBlockPeerLink" style="font-size:10px; padding:4px 8px; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5;">
+            <button class="btn" id="btnBlockPeerLink" style="font-size: 11px; padding:4px 8px; background:rgba(239,68,68,0.2); border:1px solid #ef4444; color:#fca5a5;">
               Block Link
             </button>
-            <button class="btn" id="btnRestorePeerLink" style="font-size:10px; padding:4px 8px; background:rgba(16,185,129,0.2); border:1px solid #10b981; color:#34d399;">
+            <button class="btn" id="btnRestorePeerLink" style="font-size: 11px; padding:4px 8px; background:rgba(16,185,129,0.2); border:1px solid #10b981; color:#34d399;">
               Restore
             </button>
           </div>
@@ -127,10 +127,10 @@ export class SosConsoleComponent {
         <!-- Command Execution Feedback Card -->
         <div id="commandFeedbackCard" style="background:var(--bg-surface); border:1px solid var(--border-subtle); border-radius:var(--radius-sm); padding:8px; font-size:11px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
-            <span style="font-weight:700; color:#94a3b8; font-size:10px;">LAST COMMAND FEEDBACK</span>
+            <span style="font-weight:700; color:#94a3b8; font-size: 11px;">LAST COMMAND FEEDBACK</span>
             <span class="badge" id="feedbackBadge" style="background:rgba(148,163,184,0.15); border:1px solid #64748b; color:#94a3b8;">IDLE</span>
           </div>
-          <div id="feedbackDetail" style="color:var(--text-dim); font-size:10px; font-family:var(--font-mono);">
+          <div id="feedbackDetail" style="color:var(--text-dim); font-size: 11px; font-family:var(--font-mono);">
             Select a target node and command to execute.
           </div>
         </div>
@@ -545,8 +545,8 @@ export class SosConsoleComponent {
             <span style="font-weight:700; color:#fff;">Survivor Node ${a.origin}</span>
             <span style="color:var(--text-dim); font-family:var(--font-mono);">${(a.t / 1000).toFixed(2)}s</span>
           </div>
-          <div style="color:#ef4444; font-weight:600; font-size:10px;">${hazardName}</div>
-          <div style="display:flex; justify-content:space-between; color:var(--text-muted); font-size:9px; margin-top:3px; font-family:var(--font-mono);">
+          <div style="color:#ef4444; font-weight:600; font-size: 11px;">${hazardName}</div>
+          <div style="display:flex; justify-content:space-between; color:var(--text-muted); font-size: 11px; margin-top:3px; font-family:var(--font-mono);">
             <span>Pos: ${posSource}</span>
             <span>Hops: ${a.hops || 1}</span>
             <span style="color:#10b981; font-weight:700;">HUB ACK CONFIRMED</span>

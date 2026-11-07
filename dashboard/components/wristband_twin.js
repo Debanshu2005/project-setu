@@ -75,17 +75,17 @@ export class WristbandTwinComponent {
 
         <!-- 3D Wristband Viewport -->
         <div id="wristband3dMount" style="position:relative; width:100%; height:220px; background:#020617; border-radius:6px; overflow:hidden; border:1px solid #1e293b; cursor:grab;">
-          <div id="wtHapticIndicator" style="position:absolute; bottom:8px; left:8px; z-index:10; font-size:10px; color:#f59e0b; opacity:0; transition:opacity 0.2s; font-weight:bold;">
+          <div id="wtHapticIndicator" style="position:absolute; bottom:8px; left:8px; z-index:10; font-size: 11px; color:#f59e0b; opacity:0; transition:opacity 0.2s; font-weight:bold;">
             VIBRATING (ERM Haptic Active)
           </div>
-          <div style="position:absolute; top:8px; right:8px; z-index:10; font-size:10px; color:#64748b;">
+          <div style="position:absolute; top:8px; right:8px; z-index:10; font-size: 11px; color:#64748b;">
             Drag to inspect 3D wristband
           </div>
         </div>
 
         <!-- Direct 3D Operational Controls -->
         <div style="display:flex; flex-direction:column; gap:8px; background:#1e293b; padding:10px; border-radius:6px;">
-          <div style="font-size:10px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">Tactile SOS Button</div>
+          <div style="font-size: 11px; color:#94a3b8; text-transform:uppercase; font-weight:bold;">Tactile SOS Button</div>
           <div style="display:flex; gap:6px;">
             <button id="wtBtnShort" style="flex:1; background:#ef4444; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;">Short Press</button>
             <button id="wtBtnDouble" style="flex:1; background:#e11d48; color:white; border:none; padding:6px; border-radius:4px; font-size:11px; cursor:pointer; font-weight:bold;">Double Press</button>
@@ -105,11 +105,11 @@ export class WristbandTwinComponent {
         <!-- Current Draw Breakdown & Power Telemetry -->
         <div style="background:#1e293b; padding:10px; border-radius:6px; font-size:11px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
-            <span style="color:#94a3b8; font-size:10px; text-transform:uppercase; font-weight:bold;">Power & Battery Telemetry</span>
+            <span style="color:#94a3b8; font-size: 11px; text-transform:uppercase; font-weight:bold;">Power & Battery Telemetry</span>
             <span id="wtBattery" style="font-weight:bold; color:#10b981; font-size:12px;">100% (1000 mAh)</span>
           </div>
           <!-- Current Draw Bars -->
-          <div style="display:flex; flex-direction:column; gap:4px; font-size:10px;">
+          <div style="display:flex; flex-direction:column; gap:4px; font-size: 11px;">
             <div style="display:flex; justify-content:space-between;">
               <span style="color:#94a3b8;">ESP32-S3 Base:</span>
               <span id="wtMcuDraw" style="color:#cbd5e1;">11.1 mA</span>
@@ -131,8 +131,8 @@ export class WristbandTwinComponent {
 
         <!-- Kinematics & PDR Positioning Telemetry -->
         <div style="background:#1e293b; padding:10px; border-radius:6px; font-size:11px;">
-          <div style="color:#94a3b8; font-size:10px; text-transform:uppercase; font-weight:bold; margin-bottom:4px;">Positioning & PDR Pipeline</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px;">
+          <div style="color:#94a3b8; font-size: 11px; text-transform:uppercase; font-weight:bold; margin-bottom:4px;">Positioning & PDR Pipeline</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size: 11px;">
             <div>GNSS: <span id="wtGnssStatus" style="color:#10b981;">Valid Fix</span></div>
             <div>Motion: <span id="wtMotionStatus" style="color:#38bdf8;">Stationary</span></div>
             <div>PDR Drift: <span id="wtPdrDrift" style="color:#cbd5e1;">0.00 m</span></div>
@@ -142,8 +142,8 @@ export class WristbandTwinComponent {
 
         <!-- Loss Budget & RF Link Margin -->
         <div style="background:#1e293b; padding:10px; border-radius:6px; font-size:11px;">
-          <div style="color:#94a3b8; font-size:10px; text-transform:uppercase; margin-bottom:4px; font-weight:bold;">RF Loss Budget to Hub 0</div>
-          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size:10px;">
+          <div style="color:#94a3b8; font-size: 11px; text-transform:uppercase; margin-bottom:4px; font-weight:bold;">RF Loss Budget to Hub 0</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px; font-size: 11px;">
             <div>TX Power: <span id="wtTxPower" style="color:#f8fafc;">+14.0 dBm</span></div>
             <div>Path Loss: <span id="wtPathLoss" style="color:#f8fafc;">0.0 dB</span></div>
             <div>Obstacles: <span id="wtObstacleLoss" style="color:#f8fafc;">0.0 dB</span></div>

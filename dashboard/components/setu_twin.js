@@ -128,9 +128,9 @@ export class SetuTwin3DViewer {
 
         <!-- Mode, Terrain & FPS Badge -->
         <div style="position:absolute; top:12px; right:12px; z-index:10; background:rgba(15,23,42,0.92); padding:5px 10px; border-radius:6px; border:1px solid #334155; font-size:11px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; gap:10px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
-          <span id="stObstacleBadge" style="background:rgba(56,189,248,0.15); color:#7dd3fc; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:4px; font-size:10px; font-weight:600;">Open Terrain</span>
-          <div style="font-size:10px; color:#10b981; font-weight:bold;">WebGL 3D</div>
-          <div id="stFpsCounter" style="color:#38bdf8; font-family:monospace; font-weight:600; font-size:10px;">60 FPS</div>
+          <span id="stObstacleBadge" style="background:rgba(56,189,248,0.15); color:#7dd3fc; border:1px solid rgba(56,189,248,0.4); padding:2px 8px; border-radius:4px; font-size: 11px; font-weight:600;">Open Terrain</span>
+          <div style="font-size: 11px; color:#10b981; font-weight:bold;">WebGL 3D</div>
+          <div id="stFpsCounter" style="color:#38bdf8; font-family:monospace; font-weight:600; font-size: 11px;">60 FPS</div>
         </div>
 
         <!-- 3D Canvas Mount Point -->
@@ -140,7 +140,7 @@ export class SetuTwin3DViewer {
         <canvas id="setuTwinCanvas2D" style="display:none; width:100%; height:100%;"></canvas>
 
         <!-- Radio & Role Legend Overlay -->
-        <div style="position:absolute; bottom:56px; left:12px; z-index:10; background:rgba(15,23,42,0.92); padding:6px 14px; border-radius:6px; border:1px solid #334155; font-size:10px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; flex-wrap:wrap; gap:12px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
+        <div style="position:absolute; bottom:56px; left:12px; z-index:10; background:rgba(15,23,42,0.92); padding:6px 14px; border-radius:6px; border:1px solid #334155; font-size: 11px; color:#cbd5e1; backdrop-filter:blur(6px); display:flex; flex-wrap:wrap; gap:12px; align-items:center; box-shadow:0 4px 12px rgba(0,0,0,0.5);">
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#00f0ff; box-shadow:0 0 6px #00f0ff;"></span> Survivor (Cyan)</div>
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#f59e0b; box-shadow:0 0 6px #f59e0b;"></span> Relay (Amber)</div>
           <div style="display:flex; align-items:center; gap:4px;"><span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#10b981; box-shadow:0 0 6px #10b981;"></span> Hub (Green)</div>
@@ -160,7 +160,7 @@ export class SetuTwin3DViewer {
             <span style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#38bdf8; box-shadow:0 0 8px #38bdf8;"></span>
             <span id="stNarratorText">Ready. Run simulation or step forward to inspect 3D disaster dynamics.</span>
           </div>
-          <button id="stBtnWhyFail" style="display:none; background:#dc2626; color:white; border:none; padding:4px 10px; border-radius:4px; font-size:10px; cursor:pointer; font-weight:bold;">Why did this fail?</button>
+          <button id="stBtnWhyFail" style="display:none; background:#dc2626; color:white; border:none; padding:4px 10px; border-radius:4px; font-size: 11px; cursor:pointer; font-weight:bold;">Why did this fail?</button>
         </div>
 
         <!-- Failure Explainer Modal (RF Loss Budget Waterfall) -->

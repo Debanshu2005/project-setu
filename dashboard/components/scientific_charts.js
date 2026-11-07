@@ -302,7 +302,7 @@ export class ChartExplainerController {
       this.hintEl = document.createElement('div');
       this.hintEl.className = 'chart-dwell-hint';
       this.hintEl.setAttribute('role', 'status');
-      this.hintEl.style.cssText = 'position:absolute; bottom:8px; right:8px; z-index:25; background:rgba(15,23,42,0.92); border:1px solid rgba(56,189,248,0.5); color:#cbd5e1; font-family:"Outfit", -apple-system, BlinkMacSystemFont, sans-serif; font-size:10px; padding:3px 8px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.5); pointer-events:none; transition:opacity 0.2s ease;';
+      this.hintEl.style.cssText = 'position:absolute; bottom:8px; right:8px; z-index:25; background:rgba(15,23,42,0.92); border:1px solid rgba(56,189,248,0.5); color:#cbd5e1; font-family:"Outfit", -apple-system, BlinkMacSystemFont, sans-serif; font-size: 11px; padding:3px 8px; border-radius:4px; box-shadow:0 4px 12px rgba(0,0,0,0.5); pointer-events:none; transition:opacity 0.2s ease;';
       this.hintEl.textContent = 'What is this graph? Hover the info icon for details';
     }
     const parent = this.canvas.parentElement;

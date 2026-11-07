@@ -167,6 +167,46 @@ All Checkpoint P-B criteria are satisfied:
 4. Scenario switch leak test passes with 0 geometry delta, 0 texture delta, and under 1 MB heap growth across 10 switches.
 5. All 27 automated test suites pass.
 
+## P6 Mobile Layout, Touch Targets, and Inspector Bottom Sheet Verification
+
+### Visual Inspections
+
+#### Mobile Standard Post-P6: docs/screens/perf/after_390x844.png (390 by 844, DPR 3)
+- Header layout: Collapsed to an exact 48 px height with brand identity on the left and hamburger drawer toggle on the right. No multi-line button wrapping.
+- Viewport and interaction: The map area fills 100dvh above the thumb bar with safe-area insets.
+- Bottom sheet inspector: Resting at peek height (72 px) with visible pill drag handle and quick navigation tabs. Expands smoothly to half height (42vh) and full height (85vh).
+- Mobile thumb bar: Fixed bottom navigation bar (56 px height) providing 6 thumb friendly actions: Play/Pause, Topo, Twin, Data, SOS, and Sheet toggle.
+- Touch targets: All buttons, selects, and tabs measure at least 44 by 44 px. Exactly 0 undersized targets detected.
+- Readability: All text labels, headers, and values use font sizes of 11 px or greater. Exactly 0 sub-11px elements detected.
+
+#### Mobile Compact Post-P6: docs/screens/perf/after_360x740.png (360 by 740, DPR 2)
+- Rendering quality: Clean single column mobile view. Header stays locked at 48 px without overflowing.
+- Inspector sheet: Fits within compact viewport at 72 px peek, 311 px half, and 629 px full.
+
+### Measured Results After P6 Implementation
+
+| Metric | Baseline Mobile (390x844) | Post-P6 Mobile (390x844) | Post-P6 Compact (360x740) | Target Budget | Status |
+|---|---|---|---|---|---|
+| Undersized Tap Targets (<44px) | 87 | 0 | 0 | 0 | PASS |
+| Sub-11px Font Elements | 2,705 | 0 | 0 | 0 | PASS |
+| Header Height | 98 px (wrapped) | 48 px | 48 px | <= 52 px | PASS |
+| Thumb Bar Height | None | 56 px | 56 px | 48 to 64 px | PASS |
+| Bottom Sheet Peek Height | Stacking collision | 72 px | 72 px | 64 to 80 px | PASS |
+| Bottom Sheet Half Height | None | 354 px (42vh) | 311 px (42vh) | ~42vh | PASS |
+| Bottom Sheet Full Height | None | 717 px (85vh) | 629 px (85vh) | ~85vh | PASS |
+| Desktop Parity (1600x900) | Normal 3-col | Unchanged | Unchanged | 0 mobile regressions | PASS |
+
+### Key Improvements in P6
+1. Replaced static 100vh layout with dynamic viewport units (height: 100dvh; fallback 100vh) and safe-area insets padding (env(safe-area-inset-*)) for notch and home bar clearance.
+2. Collapsed top navbar on mobile viewports (< 768 px) into a compact 48 px bar with a hamburger toggle button (44 by 44 px). Tapping toggles a slide-down drawer containing scenario selection and survivor trigger actions.
+3. Added a dedicated mobile persistent thumb bar (56 px height, z-index 1000) with 6 primary touch controls (Play, Topo, Twin, Data, SOS, Sheet), fully reachable with one hand.
+4. Converted the right sidebar into a 3-stage mobile bottom sheet with peek (72 px), half (42vh), and full (85vh) snap points. Added a draggable pill handle bar and touch swipe gesture support.
+5. Enforced 44 by 44 px minimum tap targets across all interactive buttons, selects, inputs, and sliders in both CSS and component styles.
+6. Replaced sub-11px font sizes across all CSS files, HTML markup, and JavaScript components with readable typography (11 px for badges and tags, 12 px for body and controls).
+7. Rebuilt production bundle.css via scripts/build_css.mjs and maintained byte parity with root index.html.
+8. Created tests/test_mobile_layout_and_touch.mjs verifying all mobile viewport constraints, sheet snap transitions, touch targets, and desktop layout preservation.
+
+
 
 
 
