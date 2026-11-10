@@ -332,7 +332,7 @@ this.updateNode(this.currentNode);
 this.onFault?.(this.currentNode.id, { bootloader_lock: lock, online: !lock });
 }
 #animateButtonDepression() {
-const btn = (this.model === 'wristband') ? this.wristband?.button : null;
+const btn = (this.model === 'wristband') ? this.wristband?.button : this.circuitScene?.button;
 if (btn) {
 btn.position.y = 0.44;
 setTimeout(() => { if (btn) btn.position.y = 0.52; this.requestRender(); }, 160);
@@ -345,7 +345,7 @@ const rect = event.currentTarget.getBoundingClientRect();
 const ptr = new this.T.Vector2(((event.clientX - rect.left) / rect.width) * 2 - 1, -((event.clientY - rect.top) / rect.height) * 2 + 1);
 const hit = new this.T.Raycaster();
 hit.setFromCamera(ptr, this.stage.camera);
-const target = (this.model === 'wristband') ? this.wristband?.button : null;
+const target = (this.model === 'wristband') ? this.wristband?.button : (this.model === 'modules' ? this.circuitScene?.button : null);
 if (target && hit.intersectObject(target, false).length) {
 this.#animateButtonDepression();
 if (this.onTrigger) this.onTrigger('short');
@@ -363,17 +363,17 @@ const liveMap = {
 usb: node.online ? 'UART0 115200' : 'offline',
 buttons: node.bootloader_lock ? 'Stuck in ROM bootloader (GPIO 0 low)' : 'Button ready (GPIO ISR)',
 rgb: node.active_sos ? 'Pattern: SOS active' : node.acked ? 'Pattern: ACK confirmed' : 'Pattern: idle pulse',
-module: `PDR steps: ${node.step_count || 0} Â· 240 MHz`,
-antenna: `LoRa 868.1 MHz Â· TX: ${node.stats?.tx || 0}`,
+module: `PDR steps: ${node.step_count || 0} · 240 MHz`,
+antenna: `LoRa 868.1 MHz · TX: ${node.stats?.tx || 0}`,
 headers: 'Buses: SPI, UART, I2C, I2S, PWM, ADC',
-gnss: `Fix: ${node.gnss_status || '3D Fix'} Â· Sats: ${node.satellites || 8}`,
-battery: `Capacity: ${node.battery ? node.battery.toFixed(0) : 100}% Â· Draw: 22 mA`,
+gnss: `Fix: ${node.gnss_status || '3D Fix'} · Sats: ${node.satellites || 8}`,
+battery: `Capacity: ${node.battery ? node.battery.toFixed(0) : 100}% · Draw: 22 mA`,
 mic: 'WakeNet listening 16 kHz I2S',
-esp32: `${node.role || 'survivor'} Â· FreeRTOS active`,
-imu: `PDR steps: ${node.step_count || 0} Â· 400 kHz I2C`,
-power: `3.3V rail nominal Â· Battery: ${node.battery ? node.battery.toFixed(0) : 100}%`,
-lora: `TX pkts: ${node.stats?.tx || 0} Â· SF7/125kHz`,
-wires: 'Harness intact Â· 5 signal buses routed'
+esp32: `${node.role || 'survivor'} · FreeRTOS active`,
+imu: `PDR steps: ${node.step_count || 0} · 400 kHz I2C`,
+button: node.active_sos ? 'SOS active · GPIO 16' : 'Button ready (GPIO 16)',
+lora: `TX pkts: ${node.stats?.tx || 0} · SF7/125kHz`,
+wires: 'Harness intact · 5 signal buses routed'
 };
 this.qa('[data-live-part]').forEach(el => {
 const v = liveMap[el.dataset.livePart];

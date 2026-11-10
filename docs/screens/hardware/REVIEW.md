@@ -83,9 +83,10 @@ Output:
 
 Interactive 3D assembly view displaying external breakout modules connected to the ESP32-S3 DevKitC-1 with physical 3D jumper wires:
 - SX1262 LoRa transceiver (SPI bus: NSS on GPIO 5, MOSI on GPIO 6, MISO on GPIO 7, SCK on GPIO 8, DIO1 on GPIO 4).
-- INMP441 MEMS microphone (I2S bus: SCK on GPIO 41, WS on GPIO 42, SD on GPIO 38).
-- MPU-6050 6-axis IMU (I2C bus: SDA on GPIO 21, SCL on GPIO 9).
-- Color-coded Catmull-Rom 3D tube geometries representing the wiring harness: cyan for SPI, purple for I2S, amber for I2C, red for 3.3V, and slate for GND.
+- INMP441 MEMS microphone (I2S bus: SCK on GPIO 41, WS on GPIO 42, SD on GPIO 38): circular matte black PCB disk with gold annular perimeter trace ring, silver MEMS microphone shield can, SMD passives, and six through-hole header pins equipped with bright yellow plastic spacer blocks.
+- MPU-6050 6-axis IMU (I2C bus: SDA on GPIO 21, SCL on GPIO 9): royal blue GY-521 breakout PCB with dual mounting screw holes, central InvenSense QFN-24 chip with 24 silver leads, amber tantalum capacitor, SOT-23 voltage regulator, SMD passives, and white coordinate axis silkscreen.
+- Tactile Emergency SOS Push Button: momentary 6x6mm tactile switch with silver stamped retention plate, corner rivets, and an interactive red plunger button wired to GPIO 16 (Header L Pin 9, dedicated non-strapping IO) and system ground return. Clicking the 3D button in the scene triggers tactile depression feedback and initiates the SOS flow.
+- Color-coded Catmull-Rom 3D tube geometries representing the wiring harness: cyan for SPI, purple for I2S, amber for I2C, orange for the SOS button, red for 3.3V, and slate for GND.
 - Six educational callout cards and markers corresponding to each module and bus connection.
 
 ## H6 evidence
@@ -102,14 +103,14 @@ Educational component catalog follows the V5 chart explainer pattern. Every card
 ## H7 evidence
 
 All performance and accessibility budgets verified:
-- Added JavaScript size: 39,994 bytes raw before compression (strict limit: 40,000 bytes).
-  - `hardware_explorer.js`: 24,142 bytes
-  - `hardware_parts.js`: 9,551 bytes
-  - `wristband_scene.js`: 6,301 bytes
-- WebGL draw calls: 50 (budget: <= 300)
-- WebGL triangles: 2,144 (budget: <= 200,000)
-- WebGL textures: 8 (budget: <= 50)
-- Memory leak stability: 108 geometries before and after 50 model toggle switches (zero geometry leak).
+- Added JavaScript size: 37,910 bytes raw before compression (strict limit: 40,000 bytes).
+  - `hardware_explorer.js`: 22,554 bytes
+  - `hardware_parts.js`: 9,030 bytes
+  - `wristband_scene.js`: 6,326 bytes
+- WebGL draw calls: 51 (budget: <= 300)
+- WebGL triangles: 2,262 (budget: <= 200,000)
+- WebGL textures: 11 (budget: <= 50)
+- Memory leak stability: 207 geometries before and after 50 model toggle switches (zero geometry leak).
 - Mobile DPR capped at <= 1.5.
 - On-demand rendering: zero idle animation callbacks when hidden or settled.
 - Screen reader accessibility: `aria-label`, `role="button"`, and `aria-pressed` on all interactive cards, markers, and controls.
@@ -117,8 +118,8 @@ All performance and accessibility budgets verified:
 ## H8 evidence
 
 All 12 required screenshots captured and pixel-tested:
-- `WebGL Canvas Coverage`: 12.45% (budget: >= 12.0%)
-- `Mean Luminance`: 103.61 (budget: >= 30.0)
+- `WebGL Canvas Coverage`: 23.01% (budget: >= 12.0%)
+- `Mean Luminance`: 104.58 (budget: >= 30.0)
 - `Stage Edge Clipping`: 0 edge hits (model is cleanly centered)
 - `Teal Markers`: 6 numbered markers present with valid computed styles
 - `Attribution`: all ported modules in `dashboard/vendor/esp-labs/` preserve MIT copyright headers; `docs/THIRD_PARTY.md` contains the full MIT notice.

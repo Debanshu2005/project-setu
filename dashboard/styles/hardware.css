@@ -191,6 +191,11 @@
   z-index: 4;
 }
 
+.hardware-wiring-legend[hidden],
+.hardware-voice-panel[hidden] {
+  display: none !important;
+}
+
 .hardware-wiring-legend .legend-item {
   display: inline-flex;
   align-items: center;
