@@ -9,13 +9,25 @@ export class NodeHealthComponent {
 
     this.searchQuery = '';
     this.roleFilter = 'all';
+    this._needsRender = false;
 
     this.sim.subscribe((engine, type) => {
       this.render();
     });
   }
 
+  onTabActivated() {
+    if (this._needsRender) {
+      this.render();
+    }
+  }
+
   render() {
+    if (this.container && (this.container.offsetParent === null || this.container.style.display === 'none')) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const nodes = Array.from(this.sim.nodes.values());
     const links = this.sim.links || [];
     const metrics = this.sim.getMetrics();

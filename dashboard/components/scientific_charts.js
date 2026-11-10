@@ -346,9 +346,13 @@ function setupCanvas(canvas) {
   const rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : { width: 600, height: 260 };
   const width = rect.width || (canvas.parentElement ? canvas.parentElement.clientWidth : 600) || 600;
   const height = rect.height || 260;
+  const targetW = Math.round(width * dpr);
+  const targetH = Math.round(height * dpr);
 
-  canvas.width = Math.round(width * dpr);
-  canvas.height = Math.round(height * dpr);
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW;
+    canvas.height = targetH;
+  }
 
   const ctx = canvas.getContext('2d');
   ctx.resetTransform?.();
@@ -382,6 +386,12 @@ export class ScientificLineChart {
   }
 
   destroy() {
+    if (this.onMouseMove && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    }
+    if (this.onMouseLeave && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
+    }
     if (this.explainerController) {
       this.explainerController.destroy();
     }
@@ -398,19 +408,25 @@ export class ScientificLineChart {
   }
 
   initEvents() {
-    this.canvas.addEventListener('mousemove', e => {
+    this.onMouseMove = e => {
       const rect = this.canvas.getBoundingClientRect();
       this.hoverPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       this.render();
-    });
-
-    this.canvas.addEventListener('mouseleave', () => {
+    };
+    this.onMouseLeave = () => {
       this.hoverPos = null;
       this.render();
-    });
+    };
+    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave);
   }
 
   render() {
+    if (!this.canvas || this.canvas.offsetParent === null || (this.canvas.clientWidth === 0 && this.canvas.clientHeight === 0)) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const { ctx, width, height } = setupCanvas(this.canvas);
     ctx.clearRect(0, 0, width, height);
 
@@ -749,6 +765,12 @@ export class ScientificScatterPlot {
   }
 
   destroy() {
+    if (this.onMouseMove && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    }
+    if (this.onMouseLeave && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
+    }
     if (this.explainerController) {
       this.explainerController.destroy();
     }
@@ -761,19 +783,27 @@ export class ScientificScatterPlot {
   }
 
   initEvents() {
-    this.canvas.addEventListener('mousemove', e => {
+    this.onMouseMove = e => {
       const rect = this.canvas.getBoundingClientRect();
       this.hoverPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       this.render();
-    });
+    };
 
-    this.canvas.addEventListener('mouseleave', () => {
+    this.onMouseLeave = () => {
       this.hoverPos = null;
       this.render();
-    });
+    };
+
+    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave);
   }
 
   render() {
+    if (!this.canvas || this.canvas.offsetParent === null || (this.canvas.clientWidth === 0 && this.canvas.clientHeight === 0)) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const { ctx, width, height } = setupCanvas(this.canvas);
     ctx.clearRect(0, 0, width, height);
 
@@ -802,8 +832,16 @@ export class ScientificScatterPlot {
     const minX = Math.max(0, this.options.xMin !== undefined ? this.options.xMin : (validPts.length ? Math.min(...validPts.map(p => p.x)) : 0));
     const maxX = this.options.xMax !== undefined ? this.options.xMax : (validPts.length ? Math.max(...validPts.map(p => p.x), defaultMaxX) : 1000);
 
-    const minY = this.options.yMin !== undefined ? this.options.yMin : (validPts.length ? Math.min(...validPts.map(p => p.y), -140) : -140);
-    const maxY = this.options.yMax !== undefined ? this.options.yMax : (validPts.length ? Math.max(...validPts.map(p => p.y), -40) : -40);
+    let minY = this.options.yMin !== undefined ? this.options.yMin : (validPts.length ? Math.min(...validPts.map(p => p.y), -140) : -140);
+    let maxY = this.options.yMax !== undefined ? this.options.yMax : (validPts.length ? Math.max(...validPts.map(p => p.y), -40) : -40);
+    if (minY === maxY) {
+      if (minY === 0) {
+        maxY = this.options.yUnit === 'mAh' ? 0.1 : 10;
+      } else {
+        minY -= 1;
+        maxY += 1;
+      }
+    }
 
     const scaleX = x => {
       if (this.options.logScaleX) {
@@ -1072,6 +1110,12 @@ export class ScientificCdfPlot {
   }
 
   destroy() {
+    if (this.onMouseMove && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    }
+    if (this.onMouseLeave && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
+    }
     if (this.explainerController) {
       this.explainerController.destroy();
     }
@@ -1083,19 +1127,27 @@ export class ScientificCdfPlot {
   }
 
   initEvents() {
-    this.canvas.addEventListener('mousemove', e => {
+    this.onMouseMove = e => {
       const rect = this.canvas.getBoundingClientRect();
       this.hoverPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       this.render();
-    });
+    };
 
-    this.canvas.addEventListener('mouseleave', () => {
+    this.onMouseLeave = () => {
       this.hoverPos = null;
       this.render();
-    });
+    };
+
+    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave);
   }
 
   render() {
+    if (!this.canvas || this.canvas.offsetParent === null || (this.canvas.clientWidth === 0 && this.canvas.clientHeight === 0)) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const { ctx, width, height } = setupCanvas(this.canvas);
     ctx.clearRect(0, 0, width, height);
 
@@ -1288,6 +1340,12 @@ export class ScientificHeatmap {
   }
 
   destroy() {
+    if (this.onMouseMove && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    }
+    if (this.onMouseLeave && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
+    }
     if (this.explainerController) {
       this.explainerController.destroy();
     }
@@ -1304,19 +1362,22 @@ export class ScientificHeatmap {
   }
 
   initEvents() {
-    this.canvas.addEventListener('mousemove', e => {
+    this.onMouseMove = e => {
       const rect = this.canvas.getBoundingClientRect();
       const mx = e.clientX - rect.left;
       const my = e.clientY - rect.top;
       this.hoverPos = { x: mx, y: my };
       this.checkHover(mx, my);
-    });
+    };
 
-    this.canvas.addEventListener('mouseleave', () => {
+    this.onMouseLeave = () => {
       this.hoverCell = null;
       this.hoverPos = null;
       this.render();
-    });
+    };
+
+    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave);
   }
 
   checkHover(mx, my) {
@@ -1338,6 +1399,11 @@ export class ScientificHeatmap {
   }
 
   render() {
+    if (!this.canvas || this.canvas.offsetParent === null || (this.canvas.clientWidth === 0 && this.canvas.clientHeight === 0)) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const { ctx, width, height } = setupCanvas(this.canvas);
     ctx.clearRect(0, 0, width, height);
 
@@ -1565,6 +1631,12 @@ export class ScientificTrajectoryPlot {
   }
 
   destroy() {
+    if (this.onMouseMove && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mousemove', this.onMouseMove);
+    }
+    if (this.onMouseLeave && typeof this.canvas?.removeEventListener === 'function') {
+      this.canvas.removeEventListener('mouseleave', this.onMouseLeave);
+    }
     if (this.explainerController) {
       this.explainerController.destroy();
     }
@@ -1579,19 +1651,27 @@ export class ScientificTrajectoryPlot {
   }
 
   initEvents() {
-    this.canvas.addEventListener('mousemove', e => {
+    this.onMouseMove = e => {
       const rect = this.canvas.getBoundingClientRect();
       this.hoverPos = { x: e.clientX - rect.left, y: e.clientY - rect.top };
       this.render();
-    });
+    };
 
-    this.canvas.addEventListener('mouseleave', () => {
+    this.onMouseLeave = () => {
       this.hoverPos = null;
       this.render();
-    });
+    };
+
+    this.canvas.addEventListener('mousemove', this.onMouseMove);
+    this.canvas.addEventListener('mouseleave', this.onMouseLeave);
   }
 
   render() {
+    if (!this.canvas || this.canvas.offsetParent === null || (this.canvas.clientWidth === 0 && this.canvas.clientHeight === 0)) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const { ctx, width, height } = setupCanvas(this.canvas);
     ctx.clearRect(0, 0, width, height);
 

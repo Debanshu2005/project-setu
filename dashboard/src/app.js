@@ -1055,7 +1055,18 @@ class SetuDashboardApp {
       content.classList.toggle('active', content.id === tabId);
     });
     if (tabId === 'tab-charts' && this.charts) {
-      this.charts.render();
+      if (typeof this.charts.onTabActivated === 'function') {
+        this.charts.onTabActivated();
+      } else {
+        this.charts.render();
+      }
+    }
+    if (tabId === 'tab-health' && this.nodeHealth) {
+      if (typeof this.nodeHealth.onTabActivated === 'function') {
+        this.nodeHealth.onTabActivated();
+      } else {
+        this.nodeHealth.render();
+      }
     }
     if (tabId === 'tab-twin') {
       this.ensureWristbandTwin().then(twin => {
@@ -1243,7 +1254,13 @@ class SetuDashboardApp {
 
     if (isAnalytics) {
       this.ensureAnalyticsWorkspace().then(ws => {
-        if (ws) ws.refresh();
+        if (ws) {
+          if (typeof ws.onTabActivated === 'function') {
+            ws.onTabActivated();
+          } else {
+            ws.refresh();
+          }
+        }
       });
     }
 

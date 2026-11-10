@@ -2,7 +2,7 @@
 // Caches application shell, static assets, 3D vendored modules, and demo trace
 // Enables offline mesh visualization, timeline playback, and diagnostics in disaster zones
 
-const CACHE_NAME = 'setu-cache-v1';
+const CACHE_NAME = 'setu-cache-v2';
 
 const PRECACHE_URLS = [
   '/',

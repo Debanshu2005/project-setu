@@ -235,7 +235,9 @@ async function runScenarioAudit(browser, config) {
   // Measure Tab Switch Click-to-First-Paint for Setu Twin 3D
   let timeTo3dPaint = null;
   let rendererInfo = null;
-  const btnTwin = page.locator('#btnModeTwin');
+  const mobileBtn = page.locator('#mobileBtnTwin');
+  const isMobileVisible = await mobileBtn.isVisible().catch(() => false);
+  const btnTwin = isMobileVisible ? mobileBtn : page.locator('#btnModeTwin');
   if (await btnTwin.count() > 0) {
     const t0 = Date.now();
     try {
