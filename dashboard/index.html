@@ -66,6 +66,9 @@
         <button class="btn view-toggle-btn" id="btnModeAnalytics" style="padding:4px 9px; font-size:11px; border:none; background:transparent; color:var(--text-muted);" title="Open research-grade scientific visualization workspace">
           <span>🔬</span> <span class="view-label-full">Scientific Analytics</span><span class="view-label-short">Analytics</span>
         </button>
+        <button class="btn view-toggle-btn" id="btnModeHardware" style="padding:4px 9px; font-size:11px; border:none; background:transparent; color:var(--text-muted);" title="Open the hardware explorer">
+          <span>▣</span> <span class="view-label-full">Hardware</span><span class="view-label-short">Hardware</span>
+        </button>
       </div>
 
       <!-- Scenario Selector -->
@@ -231,6 +234,9 @@
 
       <!-- View C: Setu Twin 3D Navigable World Visualizer -->
       <div id="containerSetuTwinView" style="display:none; width:100%; height:100%; position:relative; overflow:hidden;"></div>
+
+      <!-- Hardware explorer is lazy-loaded after its tab is selected. -->
+      <div id="containerHardwareView" style="display:none; width:100%; height:100%; position:relative; overflow:hidden;"></div>
     </section>
 
     <!-- Right Sidebar: Inspector, Timeline & Charts -->

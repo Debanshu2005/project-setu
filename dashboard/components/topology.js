@@ -515,16 +515,18 @@ export class TopologyVisualizer {
 
       // Radio transmission propagation ring
       ctx.save();
-      const ringRadius = progress * 140 * this.scale;
-      ctx.beginPath();
-      ctx.arc(pa.x, pa.y, ringRadius, 0, Math.PI * 2);
-      ctx.strokeStyle = tx.ack ? 'rgba(16, 185, 129, 0.5)' : 'rgba(6, 182, 212, 0.6)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
+      const ringRadius = Math.max(0, progress * 140 * Math.abs(this.scale));
+      if (ringRadius > 0) {
+        ctx.beginPath();
+        ctx.arc(pa.x, pa.y, ringRadius, 0, Math.PI * 2);
+        ctx.strokeStyle = tx.ack ? 'rgba(16, 185, 129, 0.5)' : 'rgba(6, 182, 212, 0.6)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
 
-      // Filled glow
-      ctx.fillStyle = tx.ack ? 'rgba(16, 185, 129, 0.08)' : 'rgba(6, 182, 212, 0.08)';
-      ctx.fill();
+        // Filled glow
+        ctx.fillStyle = tx.ack ? 'rgba(16, 185, 129, 0.08)' : 'rgba(6, 182, 212, 0.08)';
+        ctx.fill();
+      }
       ctx.restore();
     }
   }

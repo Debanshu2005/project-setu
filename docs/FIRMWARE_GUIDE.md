@@ -35,9 +35,9 @@ All hardware pins are defined in `firmware/esp32s3/include/esp32_adapters.hpp` a
 | **NEO-6M GNSS** | UART TX | **GPIO 17** | UART1 | Connects to GNSS Module RX (9600 baud) |
 | **NEO-6M GNSS** | UART RX | **GPIO 18** | UART1 | Connects to GNSS Module TX (9600 baud NMEA) |
 | **MPU-6050 IMU** | I2C SDA | **GPIO 21** | I2C0 | 400 kHz fast mode, external 4.7kΩ pull-up to 3.3V |
-| **MPU-6050 IMU** | I2C SCL | **GPIO 22** | I2C0 | 400 kHz fast mode, external 4.7kΩ pull-up to 3.3V |
+| **MPU-6050 IMU** | I2C SCL | **GPIO 9** | I2C0 | 400 kHz fast mode, external 4.7kΩ pull-up to 3.3V |
 | **Battery Monitor** | ADC Voltage Input | **GPIO 1** | ADC1_CH0 | 2:1 resistive divider (100kΩ / 100kΩ to LiPo cell) |
-| **Panic Button** | Tactile Switch | **GPIO 0** | GPIO Interrupt | Active LOW with internal pull-up (`BOOT` button) |
+| **Panic Button** | Tactile Switch | **GPIO 16** | GPIO Interrupt | Active LOW with internal pull-up. GPIO 0 remains prototype-only BOOT. |
 | **Haptic Motor** | ERM Gate Drive | **GPIO 13** | Digital Out | N-channel logic MOSFET gate (2N7002 / AO3400) |
 | **Status LED (Red)** | Alert / Fail Indicator | **GPIO 14** | Digital Out | Active HIGH, 330Ω current limiting resistor |
 | **Status LED (Green)**| ACK / Healthy Indicator| **GPIO 15** | Digital Out | Active HIGH, 330Ω current limiting resistor |
@@ -118,7 +118,7 @@ The firmware utilizes ESP-IDF FreeRTOS across both Xtensa LX7 CPU cores:
 ```
 
 ### Concurrency & ISR Safety
-- **Interrupts**: Both GPIO 0 (Button) and GPIO 4 (SX1262 DIO1) execute minimal ISR handlers that dispatch events to FreeRTOS queues/semaphores using `FromISR` variants.
+- **Interrupts**: Both GPIO 16 (product button) and GPIO 4 (SX1262 DIO1) execute minimal ISR handlers that dispatch events to FreeRTOS queues/semaphores using `FromISR` variants.
 - **Mutual Exclusion**: `setu::Node` protocol state is owned exclusively by the Core Task. Inbound radio packets from the Radio Task are handed off via synchronized buffer copies, preventing race conditions or corrupted duplicate-detection windows.
 
 ---

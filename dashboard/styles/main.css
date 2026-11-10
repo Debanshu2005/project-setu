@@ -1,6 +1,24 @@
 /* Project Setu - Disaster Operations Command Center Design System */
 
 :root {
+  /* Hardware explorer palette. Values are illustrative, not bench measurements. */
+  --pcb: #0a1716;
+  --pcb-edge: #31504b;
+  --silk: #e6f3ef;
+  --silk-dim: #88a69f;
+  --pad: #d9af55;
+  --copper: #d88a55;
+  --gold: #e4bd43;
+  --metal: #c7d2d9;
+  --metal-dark: #71808a;
+  --plastic: #263735;
+  --hotspot: #2dd4bf;
+  --danger: #fb7185;
+  --card-white: #e7eef0;
+  --model-ink: #091715;
+  --model-shadow: #07110f;
+  --test-w: #ffffff;
+
   /* Surfaces */
   --bg-darkest: #060913;
   --bg-base: #0b1120;

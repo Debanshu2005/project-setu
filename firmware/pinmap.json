@@ -1,0 +1,48 @@
+{
+  "board": "ESP32-S3 DevKitC-1",
+  "notes": "Single source of truth for Project Setu peripheral pin assignments.",
+  "pins": [
+    { "name": "lora_cs", "gpio": 5, "bus": "spi", "module": "SX1262", "signal": "NSS", "header": "L pin 5" },
+    { "name": "lora_sck", "gpio": 6, "bus": "spi", "module": "SX1262", "signal": "SCK", "header": "L pin 6" },
+    { "name": "lora_mosi", "gpio": 7, "bus": "spi", "module": "SX1262", "signal": "MOSI", "header": "L pin 7" },
+    { "name": "lora_miso", "gpio": 8, "bus": "spi", "module": "SX1262", "signal": "MISO", "header": "L pin 12" },
+    { "name": "lora_dio1", "gpio": 4, "bus": "irq", "module": "SX1262", "signal": "DIO1", "header": "L pin 4" },
+    { "name": "lora_reset", "gpio": 3, "bus": "gpio", "module": "SX1262", "signal": "NRESET", "header": "L pin 13", "waiver": "GPIO 3 strapping pin (JTAG) waived: pulled high by SX1262 module reset line during boot." },
+    { "name": "lora_busy", "gpio": 2, "bus": "gpio", "module": "SX1262", "signal": "BUSY", "header": "R pin 5" },
+    { "name": "gnss_rx", "gpio": 17, "bus": "uart", "module": "NEO-6M", "signal": "TX to ESP32", "header": "L pin 10" },
+    { "name": "gnss_tx", "gpio": 18, "bus": "uart", "module": "NEO-6M", "signal": "RX from ESP32", "header": "L pin 11" },
+    { "name": "imu_sda", "gpio": 21, "bus": "i2c", "module": "MPU-6050", "signal": "SDA", "header": "R pin 18" },
+    { "name": "imu_scl", "gpio": 9, "bus": "i2c", "module": "MPU-6050", "signal": "SCL", "header": "L pin 15" },
+    { "name": "mic_sck", "gpio": 41, "bus": "i2s", "module": "INMP441", "signal": "SCK / BCLK", "header": "R pin 7" },
+    { "name": "mic_ws", "gpio": 42, "bus": "i2s", "module": "INMP441", "signal": "WS / LRCLK", "header": "R pin 6" },
+    { "name": "mic_sd", "gpio": 38, "bus": "i2s", "module": "INMP441", "signal": "SD / DOUT", "header": "R pin 10" },
+    { "name": "panic_button", "gpio": 16, "bus": "gpio", "module": "panic button", "signal": "active low", "header": "L pin 9", "product": true },
+    { "name": "haptic_pwm", "gpio": 13, "bus": "pwm", "module": "ERM motor", "signal": "gate drive", "header": "L pin 19" },
+    { "name": "battery_adc", "gpio": 1, "bus": "adc", "module": "battery divider", "signal": "ADC1_CH0", "header": "R pin 4" },
+    { "name": "status_led", "gpio": 48, "bus": "gpio", "module": "status LED", "signal": "WS2812 data", "header": "R pin 16" }
+  ],
+  "prototype_only": {
+    "boot_button_gpio": 0,
+    "header": "R pin 14",
+    "risk": "Holding GPIO 0 low during reset enters download bootloader mode. Prototype uses BOOT switch; production wristband uses dedicated GPIO 16.",
+    "waiver": "Strapping pin GPIO 0 waived for prototype devkit use only."
+  },
+  "alternatives_evaluated": {
+    "imu_scl": {
+      "rejected_gpio": 22,
+      "rejection_reason": "GPIO 22 is not physically present on the ESP32-S3 DevKitC-1 header pinout.",
+      "evaluated_options": [
+        { "gpio": 9, "status": "selected", "header": "L pin 15", "notes": "Free general IO, supports 400 kHz I2C SCL, no strapping conflicts, standard pull-up support." },
+        { "gpio": 10, "status": "candidate", "header": "L pin 16", "notes": "Valid alternate, reserved for future expansion." },
+        { "gpio": 12, "status": "candidate", "header": "L pin 18", "notes": "Valid alternate, adjacent to haptic PWM." }
+      ]
+    }
+  },
+  "strapping_pin_fault": {
+    "pin": 0,
+    "datasheet_source": "ESP32-S3 Datasheet Rev 1.6 Table 2-4 Strapping Pins",
+    "boot_mode": "Download Bootloader Mode when sampled LOW on reset de-assertion",
+    "failure_mode": "Wearer pressing panic button during brownout reset halts application firmware",
+    "product_mitigation": "Product wristband uses GPIO 16 (non-strapping GPIO) for panic button"
+  }
+}

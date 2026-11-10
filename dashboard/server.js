@@ -2182,6 +2182,12 @@ const server = http.createServer(async (req, res) => {
     if (!absPath.startsWith(SCENARIOS_DIR)) {
       return sendError(res, 403, 'Forbidden', req);
     }
+  } else if (filePath.startsWith('/firmware/')) {
+    absPath = path.resolve(ROOT_DIR, '.' + filePath);
+    const FIRMWARE_DIR = path.join(ROOT_DIR, 'firmware');
+    if (!absPath.startsWith(FIRMWARE_DIR)) {
+      return sendError(res, 403, 'Forbidden', req);
+    }
   } else {
     absPath = path.resolve(DASHBOARD_DIR, '.' + filePath);
     if (!absPath.startsWith(DASHBOARD_DIR)) {

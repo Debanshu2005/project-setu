@@ -25,6 +25,7 @@ node_modules/
 # Temporary simulation run logs
 out.jsonl
 out_test.jsonl
+*.zip
 scenarios/traces/sim_*.jsonl
 scenarios/traces/job_*.jsonl
 scenarios/traces/jobs_index.json

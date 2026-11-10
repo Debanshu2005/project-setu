@@ -21,6 +21,7 @@ Project Setu maintains a strict dependency hygiene policy:
 | **Aceinna gnss-ins-sim** | 2.1.1 | Apache-2.0 | Offline Inertial Modeling Reference | Reference algorithms for multi-axis inertial dead reckoning drift under GNSS denial. |
 | **NVIDIA Sionna RT** | 0.15.0 | Apache-2.0 | Offline RF Ray-Tracing Reference | Architectural reference for polygonal obstacle penetration and reflection models. |
 | **Playwright** | 1.50.1 | Apache-2.0 | Dev-only Visual Testing (`scripts/`, `tests/e2e/`) | Headless browser automation for gap analysis screenshots and visual regression testing. Zero production runtime impact. |
+| **esp-labs-web procedural board modules** | Commit not supplied with the verified POC archive | MIT | Hardware explorer (`dashboard/vendor/esp-labs/`) | Framework-free procedural ESP32-S3 DevKitC-1 scene, camera stage, toon materials, header data, and palette helper. TypeScript syntax and imports were adapted for browser-native ES modules. Full notice: `dashboard/vendor/esp-labs/THIRD_PARTY_NOTICE.txt`. |
 
 ---
 

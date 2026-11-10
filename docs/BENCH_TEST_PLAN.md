@@ -18,9 +18,9 @@ Before connecting any battery or USB-C power source:
    - **SPI Bus**: GPIO 5 (NSS/CS), GPIO 6 (SCK), GPIO 7 (MOSI), GPIO 8 (MISO).
    - **Radio Control**: GPIO 4 (DIO1), GPIO 3 (NRESET), GPIO 2 (BUSY).
    - **UART Bus**: GPIO 17 (TX to GNSS RX), GPIO 18 (RX from GNSS TX).
-   - **I2C Bus**: GPIO 21 (SDA), GPIO 22 (SCL) with external 4.7kΩ pull-up resistors to 3.3V.
+   - **I2C Bus**: GPIO 21 (SDA), GPIO 9 (SCL) with external 4.7kΩ pull-up resistors to 3.3V.
    - **Analog Input**: GPIO 1 (ADC1_CH0) connected to center tap of 100kΩ/100kΩ divider.
-   - **Inputs/Outputs**: GPIO 0 (BOOT Switch), GPIO 13 (Haptic Gate), GPIO 14 (Red LED), GPIO 15 (Green LED).
+   - **Inputs/Outputs**: GPIO 16 (product panic switch), GPIO 13 (Haptic Gate), GPIO 14 (Red LED), GPIO 15 (Green LED). GPIO 0 remains prototype BOOT only.
 3. Verify that the LoRa IPEX/U.FL connector is firmly attached and an appropriate 868/915 MHz whip antenna is connected. **NEVER transmit on an SX1262 without an antenna connected; doing so damages the RF output stage.**
 
 ---
@@ -44,7 +44,7 @@ Before connecting any battery or USB-C power source:
 ## 3. Peripheral-Level Validation Procedures
 
 ### 3.1 Button Debounce & Hold Classification
-1. Connect oscilloscope to GPIO 0.
+1. Connect oscilloscope to GPIO 16.
 2. Perform a Short Press ($< 500\text{ms}$): Verify single click registered, `HapticPattern::TierShort` triggered, and `originate()` dispatched.
 3. Perform a Double Click ($< 400\text{ms}$ gap): Verify `HapticPattern::TierDouble` triggered and Medical emergency hazard code transmitted.
 4. Perform a Long Press ($> 1500\text{ms}$): Verify `HapticPattern::TierLong` fires while button is held down, Trapped hazard code transmitted.

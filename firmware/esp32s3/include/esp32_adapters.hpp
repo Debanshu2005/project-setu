@@ -1258,7 +1258,7 @@ class Mpu6050DeadReckoning : public IDeadReckoning {
     WaitingForTrough
   };
 
-  Mpu6050DeadReckoning(int sda_pin = 21, int scl_pin = 22)
+Mpu6050DeadReckoning(int sda_pin = 21, int scl_pin = 9)
       : sda_(sda_pin), scl_(scl_pin), sensor_online_(false),
         has_estimate_(false), est_lat_e6_(0), est_lon_e6_(0),
         step_count_(0), anchor_time_ms_(0), last_step_time_ms_(0),

@@ -408,9 +408,9 @@ Project Setu firmware is implemented in `firmware/esp32s3/` for the Espressif ES
 | :--- | :---: | :---: | :--- |
 | **SX1262 LoRa Radio** | SPI | SCK: 12, MISO: 13, MOSI: 11, CS: 10, DIO1: 14 | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
 | **NEO-6M GNSS** | UART | RX: 18, TX: 17 ($9600\text{ baud}$) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
-| **MPU6050 IMU** | I2C | SDA: 21, SCL: 22 ($400\text{ kHz}$) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
+| **MPU6050 IMU** | I2C | SDA: 21, SCL: 9 ($400\text{ kHz}$) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
 | **ERM Vibration Motor** | LEDC PWM| GPIO 4 | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
-| **Panic Button** | GPIO ISR | GPIO 0 (Active-Low, internal pull-up) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
+| **Panic Button** | GPIO ISR | GPIO 16 (Active-Low, internal pull-up) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
 | **Battery Voltage** | ADC1 | GPIO 1 ($100\text{k}\Omega / 100\text{k}\Omega$ voltage divider) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
 | **INMP441 Microphone**| I2S | SCK: 41, WS: 42, SD: 2 ($16\text{ kHz}$) | [`esp32_adapters.hpp`](file:///d:/CityGrid/my-project/project-setu/project-setu/firmware/esp32s3/include/esp32_adapters.hpp) |
 

@@ -13,6 +13,7 @@ const OUTPUT_FILE = path.join(STYLES_DIR, 'bundle.css');
 
 const CSS_FILES = [
   'main.css',
+  'hardware.css',
   'topology.css',
   'controls.css',
   'inspector.css'

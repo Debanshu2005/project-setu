@@ -214,6 +214,13 @@ jobs:
           set -o pipefail
           npm test 2>&1 | tee test_results.log
 
+      - name: Upload Hardware Explorer Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hardware-explorer-screenshots
+          path: docs/screens/hardware/*.png
+
       - name: Capture Test Failure Summary
         if: always()
         run: |

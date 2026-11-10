@@ -74,10 +74,12 @@ class SetuDashboardApp {
     this.btnModeTopology = document.getElementById('btnModeTopology');
     this.btnModeTwin = document.getElementById('btnModeTwin');
     this.btnModeAnalytics = document.getElementById('btnModeAnalytics');
+    this.btnModeHardware = document.getElementById('btnModeHardware');
     this.btnExpandAnalytics = document.getElementById('btnExpandAnalytics');
     this.containerTopologyView = document.getElementById('containerTopologyView');
     this.containerSetuTwinView = document.getElementById('containerSetuTwinView');
     this.containerAnalyticsView = document.getElementById('containerAnalyticsView');
+    this.containerHardwareView = document.getElementById('containerHardwareView');
     this.selTopologyOverlay = document.getElementById('selTopologyOverlay');
     this.tabBtnTwin = document.getElementById('tabBtnTwin');
     this.tabTwin = document.getElementById('tab-twin');
@@ -355,6 +357,7 @@ class SetuDashboardApp {
     this.wristbandTwin = null;
     this.lossWaterfall = null;
     this.setuTwin = null;
+this.hardwareExplorer = null;
     this._narratorModule = null;
   }
 
@@ -447,6 +450,40 @@ class SetuDashboardApp {
       console.error('SetuTwin3DViewer dynamic import error:', t3dErr);
     }
     return this.setuTwin;
+  }
+
+  async ensureHardwareExplorer() {
+    if (this.hardwareExplorer) return this.hardwareExplorer;
+    try {
+      const container = this.containerHardwareView;
+      if (container) {
+        const { HardwareExplorer } = await import('../components/hardware_explorer.js');
+        this.hardwareExplorer = new HardwareExplorer(container);
+        this.hardwareExplorer.onTrigger = kind => {
+          const node = this.inspector?.selectedNode || this.sim.nodes.get(1);
+          if (node) this.executeNodeTrigger(node.id, kind);
+        };
+        this.hardwareExplorer.onNavigate = target => {
+          if (target === 'twin') this.setViewMode('twin');
+          else if (target === 'topology') this.setViewMode('topology');
+          else if (target === 'analytics' || target === 'energy' || target === 'pdr') {
+            this.setViewMode('analytics');
+          } else if (target === 'timeline') {
+            this.setViewMode('topology');
+            this.updateScrubber();
+          }
+        };
+        this.hardwareExplorer.onFault = (nodeId, fault) => {
+          if (this.inspector?.onStateChange) {
+            this.inspector.onStateChange(nodeId, fault);
+          }
+        };
+        await this.hardwareExplorer.mount();
+      }
+    } catch (error) {
+      console.error('Hardware explorer dynamic import error:', error);
+    }
+    return this.hardwareExplorer;
   }
 
   initEvents() {
@@ -572,6 +609,10 @@ class SetuDashboardApp {
     this.sim.subscribe((engine, type) => {
       this.updateMetrics();
       this.updateScrubber();
+      if (this.hardwareExplorer) {
+        const selected = this.inspector?.selectedNode || this.sim.nodes.get(1) || this.sim.nodes.values().next().value;
+        this.hardwareExplorer.updateNode(selected);
+      }
       if (this.analyticsWorkspace && this.containerAnalyticsView && this.containerAnalyticsView.style.display !== 'none') {
         this.analyticsWorkspace.refresh();
       }
@@ -768,6 +809,9 @@ class SetuDashboardApp {
     }
     if (this.btnModeAnalytics) {
       this.btnModeAnalytics.addEventListener('click', () => this.setViewMode('analytics'));
+    }
+    if (this.btnModeHardware) {
+      this.btnModeHardware.addEventListener('click', () => this.setViewMode('hardware'));
     }
     if (this.btnExpandAnalytics) {
       this.btnExpandAnalytics.addEventListener('click', () => this.setViewMode('analytics'));
@@ -1213,10 +1257,12 @@ class SetuDashboardApp {
     const isTopo = (mode === 'topology');
     const isTwin = (mode === 'twin');
     const isAnalytics = (mode === 'analytics');
+    const isHardware = (mode === 'hardware');
 
     if (this.setuTwin) {
       this.setuTwin.setActive(isTwin);
     }
+    if (this.hardwareExplorer) this.hardwareExplorer.setActive(isHardware);
 
     if (this.btnModeTopology) {
       this.btnModeTopology.classList.toggle('active', isTopo);
@@ -1232,6 +1278,11 @@ class SetuDashboardApp {
       this.btnModeAnalytics.classList.toggle('active', isAnalytics);
       this.btnModeAnalytics.style.background = isAnalytics ? 'var(--bg-surface-elevated)' : 'transparent';
       this.btnModeAnalytics.style.color = isAnalytics ? '#38bdf8' : 'var(--text-muted)';
+    }
+    if (this.btnModeHardware) {
+      this.btnModeHardware.classList.toggle('active', isHardware);
+      this.btnModeHardware.style.background = isHardware ? 'var(--bg-surface-elevated)' : 'transparent';
+      this.btnModeHardware.style.color = isHardware ? '#38bdf8' : 'var(--text-muted)';
     }
 
     const mTopo = document.getElementById('mobileBtnTopo');
@@ -1251,6 +1302,7 @@ class SetuDashboardApp {
     if (this.containerAnalyticsView) {
       this.containerAnalyticsView.style.display = isAnalytics ? 'block' : 'none';
     }
+    if (this.containerHardwareView) this.containerHardwareView.style.display = isHardware ? 'block' : 'none';
 
     if (isAnalytics) {
       this.ensureAnalyticsWorkspace().then(ws => {
@@ -1280,6 +1332,14 @@ class SetuDashboardApp {
       });
     }
 
+    if (isHardware) {
+      this.ensureHardwareExplorer().then(explorer => {
+        if (!explorer) return;
+        explorer.setActive(true);
+        explorer.updateNode(this.inspector?.selectedNode || this.sim.nodes.get(1) || this.sim.nodes.values().next().value);
+      });
+    }
+
     if (isTopo && this.topo) {
       this.topo.resize();
       this.topo.render();
@@ -1290,6 +1350,9 @@ class SetuDashboardApp {
     if (!node) return;
     if (this.setuTwin) {
       this.setuTwin.selectedNodeId = node.id;
+    }
+    if (this.hardwareExplorer) {
+      this.hardwareExplorer.updateNode(node);
     }
     let lb = null;
     if (node.id !== 0) {

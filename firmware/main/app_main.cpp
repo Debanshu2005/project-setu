@@ -50,7 +50,7 @@ static setu::esp32::Esp32Clock s_clock;
 static setu::esp32::Esp32Random s_rng;
 static setu::esp32::Sx1262Radio s_radio(5 /*CS*/, 4 /*IRQ*/, 3 /*RST*/, 2 /*BUSY*/);
 static setu::esp32::Neo6mGnss s_gnss(1 /*UART1*/, 17 /*TX*/, 18 /*RX*/);
-static setu::esp32::Mpu6050DeadReckoning s_dr(21 /*SDA*/, 22 /*SCL*/);
+static setu::esp32::Mpu6050DeadReckoning s_dr(21 /*SDA*/, 9 /*SCL*/);
 static setu::esp32::BatteryMonitor s_battery(0 /*ADC1_CH0*/);
 static setu::esp32::HapticLedDriver s_haptics(13 /*MOTOR*/, 14 /*LED_R*/, 15 /*LED_G*/);
 
@@ -303,9 +303,9 @@ extern "C" void app_main() {
     ESP_LOGE(TAG, "CRITICAL FAULT: SX1262 LoRa Radio failed to initialize! Device cannot transmit SOS.");
   }
 
-  // 6. Configure GPIO Button (GPIO 0 / BOOT button, Active LOW, Both Edges)
+// 6. Configure product GPIO button (GPIO 16, Active LOW, Both Edges)
   gpio_config_t btn_conf = {};
-  btn_conf.pin_bit_mask = (1ULL << GPIO_NUM_0);
+btn_conf.pin_bit_mask = (1ULL << GPIO_NUM_16);
   btn_conf.mode = GPIO_MODE_INPUT;
   btn_conf.pull_up_en = GPIO_PULLUP_ENABLE;
   btn_conf.pull_down_en = GPIO_PULLDOWN_DISABLE;
@@ -323,7 +323,7 @@ extern "C" void app_main() {
 
   // 8. Install GPIO ISR Service and handlers
   gpio_install_isr_service(0);
-  gpio_isr_handler_add(GPIO_NUM_0, gpio_button_isr_handler, reinterpret_cast<void*>(GPIO_NUM_0));
+gpio_isr_handler_add(GPIO_NUM_16, gpio_button_isr_handler, reinterpret_cast<void*>(GPIO_NUM_16));
   gpio_isr_handler_add(GPIO_NUM_4, sx1262_dio1_isr_handler, reinterpret_cast<void*>(GPIO_NUM_4));
 
   // 9. Assemble Hardware Abstraction Layer

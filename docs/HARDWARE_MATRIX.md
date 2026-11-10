@@ -36,9 +36,9 @@ All pin assignments are mapped in `firmware/esp32s3/include/esp32_adapters.hpp` 
 | **NEO-6M GNSS** | UART TX | **GPIO 17** | ESP32 RX <- GPS TX (9600 baud NMEA) |
 | **NEO-6M GNSS** | UART RX | **GPIO 18** | ESP32 TX -> GPS RX |
 | **MPU-6050 IMU** | I2C SDA | **GPIO 21** | 4.7kΩ pull-up to 3.3V |
-| **MPU-6050 IMU** | I2C SCL | **GPIO 22** | 4.7kΩ pull-up to 3.3V |
+| **MPU-6050 IMU** | I2C SCL | **GPIO 9** | 4.7kΩ pull-up to 3.3V. GPIO 8 remains LoRa MISO. |
 | **LiPo Battery** | ADC Input | **GPIO 1 (ADC1_CH0)** | 2:1 resistive divider (100kΩ / 100kΩ, 0-2.1V ADC range) |
-| **Emergency Button** | Push Button | **GPIO 0 (BOOT / SW1)** | Active LOW with internal pull-up and dual-edge ISR |
+| **Emergency Button** | Push Button | **GPIO 16** | Active LOW product input with internal pull-up and dual-edge ISR. GPIO 0 is prototype-only BOOT. |
 | **Haptic ERM Motor** | Gate Drive | **GPIO 13** | N-channel logic level MOSFET gate (e.g. 2N7002 / AO3400) |
 | **Status LED (Red)** | Red Cathode | **GPIO 14** | Current-limiting resistor (330Ω) |
 | **Status LED (Green)**| Green Cathode | **GPIO 15** | Current-limiting resistor (330Ω) |
