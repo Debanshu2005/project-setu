@@ -271,7 +271,15 @@ try {
   await page.waitForTimeout(300);
   const protoBtn = page.locator('[data-hardware-model="prototype"]');
   const wristBtn = page.locator('[data-hardware-model="wristband"]');
-  const initialGeometries = stats.geometries;
+  // Warm both scenes once before the strict repeated-switch measurement. Three.js uploads
+  // a geometry lazily on its first visible model change in software WebGL.
+  await protoBtn.click({ force: true });
+  await wristBtn.click({ force: true });
+  await protoBtn.click({ force: true });
+  await page.waitForTimeout(200);
+  const initialGeometries = await page.evaluate(() => {
+    return window.setuApp?.hardwareExplorer?.stage?.renderer?.info?.memory?.geometries || 0;
+  });
   for (let i = 0; i < 50; i += 1) {
     if (i % 2 === 0) await protoBtn.click({ force: true });
     else await wristBtn.click({ force: true });

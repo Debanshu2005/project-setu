@@ -243,6 +243,12 @@ class Stage3d {
       l.dot.setAttribute("data-on", on);
     }
   }
+  clearAnnotations() {
+    this.#labels.forEach((label) => label.node.remove());
+    this.#labels = [];
+    this.#leaders.clear();
+    this.#svg.replaceChildren();
+  }
   /** Scene animation, called every frame with seconds and the frame time. */
   onFrame(frame) {
     this.#frame = frame;
@@ -327,9 +333,7 @@ class Stage3d {
     d.removeEventListener("pointerup", this.#up);
     d.removeEventListener("pointercancel", this.#up);
     d.removeEventListener("wheel", this.#wheel);
-    this.#labels.forEach((l) => l.node.remove());
-    this.#labels = [];
-    this.#leaders.clear();
+    this.clearAnnotations();
     this.#svg.remove();
     this.scene.traverse((o) => {
       const mesh = o;

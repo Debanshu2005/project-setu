@@ -1110,7 +1110,7 @@ body {
 
 .hardware-explorer-layout {
   display: grid;
-  grid-template-columns: minmax(180px, 260px) minmax(360px, 1fr) minmax(180px, 260px);
+  grid-template-columns: minmax(150px, 190px) minmax(440px, 1fr) minmax(150px, 190px);
   align-items: stretch;
   gap: 12px;
   min-width: 0;
@@ -1207,7 +1207,8 @@ body {
 .hardware-stage {
   position: relative;
   width: 100%;
-  height: 100%;
+  height: min(100%, 560px);
+  align-self: center;
   min-height: 400px;
   overflow: hidden;
   border: 1px solid rgba(45, 212, 191, 0.3);
