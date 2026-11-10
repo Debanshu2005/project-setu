@@ -1788,19 +1788,34 @@ export class SetuTwin3DViewer {
   clearTransientRadioVisuals() {
     if (!this.scene) return;
     for (const p of this.activePulses) {
-      if (p.mesh) this.scene.remove(p.mesh);
-      if (p.badge) this.scene.remove(p.badge);
+      if (p.mesh) {
+        disposeThreeObject(p.mesh);
+        this.scene.remove(p.mesh);
+      }
+      if (p.badge) {
+        disposeThreeObject(p.badge);
+        this.scene.remove(p.badge);
+      }
     }
     this.activePulses = [];
 
     for (const r of this.airtimeRings) {
-      if (r.mesh) this.scene.remove(r.mesh);
+      if (r.mesh) {
+        disposeThreeObject(r.mesh);
+        this.scene.remove(r.mesh);
+      }
     }
     this.airtimeRings = [];
 
     for (const f of this.dropFlashes) {
-      if (f.mesh) this.scene.remove(f.mesh);
-      if (f.badge) this.scene.remove(f.badge);
+      if (f.mesh) {
+        disposeThreeObject(f.mesh);
+        this.scene.remove(f.mesh);
+      }
+      if (f.badge) {
+        disposeThreeObject(f.badge);
+        this.scene.remove(f.badge);
+      }
     }
     this.dropFlashes = [];
 
@@ -1998,8 +2013,14 @@ export class SetuTwin3DViewer {
 
       if (this.activePulses.length >= 6) {
         const oldest = this.activePulses.shift();
-        if (oldest.mesh) this.scene.remove(oldest.mesh);
-        if (oldest.badge) this.scene.remove(oldest.badge);
+        if (oldest.mesh) {
+          disposeThreeObject(oldest.mesh);
+          this.scene.remove(oldest.mesh);
+        }
+        if (oldest.badge) {
+          disposeThreeObject(oldest.badge);
+          this.scene.remove(oldest.badge);
+        }
       }
       this.activePulses.push({
         fromId,
@@ -2442,8 +2463,14 @@ export class SetuTwin3DViewer {
         const p = this.activePulses[i];
         p.progress += (p.speed || 1.8) * delta;
         if (p.progress >= 1.0) {
-          if (p.mesh) this.scene.remove(p.mesh);
-          if (p.badge) this.scene.remove(p.badge);
+          if (p.mesh) {
+            disposeThreeObject(p.mesh);
+            this.scene.remove(p.mesh);
+          }
+          if (p.badge) {
+            disposeThreeObject(p.badge);
+            this.scene.remove(p.badge);
+          }
           this.activePulses.splice(i, 1);
         } else {
           const curX = p.p1.x + (p.p2.x - p.p1.x) * p.progress;

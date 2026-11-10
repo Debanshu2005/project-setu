@@ -2335,9 +2335,7 @@ this.hardwareExplorer = null;
       if (this.setuTwin) {
         this.setuTwin.setNodes(Array.from(this.sim.nodes.values()));
         this.setuTwin.setObstacles(this.currentScenario ? (this.currentScenario.obstacles || []) : []);
-        if (this.currentScenario && this.currentScenario.environment) {
-          this.setuTwin.setEnvironment(this.currentScenario.environment);
-        }
+        this.setuTwin.setEnvironment(this.currentScenario?.environment || null);
         if (this.sim.links) this.setuTwin.setLinks(this.sim.links);
         this.setuTwin.fitCameraToScene();
       }

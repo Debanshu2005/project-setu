@@ -194,11 +194,29 @@ async function runTests() {
     // -------------------------------------------------------------------------
     console.log('\n[4/4] Executing 10 Consecutive Scenario Switches to Verify Disposal...');
 
+    // Helper to load scenario and guarantee a WebGL render pass has executed
+    const switchScenarioAndRender = async (scId, waitMs = 250) => {
+      await page.evaluate(async (id) => {
+        await window.setuApp.loadScenario(id);
+        const twin = window.setuApp?.setuTwin;
+        if (twin) {
+          twin.setActive(true);
+          if (twin.renderer && twin.scene && twin.camera) {
+            if (typeof twin.updateThree === 'function') {
+              twin.updateThree(0.016, performance.now());
+            }
+            twin.renderer.render(twin.scene, twin.camera);
+          }
+        }
+      }, scId);
+      if (waitMs > 0) {
+        await page.waitForTimeout(waitMs);
+      }
+    };
+
     // Warm up one cycle so all unique node textures and shader programs are compiled
-    await page.evaluate(id => window.setuApp.loadScenario(id), 'gps_denied_rescue');
-    await page.waitForTimeout(300);
-    await page.evaluate(id => window.setuApp.loadScenario(id), 'collapse_site_demo');
-    await page.waitForTimeout(300);
+    await switchScenarioAndRender('gps_denied_rescue', 300);
+    await switchScenarioAndRender('collapse_site_demo', 300);
 
     const baselineMemory = await page.evaluate(() => {
       const twin = window.setuApp?.setuTwin;
@@ -220,13 +238,11 @@ async function runTests() {
     // Perform 10 consecutive switches
     for (let i = 0; i < 10; i++) {
       const scenarioTarget = (i % 2 === 0) ? 'gps_denied_rescue' : 'collapse_site_demo';
-      await page.evaluate(id => window.setuApp.loadScenario(id), scenarioTarget);
-      await page.waitForTimeout(200);
+      await switchScenarioAndRender(scenarioTarget, 200);
     }
 
     // Ensure we settle on initial baseline scenario
-    await page.evaluate(id => window.setuApp.loadScenario(id), 'collapse_site_demo');
-    await page.waitForTimeout(400);
+    await switchScenarioAndRender('collapse_site_demo', 400);
 
     const postSwitchMemory = await page.evaluate(() => {
       const twin = window.setuApp?.setuTwin;
