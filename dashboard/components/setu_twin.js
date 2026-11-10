@@ -285,8 +285,14 @@ export class SetuTwin3DViewer {
     this.buildSkyDome(t);
     this.buildGroundPlane(t);
 
+    this.onWindowResize = () => this.scheduleResize();
     if (typeof window !== 'undefined') {
-      window.addEventListener('resize', () => this.resize());
+      if ('ResizeObserver' in window && this.mountPoint) {
+        this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
+        this.resizeObserver.observe(this.mountPoint);
+      } else {
+        window.addEventListener('resize', this.onWindowResize, { passive: true });
+      }
     }
   }
 
@@ -584,6 +590,14 @@ export class SetuTwin3DViewer {
       e.preventDefault();
       const zoomFactor = e.deltaY < 0 ? 1.1 : 0.9;
       this.zoom2D = Math.max(0.3, Math.min(4.0, this.zoom2D * zoomFactor));
+    });
+  }
+
+  scheduleResize() {
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = null;
+      this.resizeCanvas();
     });
   }
 
@@ -2318,7 +2332,8 @@ export class SetuTwin3DViewer {
       if (isAnyKeyDown) {
         needMore = true;
         const moveSpeed = 140 * delta;
-        const dir = new t.Vector3();
+        if (!this._reusableVec3A) this._reusableVec3A = new t.Vector3();
+        const dir = this._reusableVec3A.set(0, 0, 0);
         if (this.keys.w) dir.z -= 1;
         if (this.keys.s) dir.z += 1;
         if (this.keys.a) dir.x -= 1;
@@ -2335,7 +2350,8 @@ export class SetuTwin3DViewer {
       if (node && this.controls) {
         needMore = true;
         const p = this.to3DCoords(node.x, node.y, node.elevation || 0);
-        this.controls.target.lerp(new t.Vector3(p.x, p.y + 6, p.z), 0.1);
+        if (!this._reusableVec3B) this._reusableVec3B = new t.Vector3();
+        this.controls.target.lerp(this._reusableVec3B.set(p.x, p.y + 6, p.z), 0.1);
 
         // Exterior bounds clamping: camera must stay outside building perimeter
         const relCamX = this.camera.position.x - p.x;
@@ -2625,6 +2641,20 @@ export class SetuTwin3DViewer {
     if (this._observer) {
       this._observer.disconnect();
       this._observer = null;
+    }
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    if (this.onWindowResize && typeof window !== 'undefined') {
+      window.removeEventListener('resize', this.onWindowResize);
+      this.onWindowResize = null;
+    }
+    if (this._resizeRaf) {
+      if (typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(this._resizeRaf);
+      }
+      this._resizeRaf = null;
     }
     if (this._onVisibilityChange && typeof document !== 'undefined') {
       document.removeEventListener('visibilitychange', this._onVisibilityChange);

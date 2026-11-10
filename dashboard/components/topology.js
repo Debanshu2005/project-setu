@@ -35,7 +35,16 @@ export class TopologyVisualizer {
 
     this.initEvents();
     this.resize();
-    window.addEventListener('resize', () => this.resize());
+
+    this.onWindowResize = () => this.scheduleResize();
+    if (typeof window !== 'undefined') {
+      if ('ResizeObserver' in window && this.canvas && this.canvas.parentElement) {
+        this.resizeObserver = new ResizeObserver(() => this.scheduleResize());
+        this.resizeObserver.observe(this.canvas.parentElement);
+      } else {
+        window.addEventListener('resize', this.onWindowResize, { passive: true });
+      }
+    }
 
     // Connect to simulation ticks
     this.sim.subscribe((engine, type) => {
@@ -151,6 +160,28 @@ export class TopologyVisualizer {
       this.scale *= zoomFactor;
       this.render();
     }, { passive: false });
+  }
+
+  scheduleResize() {
+    if (this._resizeRaf) cancelAnimationFrame(this._resizeRaf);
+    this._resizeRaf = requestAnimationFrame(() => {
+      this._resizeRaf = null;
+      this.resize();
+    });
+  }
+
+  destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
+    if (typeof window !== 'undefined' && this.onWindowResize) {
+      window.removeEventListener('resize', this.onWindowResize);
+    }
+    if (this._resizeRaf) {
+      cancelAnimationFrame(this._resizeRaf);
+      this._resizeRaf = null;
+    }
   }
 
   resize() {

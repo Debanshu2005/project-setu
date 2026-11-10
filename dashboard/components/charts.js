@@ -8,12 +8,25 @@ export class ChartsComponent {
 
     this.showContractModal = false;
 
+    this._needsRender = false;
+
     this.sim.subscribe((engine, type) => {
       this.render();
     });
   }
 
+  onTabActivated() {
+    if (this._needsRender) {
+      this.render();
+    }
+  }
+
   render() {
+    if (this.container && (this.container.offsetParent === null || this.container.style.display === 'none')) {
+      this._needsRender = true;
+      return;
+    }
+    this._needsRender = false;
     const metrics = this.sim.getMetrics();
     const eventIndices = metrics.eventIndices || new Map();
 

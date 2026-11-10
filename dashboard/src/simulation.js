@@ -116,6 +116,9 @@ export class SimulationEngine {
     this.lastFrameTime = 0;
     this.animationId = null;
 
+    this.keyframes = [];
+    this.currentEventIndex = -1;
+
     // Listeners
     this.listeners = new Set();
 
@@ -199,13 +202,29 @@ export class SimulationEngine {
         const initDr = ev.dr_on !== undefined ? ev.dr_on
           : (prev && prev.initial_dr_on !== undefined ? prev.initial_dr_on : true);
 
+        const initX = typeof ev.x === 'number' ? ev.x : 0;
+        const initY = typeof ev.y === 'number' ? ev.y : 0;
+        const initLat = typeof ev.lat_e6 === 'number' ? ev.lat_e6 : 0;
+        const initLon = typeof ev.lon_e6 === 'number' ? ev.lon_e6 : 0;
+
         this.nodes.set(id, {
           id: id,
           role: normRole,
-          x: typeof ev.x === 'number' ? ev.x : 0,
-          y: typeof ev.y === 'number' ? ev.y : 0,
-          lat_e6: typeof ev.lat_e6 === 'number' ? ev.lat_e6 : 0,
-          lon_e6: typeof ev.lon_e6 === 'number' ? ev.lon_e6 : 0,
+          x: initX,
+          initial_x: initX,
+          y: initY,
+          initial_y: initY,
+          lat_e6: initLat,
+          initial_lat_e6: initLat,
+          gt_lat_e6: initLat,
+          lon_e6: initLon,
+          initial_lon_e6: initLon,
+          gt_lon_e6: initLon,
+          est_lat_e6: null,
+          est_lon_e6: null,
+          pos_error_m: null,
+          pos_mae_m: null,
+          pos_rmse_m: null,
           battery: initBatt,
           initial_battery: initBatt,
           energy_consumed_mah: typeof ev.energy_consumed_mah === 'number' ? ev.energy_consumed_mah : (typeof ev.energy_mah === 'number' ? ev.energy_mah : 0.0),
@@ -286,16 +305,29 @@ export class SimulationEngine {
       this.meta.duration = maxTime || 30000;
     }
 
+    // Ensure events are chronologically sorted for binary search navigation
+    this.events.sort((a, b) => (typeof a.t === 'number' ? a.t : 0) - (typeof b.t === 'number' ? b.t : 0));
+
+    // Precompute keyframes for O(log N) timeline seeking
+    this.buildKeyframes();
+
     this.recalculateState(0);
     this.notify('load');
   }
 
-  recalculateState(targetTime) {
-    targetTime = Math.max(0, Math.min(this.meta.duration, targetTime));
-    this.currentTime = targetTime;
-
-    // Reset all nodes to configured base state
+  resetToBaseState() {
     for (const [, node] of this.nodes) {
+      node.x = node.initial_x !== undefined ? node.initial_x : (typeof node.x === 'number' ? node.x : 0);
+      node.y = node.initial_y !== undefined ? node.initial_y : (typeof node.y === 'number' ? node.y : 0);
+      node.lat_e6 = node.initial_lat_e6 !== undefined ? node.initial_lat_e6 : (typeof node.lat_e6 === 'number' ? node.lat_e6 : 0);
+      node.lon_e6 = node.initial_lon_e6 !== undefined ? node.initial_lon_e6 : (typeof node.lon_e6 === 'number' ? node.lon_e6 : 0);
+      node.gt_lat_e6 = node.initial_lat_e6 !== undefined ? node.initial_lat_e6 : (typeof node.lat_e6 === 'number' ? node.lat_e6 : 0);
+      node.gt_lon_e6 = node.initial_lon_e6 !== undefined ? node.initial_lon_e6 : (typeof node.lon_e6 === 'number' ? node.lon_e6 : 0);
+      node.est_lat_e6 = null;
+      node.est_lon_e6 = null;
+      node.pos_error_m = null;
+      node.pos_mae_m = null;
+      node.pos_rmse_m = null;
       node.online = typeof node.initial_online === 'boolean' ? node.initial_online : true;
       node.battery = typeof node.initial_battery === 'number' ? node.initial_battery : 100;
       node.energy_consumed_mah = 0.0;
@@ -311,182 +343,377 @@ export class SimulationEngine {
 
     for (const link of this.links) {
       link.blocked = false;
+      const lk = `${Math.min(link.a, link.b)}_${Math.max(link.a, link.b)}`;
+      if (this.initialLinkDistances && this.initialLinkDistances.has(lk)) {
+        link.dist = this.initialLinkDistances.get(lk);
+      }
     }
 
     this.alerts = [];
     this.activePackets = [];
+    this.currentEventIndex = -1;
+  }
 
-    // Replay events up to currentTime
-    for (const ev of this.events) {
-      if (ev.t > targetTime) break;
-      const n = this.nodes.get(ev.node);
+  snapshotState(eventIndex, time) {
+    const nodeSnap = new Map();
+    for (const [id, n] of this.nodes) {
+      nodeSnap.set(id, {
+        online: n.online,
+        battery: n.battery,
+        energy_consumed_mah: n.energy_consumed_mah,
+        gnss_on: n.gnss_on,
+        dr_on: n.dr_on,
+        motion_profile: n.motion_profile,
+        active_sos: n.active_sos,
+        acked: n.acked,
+        gave_up: n.gave_up,
+        hazard: n.hazard,
+        x: n.x,
+        y: n.y,
+        lat_e6: n.lat_e6,
+        lon_e6: n.lon_e6,
+        gt_lat_e6: n.gt_lat_e6,
+        gt_lon_e6: n.gt_lon_e6,
+        est_lat_e6: n.est_lat_e6,
+        est_lon_e6: n.est_lon_e6,
+        pos_error_m: n.pos_error_m,
+        pos_mae_m: n.pos_mae_m,
+        pos_rmse_m: n.pos_rmse_m,
+        stats: { ...n.stats }
+      });
+    }
 
-      switch (ev.ev) {
-        case 'motion_profile':
-          if (n && ev.profile) {
-            n.motion_profile = ev.profile;
+    const linkSnap = this.links.map(l => ({
+      a: l.a,
+      b: l.b,
+      rssi: l.rssi,
+      dist: l.dist,
+      blocked: l.blocked
+    }));
+
+    return {
+      t: time,
+      eventIndex: eventIndex,
+      nodes: nodeSnap,
+      links: linkSnap,
+      alerts: this.alerts.slice()
+    };
+  }
+
+  restoreState(snapshot) {
+    for (const [id, snap] of snapshot.nodes) {
+      const n = this.nodes.get(id);
+      if (n) {
+        n.online = snap.online;
+        n.battery = snap.battery;
+        n.energy_consumed_mah = snap.energy_consumed_mah;
+        n.gnss_on = snap.gnss_on;
+        n.dr_on = snap.dr_on;
+        n.motion_profile = snap.motion_profile;
+        n.active_sos = snap.active_sos;
+        n.acked = snap.acked;
+        n.gave_up = snap.gave_up;
+        n.hazard = snap.hazard;
+        n.x = snap.x;
+        n.y = snap.y;
+        n.lat_e6 = snap.lat_e6;
+        n.lon_e6 = snap.lon_e6;
+        n.gt_lat_e6 = snap.gt_lat_e6;
+        n.gt_lon_e6 = snap.gt_lon_e6;
+        n.est_lat_e6 = snap.est_lat_e6;
+        n.est_lon_e6 = snap.est_lon_e6;
+        n.pos_error_m = snap.pos_error_m;
+        n.pos_mae_m = snap.pos_mae_m;
+        n.pos_rmse_m = snap.pos_rmse_m;
+        n.stats.tx = snap.stats.tx;
+        n.stats.rx = snap.stats.rx;
+        n.stats.drop = snap.stats.drop;
+        n.stats.dedup = snap.stats.dedup;
+        n.stats.suppressed = snap.stats.suppressed;
+        n.stats.retries = snap.stats.retries;
+      }
+    }
+
+    for (let i = 0; i < this.links.length && i < snapshot.links.length; i++) {
+      this.links[i].rssi = snapshot.links[i].rssi;
+      this.links[i].dist = snapshot.links[i].dist;
+      this.links[i].blocked = snapshot.links[i].blocked;
+    }
+
+    this.alerts = snapshot.alerts.slice();
+    this.currentEventIndex = snapshot.eventIndex;
+  }
+
+  buildKeyframes() {
+    this.keyframes = [];
+    this.resetToBaseState();
+    const intervalMs = 1000;
+    let nextKeyframeTime = 0;
+
+    this.keyframes.push(this.snapshotState(-1, 0));
+    nextKeyframeTime = intervalMs;
+
+    for (let i = 0; i < this.events.length; i++) {
+      const ev = this.events[i];
+      const evTime = typeof ev.t === 'number' ? ev.t : 0;
+
+      while (evTime >= nextKeyframeTime) {
+        this.keyframes.push(this.snapshotState(i - 1, nextKeyframeTime));
+        nextKeyframeTime += intervalMs;
+      }
+
+      this.applyEvent(ev, evTime, false);
+    }
+
+    this.keyframes.push(this.snapshotState(this.events.length - 1, this.meta.duration || 30000));
+    this.resetToBaseState();
+  }
+
+  findEventIndex(targetTime) {
+    const evs = this.events;
+    let low = 0;
+    let high = evs.length - 1;
+    let result = -1;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      const t = typeof evs[mid].t === 'number' ? evs[mid].t : 0;
+      if (t <= targetTime) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result;
+  }
+
+  findKeyframeIndex(targetTime) {
+    const kfs = this.keyframes;
+    if (!kfs || kfs.length === 0) return -1;
+    let low = 0;
+    let high = kfs.length - 1;
+    let result = 0;
+    while (low <= high) {
+      const mid = (low + high) >>> 1;
+      if (kfs[mid].t <= targetTime) {
+        result = mid;
+        low = mid + 1;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return result;
+  }
+
+  applyEvent(ev, targetTime, recordActive = true) {
+    const n = this.nodes.get(ev.node);
+
+    switch (ev.ev) {
+      case 'motion_profile':
+        if (n && ev.profile) {
+          n.motion_profile = ev.profile;
+        }
+        break;
+      case 'battery':
+        if (n) {
+          if (typeof ev.battery === 'number') n.battery = ev.battery;
+          if (typeof ev.mah === 'number') n.energy_consumed_mah = ev.mah;
+          if (n.battery === 0) n.online = false;
+        }
+        break;
+      case 'node_kill':
+        if (n) n.online = false;
+        break;
+      case 'node_revive':
+        if (n) n.online = true;
+        break;
+      case 'gps_off':
+        if (n) n.gnss_on = false;
+        break;
+      case 'gps_on':
+        if (n) n.gnss_on = true;
+        break;
+      case 'dr_off':
+        if (n) n.dr_on = false;
+        break;
+      case 'dr_on':
+        if (n) n.dr_on = true;
+        break;
+      case 'link_block': {
+        const l = this.links.find(lk => (lk.a === ev.node && lk.b === ev.to) || (lk.a === ev.to && lk.b === ev.node));
+        if (l) l.blocked = true;
+        break;
+      }
+      case 'link_unblock': {
+        const l = this.links.find(lk => (lk.a === ev.node && lk.b === ev.to) || (lk.a === ev.to && lk.b === ev.node));
+        if (l) l.blocked = false;
+        break;
+      }
+      case 'originate':
+        if (n) {
+          n.active_sos = true;
+          n.acked = false;
+          n.gave_up = false;
+          n.hazard = ev.hazard;
+        }
+        break;
+      case 'ack_rx':
+        if (n) {
+          n.active_sos = false;
+          n.acked = true;
+          n.gave_up = false;
+        }
+        break;
+      case 'gave_up':
+        if (n) {
+          n.active_sos = false;
+          n.gave_up = true;
+        }
+        break;
+      case 'retry':
+        if (n) n.stats.retries++;
+        break;
+      case 'tx':
+        if (n) {
+          n.stats.tx++;
+          if (typeof ev.energy_mah === 'number') {
+            n.energy_consumed_mah = ev.energy_mah;
+          } else if (typeof ev.mah === 'number') {
+            n.energy_consumed_mah = ev.mah;
           }
-          break;
-        case 'battery':
-          if (n && typeof ev.battery === 'number') {
+          if (typeof ev.battery === 'number') {
             n.battery = ev.battery;
             if (n.battery === 0) n.online = false;
           }
-          break;
-        case 'node_kill':
-          if (n) n.online = false;
-          break;
-        case 'node_revive':
-          if (n) n.online = true;
-          break;
-        case 'gps_off':
-          if (n) n.gnss_on = false;
-          break;
-        case 'gps_on':
-          if (n) n.gnss_on = true;
-          break;
-        case 'dr_off':
-          if (n) n.dr_on = false;
-          break;
-        case 'dr_on':
-          if (n) n.dr_on = true;
-          break;
-        case 'link_block': {
-          const l = this.links.find(lk => (lk.a === ev.node && lk.b === ev.to) || (lk.a === ev.to && lk.b === ev.node));
-          if (l) l.blocked = true;
-          break;
         }
-        case 'link_unblock': {
-          const l = this.links.find(lk => (lk.a === ev.node && lk.b === ev.to) || (lk.a === ev.to && lk.b === ev.node));
-          if (l) l.blocked = false;
-          break;
+        if (recordActive && targetTime >= ev.t && targetTime < ev.t + (ev.air || 62)) {
+          this.activePackets.push(ev);
         }
-        case 'originate':
-          if (n) {
-            n.active_sos = true;
-            n.acked = false;
-            n.gave_up = false;
-            n.hazard = ev.hazard;
+        break;
+      case 'rx': {
+        const rxId = ev.node !== undefined ? ev.node : ev.to;
+        const rxNode = this.nodes.get(rxId);
+        if (rxNode) {
+          rxNode.stats.rx++;
+          if (typeof ev.energy_mah === 'number') {
+            rxNode.energy_consumed_mah = ev.energy_mah;
+          } else if (typeof ev.mah === 'number') {
+            rxNode.energy_consumed_mah = ev.mah;
           }
-          break;
-        case 'ack_rx':
-          if (n) {
-            n.active_sos = false;
-            n.acked = true;
-            n.gave_up = false;
+          if (typeof ev.battery === 'number') {
+            rxNode.battery = ev.battery;
+            if (rxNode.battery === 0) rxNode.online = false;
           }
-          break;
-        case 'gave_up':
-          if (n) {
-            n.active_sos = false;
-            n.gave_up = true;
-          }
-          break;
-        case 'retry':
-          if (n) n.stats.retries++;
-          break;
-        case 'tx':
-          if (n) {
-            n.stats.tx++;
-            if (typeof ev.energy_mah === 'number') {
-              n.energy_consumed_mah = ev.energy_mah;
-            } else if (typeof ev.mah === 'number') {
-              n.energy_consumed_mah = ev.mah;
-            }
-            if (typeof ev.battery === 'number') {
-              n.battery = ev.battery;
-              if (n.battery === 0) n.online = false;
-            }
-          }
-          // If this transmission is currently underway at targetTime
-          if (targetTime >= ev.t && targetTime < ev.t + (ev.air || 62)) {
-            this.activePackets.push(ev);
-          }
-          break;
-        case 'rx': {
-          const rxId = ev.node !== undefined ? ev.node : ev.to;
-          const rxNode = this.nodes.get(rxId);
-          if (rxNode) {
-            rxNode.stats.rx++;
-            if (typeof ev.energy_mah === 'number') {
-              rxNode.energy_consumed_mah = ev.energy_mah;
-            } else if (typeof ev.mah === 'number') {
-              rxNode.energy_consumed_mah = ev.mah;
-            }
-            if (typeof ev.battery === 'number') {
-              rxNode.battery = ev.battery;
-              if (rxNode.battery === 0) rxNode.online = false;
-            }
-          }
-          break;
         }
-        case 'battery':
-          if (n) {
-            if (typeof ev.battery === 'number') n.battery = ev.battery;
-            if (typeof ev.mah === 'number') n.energy_consumed_mah = ev.mah;
-            if (n.battery === 0) n.online = false;
+        break;
+      }
+      case 'battery_depleted':
+        if (n) {
+          n.battery = 0;
+          n.online = false;
+        }
+        break;
+      case 'drop':
+        if (n) n.stats.drop++;
+        break;
+      case 'dedup_drop':
+        if (n) n.stats.dedup++;
+        break;
+      case 'relay_suppressed':
+        if (n) n.stats.suppressed++;
+        break;
+      case 'alert':
+        this.alerts.push(ev);
+        break;
+      case 'reposition':
+        if (n) {
+          n.x = typeof ev.x === 'number' ? ev.x : n.x;
+          n.y = typeof ev.y === 'number' ? ev.y : n.y;
+          if (typeof ev.lat_e6 === 'number') {
+            n.lat_e6 = ev.lat_e6;
+            n.gt_lat_e6 = ev.lat_e6;
+          } else {
+            const geo = xyToE6(n.x, n.y);
+            n.lat_e6 = geo.lat_e6;
+            n.gt_lat_e6 = geo.lat_e6;
           }
-          break;
-        case 'battery_depleted':
-          if (n) {
-            n.battery = 0;
-            n.online = false;
+          if (typeof ev.lon_e6 === 'number') {
+            n.lon_e6 = ev.lon_e6;
+            n.gt_lon_e6 = ev.lon_e6;
+          } else {
+            const geo = xyToE6(n.x, n.y);
+            n.lon_e6 = geo.lon_e6;
+            n.gt_lon_e6 = geo.lon_e6;
           }
-          break;
-        case 'drop':
-          if (n) n.stats.drop++;
-          break;
-        case 'dedup_drop':
-          if (n) n.stats.dedup++;
-          break;
-        case 'relay_suppressed':
-          if (n) n.stats.suppressed++;
-          break;
-        case 'alert':
-          this.alerts.push(ev);
-          break;
-        case 'reposition':
-          if (n) {
-            n.x = typeof ev.x === 'number' ? ev.x : n.x;
-            n.y = typeof ev.y === 'number' ? ev.y : n.y;
-            if (typeof ev.lat_e6 === 'number') {
-              n.lat_e6 = ev.lat_e6;
-              n.gt_lat_e6 = ev.lat_e6;
-            } else {
-              const geo = xyToE6(n.x, n.y);
-              n.lat_e6 = geo.lat_e6;
-              n.gt_lat_e6 = geo.lat_e6;
-            }
-            if (typeof ev.lon_e6 === 'number') {
-              n.lon_e6 = ev.lon_e6;
-              n.gt_lon_e6 = ev.lon_e6;
-            } else {
-              const geo = xyToE6(n.x, n.y);
-              n.lon_e6 = geo.lon_e6;
-              n.gt_lon_e6 = geo.lon_e6;
-            }
-            if (Number.isFinite(n.est_lat_e6) && Number.isFinite(n.est_lon_e6)) {
-              n.pos_error_m = computePositionErrorM(n.est_lat_e6, n.est_lon_e6, n.gt_lat_e6, n.gt_lon_e6);
-            }
+          if (Number.isFinite(n.est_lat_e6) && Number.isFinite(n.est_lon_e6)) {
+            n.pos_error_m = computePositionErrorM(n.est_lat_e6, n.est_lon_e6, n.gt_lat_e6, n.gt_lon_e6);
           }
-          break;
-        case 'estimator_reset':
-          if (n) {
-            n.est_lat_e6 = n.gt_lat_e6 ?? n.lat_e6;
-            n.est_lon_e6 = n.gt_lon_e6 ?? n.lon_e6;
-            n.pos_error_m = 0.0;
-            n.pos_mae_m = null;
-            n.pos_rmse_m = null;
-          }
-          break;
-        case 'link_update': {
-          const lk = this.links.find(l => (l.a === ev.a && l.b === ev.b) || (l.a === ev.b && l.b === ev.a));
-          if (lk) {
-            if (typeof ev.rssi === 'number') lk.rssi = ev.rssi;
-            if (typeof ev.dist === 'number') lk.dist = ev.dist;
-            if (ev.in_range !== undefined) lk.blocked = !ev.in_range;
-          }
-          break;
+        }
+        break;
+      case 'estimator_reset':
+        if (n) {
+          n.est_lat_e6 = n.gt_lat_e6 ?? n.lat_e6;
+          n.est_lon_e6 = n.gt_lon_e6 ?? n.lon_e6;
+          n.pos_error_m = 0.0;
+          n.pos_mae_m = null;
+          n.pos_rmse_m = null;
+        }
+        break;
+      case 'link_update': {
+        const lk = this.links.find(l => (l.a === ev.a && l.b === ev.b) || (l.a === ev.b && l.b === ev.a));
+        if (lk) {
+          if (typeof ev.rssi === 'number') lk.rssi = ev.rssi;
+          if (typeof ev.dist === 'number') lk.dist = ev.dist;
+          if (ev.in_range !== undefined) lk.blocked = !ev.in_range;
+        }
+        break;
+      }
+    }
+  }
+
+  recalculateState(targetTime) {
+    targetTime = Math.max(0, Math.min(this.meta.duration, targetTime));
+    this.currentTime = targetTime;
+
+    const targetEventIdx = this.findEventIndex(targetTime);
+
+    // Fast path: linear playback forward step with small delta
+    if (this.currentEventIndex !== undefined &&
+        this.currentEventIndex >= -1 &&
+        targetEventIdx >= this.currentEventIndex &&
+        (targetEventIdx - this.currentEventIndex) < 50) {
+      for (let i = this.currentEventIndex + 1; i <= targetEventIdx; i++) {
+        this.applyEvent(this.events[i], targetTime, false);
+      }
+    } else {
+      // Seek path: binary search nearest keyframe and replay delta
+      if (this.keyframes && this.keyframes.length > 0) {
+        const kfIdx = this.findKeyframeIndex(targetTime);
+        const kf = this.keyframes[kfIdx];
+        this.restoreState(kf);
+        for (let i = kf.eventIndex + 1; i <= targetEventIdx; i++) {
+          this.applyEvent(this.events[i], targetTime, false);
+        }
+      } else {
+        this.resetToBaseState();
+        for (let i = 0; i <= targetEventIdx; i++) {
+          this.applyEvent(this.events[i], targetTime, false);
+        }
+      }
+    }
+
+    this.currentEventIndex = targetEventIdx;
+
+    // Collect active packets in transmission window
+    this.activePackets = [];
+    const airtimeWindowStart = Math.max(0, targetTime - 3000);
+    const startAirIdx = Math.max(0, this.findEventIndex(airtimeWindowStart));
+    for (let i = startAirIdx; i <= targetEventIdx; i++) {
+      const ev = this.events[i];
+      if (ev.ev === 'tx') {
+        const air = ev.air || 62;
+        if (targetTime >= ev.t && targetTime < ev.t + air) {
+          this.activePackets.push(ev);
         }
       }
     }

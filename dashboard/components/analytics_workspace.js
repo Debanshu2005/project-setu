@@ -41,27 +41,69 @@ export class AnalyticsWorkspaceComponent {
 
     // Chart instances
     this.charts = {};
+    this.activeCharts = [];
+    this._needsRefresh = false;
 
     this.sim.subscribe((engine, type) => {
       this.refresh();
     });
 
+    let resizeTimer = null;
+    let resizeRaf = null;
     this.onWindowResize = () => {
-      if (this.container && this.container.offsetParent !== null) {
-        this.renderDomainView();
-      }
+      if (resizeTimer) clearTimeout(resizeTimer);
+      if (resizeRaf) cancelAnimationFrame(resizeRaf);
+      resizeTimer = setTimeout(() => {
+        resizeRaf = requestAnimationFrame(() => {
+          if (this.container && this.container.offsetParent !== null && this.container.style.display !== 'none') {
+            this.renderDomainView();
+          }
+        });
+      }, 100);
     };
+
     if (typeof window !== 'undefined') {
-      window.addEventListener('resize', this.onWindowResize);
+      if ('ResizeObserver' in window && this.container) {
+        this.resizeObserver = new ResizeObserver(() => {
+          this.onWindowResize();
+        });
+        this.resizeObserver.observe(this.container);
+      } else {
+        window.addEventListener('resize', this.onWindowResize, { passive: true });
+      }
     }
 
     this.initLayout();
   }
 
+  destroyActiveCharts() {
+    if (this.activeCharts && Array.isArray(this.activeCharts)) {
+      for (const chart of this.activeCharts) {
+        if (chart && typeof chart.destroy === 'function') {
+          chart.destroy();
+        }
+      }
+    }
+    this.activeCharts = [];
+  }
+
+  trackChart(chart) {
+    if (chart) {
+      if (!this.activeCharts) this.activeCharts = [];
+      this.activeCharts.push(chart);
+    }
+    return chart;
+  }
+
   destroy() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
     if (typeof window !== 'undefined' && this.onWindowResize) {
       window.removeEventListener('resize', this.onWindowResize);
     }
+    this.destroyActiveCharts();
   }
 
   setDomain(domain) {
@@ -292,10 +334,21 @@ export class AnalyticsWorkspaceComponent {
   }
 
   refresh() {
+    if (this.container && (this.container.offsetParent === null || this.container.style.display === 'none')) {
+      this._needsRefresh = true;
+      return;
+    }
+    this._needsRefresh = false;
     this.updateNodeFilterOptions();
     this.syncToolbarButtonStates();
     this.renderKpiRibbon();
     this.renderDomainView();
+  }
+
+  onTabActivated() {
+    if (this._needsRefresh) {
+      this.refresh();
+    }
   }
 
   syncToolbarButtonStates() {
@@ -366,6 +419,8 @@ export class AnalyticsWorkspaceComponent {
   renderDomainView() {
     const area = this.container.querySelector('#analyticsPlotArea');
     if (!area) return;
+
+    this.destroyActiveCharts();
 
     // Reset workspace vertical scroll to top on every domain switch
     const root = this.container.querySelector('.analytics-workspace-root');
@@ -630,7 +685,7 @@ export class AnalyticsWorkspaceComponent {
     // Render Plot 3A
     const canvas3A = container.querySelector('#canvasRssiDistance');
     if (canvas3A) {
-      const plot3A = new ScientificScatterPlot(canvas3A, {
+      const plot3A = this.trackChart(new ScientificScatterPlot(canvas3A, {
         title: 'Simulated RSSI vs Distance Model',
         xLabel: 'Distance (m)',
         yLabel: 'Received Signal Strength (dBm)',
@@ -640,14 +695,14 @@ export class AnalyticsWorkspaceComponent {
         thresholds: [
           { y: sens, label: `Demodulation Sensitivity (SF${sf})`, color: '#ef4444' }
         ]
-      });
+      }));
       plot3A.setData(rssiPoints);
     }
 
     // Render Plot 3B
     const canvas3B = container.querySelector('#canvasPathLossDistance');
     if (canvas3B) {
-      const plot3B = new ScientificScatterPlot(canvas3B, {
+      const plot3B = this.trackChart(new ScientificScatterPlot(canvas3B, {
         title: 'Observed Path Loss vs Theory Curve',
         xLabel: 'Distance (m)',
         yLabel: 'Path Loss (dB)',
@@ -659,14 +714,14 @@ export class AnalyticsWorkspaceComponent {
         thresholds: [
           { y: LORA_RADIO_CONSTANTS.txPowerDbm - sens, label: 'Max Budget Margin', color: '#f59e0b' }
         ]
-      });
+      }));
       plot3B.setData(pathLossPoints);
     }
 
     // Render Plot 3C: Signal-to-Noise Ratio (SNR)
     const canvas3C = container.querySelector('#canvasSnrDistance');
     if (canvas3C) {
-      const plot3C = new ScientificScatterPlot(canvas3C, {
+      const plot3C = this.trackChart(new ScientificScatterPlot(canvas3C, {
         title: 'Signal-to-Noise Ratio (SNR) vs Distance',
         xLabel: 'Distance (m)',
         yLabel: 'SNR (dB)',
@@ -678,7 +733,7 @@ export class AnalyticsWorkspaceComponent {
           { y: -15.0, label: 'SF10 Demod Limit', color: '#f59e0b' },
           { y: -20.0, label: 'SF12 Sensitivity Floor', color: '#ef4444' }
         ]
-      });
+      }));
       plot3C.setData(snrPoints);
     }
 
@@ -686,10 +741,10 @@ export class AnalyticsWorkspaceComponent {
     const canvasHeatmap = container.querySelector('#canvasHeatmap');
     if (canvasHeatmap) {
       const matrixData = generateLinkQualityMatrix(this.sim.nodes, this.sim.links, this.sim.events, this.heatmapMetric);
-      const heatmap = new ScientificHeatmap(canvasHeatmap, {
+      const heatmap = this.trackChart(new ScientificHeatmap(canvasHeatmap, {
         title: 'Node-to-Node Link Quality Matrix',
         metricType: this.heatmapMetric
-      });
+      }));
       heatmap.setMatrix(matrixData);
 
       const selM = container.querySelector('#selHeatmapMetric');
@@ -786,7 +841,7 @@ export class AnalyticsWorkspaceComponent {
     // Plot 4A: PDR Timeline
     const canvas4A = container.querySelector('#canvasPdrTimeline');
     if (canvas4A) {
-      const plot4A = new ScientificLineChart(canvas4A, {
+      const plot4A = this.trackChart(new ScientificLineChart(canvas4A, {
         title: 'Mission Packet Delivery Ratio (PDR)',
         xLabel: 'Simulation Time (s)',
         yLabel: 'Delivery Ratio (%)',
@@ -797,7 +852,7 @@ export class AnalyticsWorkspaceComponent {
           { y: 100, label: 'Nominal 100% Target', color: '#10b981', dash: [3, 3] },
           { y: 80, label: 'Reliability Threshold (80%)', color: '#f59e0b', dash: [4, 4] }
         ]
-      });
+      }));
 
       plot4A.setSeries([
         {
@@ -826,12 +881,12 @@ export class AnalyticsWorkspaceComponent {
       const latencies = delivered.map(r => r.latencyMs);
       const ecdf = calculateEcdf(latencies);
 
-      const plot4B = new ScientificCdfPlot(canvas4B, {
+      const plot4B = this.trackChart(new ScientificCdfPlot(canvas4B, {
         title: `End-to-End Latency CDF [n=${delivered.length} delivered]`,
         xLabel: 'End-to-End Latency (ms)',
         xUnit: 'ms',
         showPercentiles: true
-      });
+      }));
 
       plot4B.setCdfs([
         { name: 'Current Run', ecdfObj: ecdf, color: '#10b981' }
@@ -841,13 +896,13 @@ export class AnalyticsWorkspaceComponent {
     // Plot 4C: Throughput Timeline
     const canvas4C = container.querySelector('#canvasThroughput');
     if (canvas4C) {
-      const plot4C = new ScientificLineChart(canvas4C, {
+      const plot4C = this.trackChart(new ScientificLineChart(canvas4C, {
         title: 'Delivered Payload Throughput & Packet Rate',
         xLabel: 'Simulation Time (s)',
         yLabel: 'Throughput (bps)',
         yUnit: 'bps',
         yMin: 0
-      });
+      }));
 
       plot4C.setSeries([
         {
@@ -902,7 +957,7 @@ export class AnalyticsWorkspaceComponent {
         .map(([x, s]) => ({ x, y: s.total > 0 ? Math.round((s.dropped / s.total) * 1000) / 10 : 0 }))
         .sort((a, b) => a.x - b.x);
 
-      const plot4D = new ScientificLineChart(canvas4D, {
+      const plot4D = this.trackChart(new ScientificLineChart(canvas4D, {
         title: 'Packet Loss Probability vs Distance',
         xLabel: 'Distance (m)',
         yLabel: 'Loss Rate (%)',
@@ -913,7 +968,7 @@ export class AnalyticsWorkspaceComponent {
           { y: 50, label: '50% Marginal Boundary', color: '#f59e0b', dash: [3, 3] },
           { y: 90, label: '90% Severe Outage Limit', color: '#ef4444', dash: [4, 4] }
         ]
-      });
+      }));
       plot4D.setSeries([
         {
           name: 'Empirical Loss Rate (%)',
@@ -1084,13 +1139,13 @@ export class AnalyticsWorkspaceComponent {
     if (canvasHop) {
       const hopDist = metrics.hopDistribution || [];
       const hopPoints = hopDist.map(h => ({ x: h.hop, y: h.count }));
-      const plotHop = new ScientificLineChart(canvasHop, {
+      const plotHop = this.trackChart(new ScientificLineChart(canvasHop, {
         title: 'Delivered Messages by Hop Count',
         xLabel: 'Hop Count',
         yLabel: 'Delivered Count',
         yUnit: 'pkts',
         yMin: 0
-      });
+      }));
       plotHop.setSeries([
         {
           name: 'Delivered Episodes',
@@ -1113,13 +1168,13 @@ export class AnalyticsWorkspaceComponent {
         const count = this.sim.events.filter(e => e.ev === 'tx' && e.node >= 100 && e.t >= t && e.t < t + step).length;
         relayActivityPoints.push({ x: t / 1000.0, y: count });
       }
-      const plotRelay = new ScientificLineChart(canvasRelay, {
+      const plotRelay = this.trackChart(new ScientificLineChart(canvasRelay, {
         title: 'Relay Forward Transmissions / 2s Window',
         xLabel: 'Simulation Time (s)',
         yLabel: 'Forwards per Window',
         yUnit: 'fwd/2s',
         yMin: 0
-      });
+      }));
       plotRelay.setSeries([
         {
           name: 'Relay Forward Traffic',
@@ -1177,13 +1232,13 @@ export class AnalyticsWorkspaceComponent {
 
     const canvasColl = container.querySelector('#canvasCollisionTimeline');
     if (canvasColl) {
-      const plotColl = new ScientificLineChart(canvasColl, {
+      const plotColl = this.trackChart(new ScientificLineChart(canvasColl, {
         title: 'Airtime Collisions vs Retransmission Rate',
         xLabel: 'Simulation Time (s)',
         yLabel: 'Events per Window',
         yUnit: 'ev/2s',
         yMin: 0
-      });
+      }));
 
       plotColl.setSeries([
         {
@@ -1206,13 +1261,13 @@ export class AnalyticsWorkspaceComponent {
 
     const canvasDrops = container.querySelector('#canvasDropsTimeline');
     if (canvasDrops) {
-      const plotDrops = new ScientificLineChart(canvasDrops, {
+      const plotDrops = this.trackChart(new ScientificLineChart(canvasDrops, {
         title: 'Channel Loss Dynamics',
         xLabel: 'Simulation Time (s)',
         yLabel: 'Drops per 2s',
         yUnit: 'drops',
         yMin: 0
-      });
+      }));
 
       plotDrops.setSeries([
         {
@@ -1323,7 +1378,7 @@ export class AnalyticsWorkspaceComponent {
 
     const canvasBatt = container.querySelector('#canvasBatteryTimeline');
     if (canvasBatt) {
-      const plotBatt = new ScientificLineChart(canvasBatt, {
+      const plotBatt = this.trackChart(new ScientificLineChart(canvasBatt, {
         title: 'Fleet State of Charge (%)',
         xLabel: 'Simulation Time (s)',
         yLabel: 'Battery SoC (%)',
@@ -1333,7 +1388,7 @@ export class AnalyticsWorkspaceComponent {
         thresholds: [
           { y: 20, label: 'Critical Battery (20%)', color: '#ef4444', dash: [4, 4] }
         ]
-      });
+      }));
 
       plotBatt.setSeries([
         {
@@ -1357,7 +1412,7 @@ export class AnalyticsWorkspaceComponent {
         label: `Relay Node ${r.id}: ${r.forwardedTx} fwd, ${r.energyConsumedMah.toFixed(3)} mAh`
       }));
 
-      const plotEnergy = new ScientificScatterPlot(canvasEnergy, {
+      const plotEnergy = this.trackChart(new ScientificScatterPlot(canvasEnergy, {
         title: 'Energy Drain vs Forwarding Load',
         xLabel: 'Packets Forwarded',
         yLabel: 'Energy Consumed (mAh)',
@@ -1365,7 +1420,7 @@ export class AnalyticsWorkspaceComponent {
         yUnit: 'mAh',
         xMin: 0,
         yMin: 0
-      });
+      }));
       plotEnergy.setData(points);
     }
 
@@ -1534,17 +1589,17 @@ export class AnalyticsWorkspaceComponent {
     // Render Trajectory 8A
     const canvasTraj = container.querySelector('#canvasTrajectory');
     if (canvasTraj) {
-      const plotTraj = new ScientificTrajectoryPlot(canvasTraj, {
+      const plotTraj = this.trackChart(new ScientificTrajectoryPlot(canvasTraj, {
         title: `Node ${targetNode ? targetNode.id : ''} 2D Trajectory`,
         showErrorVectors: true
-      });
+      }));
       plotTraj.setTrajectory(gtPath, estPath, errorVectors);
     }
 
     // Render Error Timeline 8B
     const canvasErr = container.querySelector('#canvasPosErrorTimeline');
     if (canvasErr) {
-      const plotErr = new ScientificLineChart(canvasErr, {
+      const plotErr = this.trackChart(new ScientificLineChart(canvasErr, {
         title: `Horizontal Position Error vs Time (m)`,
         xLabel: 'Simulation Time (s)',
         yLabel: 'Position Error (m)',
@@ -1554,7 +1609,7 @@ export class AnalyticsWorkspaceComponent {
         thresholds: [
           { y: 15.0, label: 'Nominal GNSS Noise Limit (15m)', color: '#f59e0b', dash: [4, 4] }
         ]
-      });
+      }));
 
       plotErr.setSeries([
         {
@@ -1674,12 +1729,12 @@ export class AnalyticsWorkspaceComponent {
       }
 
       const ecdf = calculateEcdf(ackLatencies);
-      const plotAck = new ScientificCdfPlot(canvasAck, {
+      const plotAck = this.trackChart(new ScientificCdfPlot(canvasAck, {
         title: `Time-to-First-ACK CDF [n=${ackLatencies.length} confirmed]`,
         xLabel: 'Round-Trip Latency (ms)',
         xUnit: 'ms',
         showPercentiles: true
-      });
+      }));
       plotAck.setCdfs([
         { name: 'Current Run', ecdfObj: ecdf, color: '#c084fc' }
       ]);
@@ -1860,12 +1915,12 @@ export class AnalyticsWorkspaceComponent {
         color: colors[idx % colors.length]
       }));
 
-      const plotComp = new ScientificCdfPlot(canvasComp, {
+      const plotComp = this.trackChart(new ScientificCdfPlot(canvasComp, {
         title: 'Comparative End-to-End Latency eCDFs',
         xLabel: 'Latency (ms)',
         xUnit: 'ms',
         showPercentiles: false
-      });
+      }));
       plotComp.setCdfs(cdfItems);
     }
   }
