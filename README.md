@@ -7,6 +7,12 @@
 [![Target MCU](https://img.shields.io/badge/ESP--IDF-v5.1%20(ESP32--S3)-red.svg)](https://www.espressif.com/en/products/socs/esp32-s3)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
+
+<img width="1917" height="850" alt="image" src="https://github.com/user-attachments/assets/83160def-e954-454b-b049-25b5caaaea1c" />
+
+
+
+
 Project Setu is an infrastructure-independent, phone-free disaster rescue mesh communication system and research-grade simulation suite. In catastrophic events (such as earthquakes, catastrophic floods, or structural collapses), terrestrial cellular towers and municipal power grids fail simultaneously. Project Setu enables trapped survivors to transmit life-critical SOS alerts from low-power wearable wristbands across an ad-hoc, multi-hop LoRa radio mesh directly to rescue command hubs without cellular, internet, or satellite connectivity.
 
 The platform unites an authoritative, hardware-agnostic ISO C++17 protocol core, an embedded FreeRTOS firmware implementation for the Espressif ESP32-S3, a discrete-event physical RF channel simulator, a cloud-ready Node.js operations API daemon, and an interactive Disaster Response Operations Center web dashboard.
@@ -304,6 +310,9 @@ If no ACK is received from the Hub:
 ---
 
 ## 6. Interactive Disaster Operations Center (Dashboard)
+
+<img width="1917" height="862" alt="image" src="https://github.com/user-attachments/assets/4c1edba4-15db-4293-ad50-1a34d30d9ea2" />
+
 
 The frontend is an operational command-center web application built with pure vanilla Web Components and HTML5 Canvas (zero external frontend framework bloat):
 
