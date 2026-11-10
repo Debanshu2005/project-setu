@@ -180,6 +180,18 @@ class Stage3d {
   /** Back to the opening view. */
   recenter() {
     Object.assign(this.view, this.#home);
+    Object.assign(this.#now, this.#home);
+    const t = this.#target, n = this.#now;
+    this.camera.position.set(
+      t.x + n.radius * Math.cos(n.el) * Math.cos(n.az),
+      t.y + n.radius * Math.sin(n.el),
+      t.z + n.radius * Math.cos(n.el) * Math.sin(n.az)
+    );
+    this.camera.lookAt(t);
+  }
+  /** Force recalculation of canvas dimensions, aspect ratio, and projection. */
+  resize() {
+    this.#resize();
   }
   /**
    * After the scene is built: ink outlines on its solid parts, as children, so they move, hide

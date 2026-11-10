@@ -76,6 +76,17 @@ Output:
 
 - `h5-wiring-desktop.png`: Wiring overlay on the DevKitC-1 model highlighting peripheral header pins color-coded by bus: SPI (cyan), UART (emerald), I2C (amber), I2S (purple), PWM (orange), ADC (pink), and IRQ (blue). Legend is visible below the model selector.
 - `h5-wiring-mobile.png`: Mobile wiring layout with bus-colored pin markers. Tapping a pin updates live pin telemetry in the status HUD.
+- `h5-circuit-modules-desktop.png`: Multi-board assembly view at 1600 by 900 showing SX1262 LoRa, INMP441 microphone, and MPU-6050 IMU breakouts arranged around the central ESP32-S3 DevKitC-1 with color-coded 3D curved jumper wires (cyan SPI, purple I2S, amber I2C, red 3.3V, slate GND).
+- `h5-circuit-modules-mobile.png`: Mobile responsive layout at 390 by 844 showing the multi-board circuit assembly and swipeable component cards.
+
+### Multi-board circuit assembly scene
+
+Interactive 3D assembly view displaying external breakout modules connected to the ESP32-S3 DevKitC-1 with physical 3D jumper wires:
+- SX1262 LoRa transceiver (SPI bus: NSS on GPIO 5, MOSI on GPIO 6, MISO on GPIO 7, SCK on GPIO 8, DIO1 on GPIO 4).
+- INMP441 MEMS microphone (I2S bus: SCK on GPIO 41, WS on GPIO 42, SD on GPIO 38).
+- MPU-6050 6-axis IMU (I2C bus: SDA on GPIO 21, SCL on GPIO 9).
+- Color-coded Catmull-Rom 3D tube geometries representing the wiring harness: cyan for SPI, purple for I2S, amber for I2C, red for 3.3V, and slate for GND.
+- Six educational callout cards and markers corresponding to each module and bus connection.
 
 ## H6 evidence
 
@@ -105,9 +116,9 @@ All performance and accessibility budgets verified:
 
 ## H8 evidence
 
-All 10 required screenshots captured and pixel-tested:
-- `WebGL Canvas Coverage`: 15.86% (budget: >= 12.0%)
-- `Mean Luminance`: 90.16 (budget: >= 30.0)
+All 12 required screenshots captured and pixel-tested:
+- `WebGL Canvas Coverage`: 12.45% (budget: >= 12.0%)
+- `Mean Luminance`: 103.61 (budget: >= 30.0)
 - `Stage Edge Clipping`: 0 edge hits (model is cleanly centered)
 - `Teal Markers`: 6 numbered markers present with valid computed styles
 - `Attribution`: all ported modules in `dashboard/vendor/esp-labs/` preserve MIT copyright headers; `docs/THIRD_PARTY.md` contains the full MIT notice.

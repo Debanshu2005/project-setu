@@ -5,6 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { chromium } from 'playwright';
 import { DEVKITC_PARTS, WRISTBAND_PARTS } from '../dashboard/src/hardware_parts.js';
+import { MODULES_PARTS } from '../dashboard/components/circuit_scene.js';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PORT = 3398;
@@ -17,10 +18,11 @@ console.log('================================================================\n'
 console.log('[1/5] Validating educational part catalog and provenance tags...');
 const allowedTags = new Set(['simulated', 'model', 'assumed', 'cited']);
 const allowedChips = new Set(['timeline', 'twin', 'analytics', 'energy', 'topology', 'wiring', 'pdr', 'docs']);
-const allParts = [...DEVKITC_PARTS, ...WRISTBAND_PARTS];
+const allParts = [...DEVKITC_PARTS, ...WRISTBAND_PARTS, ...MODULES_PARTS];
 
 assert.equal(DEVKITC_PARTS.length, 6, 'DevKitC-1 has 6 parts');
 assert.equal(WRISTBAND_PARTS.length, 6, 'Setu Wristband has 6 parts');
+assert.equal(MODULES_PARTS.length, 6, 'Circuit modules assembly has 6 parts');
 
 for (const part of allParts) {
   assert.ok(part.id && part.number && part.title && part.subtitle, `Part header complete: ${part.id}`);
@@ -171,6 +173,34 @@ try {
   await wiringBtn.click();
   assert.equal(await wiringBtn.getAttribute('aria-pressed'), 'false', 'Wiring view toggled off');
 
+  // Test Circuit Modules Assembly View (LoRa, INMP441, MPU-6050, DevKitC-1)
+  const modulesBtn = page.locator('[data-hardware-model="modules"]');
+  await modulesBtn.click();
+  await page.waitForSelector('[data-hardware-model="modules"][aria-pressed="true"]');
+  await page.waitForTimeout(400);
+  assert.equal(await page.locator('.hardware-card').count(), 6, 'Modules view has 6 cards');
+  assert.equal(await page.locator('.hardware-marker').count(), 6, 'Modules view has 6 markers');
+
+  // Verify LoRa card interaction
+  const loraCard = page.locator('[data-hardware-part="lora"].hardware-card');
+  await loraCard.hover();
+  await loraCard.click();
+  assert.equal(await loraCard.getAttribute('aria-pressed'), 'true', 'LoRa card pinned');
+  assert.equal(await dialog.isVisible(), true, 'Explainer dialog opens on LoRa pin');
+  assert.match(await dialog.innerText(), /SX1262 LoRa/i);
+
+  // Clear dialog
+  await page.locator('[data-hardware-stage]').press('Escape');
+
+  await page.screenshot({ path: path.join(root, 'docs', 'screens', 'hardware', 'h5-circuit-modules-desktop.png') });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.waitForTimeout(400);
+  await page.screenshot({ path: path.join(root, 'docs', 'screens', 'hardware', 'h5-circuit-modules-mobile.png') });
+  console.log('  [ PASS ] Multi-board circuit modules desktop and mobile screens captured.');
+
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.waitForTimeout(300);
+
   // Test Wristband Model (H3 & H4)
   const wristbandBtn = page.locator('[data-hardware-model="wristband"]');
   await wristbandBtn.click();
@@ -238,6 +268,7 @@ try {
 
   // 50 model switches memory leak test
   await page.setViewportSize({ width: 1600, height: 900 });
+  await page.waitForTimeout(300);
   const protoBtn = page.locator('[data-hardware-model="prototype"]');
   const wristBtn = page.locator('[data-hardware-model="wristband"]');
   const initialGeometries = stats.geometries;
@@ -254,6 +285,10 @@ try {
   assert.equal(postGeometries, initialGeometries, 'Zero geometry leak across 50 model switches');
   console.log('  [ PASS ] Renderer budgets, mobile DPR cap, and memory stability verified.');
 
+  // Recenter and allow camera easing to settle
+  await page.locator('[data-hardware-action="reset"]').click();
+  await page.waitForTimeout(500);
+
   // 5. Pixel Assertions (H8)
   console.log('\n[5/5] Executing pixel assertions on captured screenshots and WebGL canvas...');
   const modelMetrics = await page.evaluate(() => {
@@ -263,6 +298,11 @@ try {
     const camera = explorer?.stage?.camera;
     if (!renderer || !scene || !camera) return null;
 
+    explorer?.stage?.resize?.();
+    explorer?.stage?.recenter?.();
+    for (let i = 0; i < 40; i += 1) {
+      explorer.stage.tick(1000 + i * 50, 0.05);
+    }
     renderer.render(scene, camera);
     const gl = renderer.getContext();
     const w = gl.drawingBufferWidth;
@@ -304,7 +344,7 @@ try {
   const markerColor = await page.locator('.hardware-marker').first().evaluate(el => window.getComputedStyle(el).backgroundColor);
   assert.ok(markerColor.length > 0, 'Marker has computed background styling');
 
-  // Verify all 10 hardware screenshots exist
+  // Verify all 12 hardware screenshots exist
   const expectedScreens = [
     'h1-blocked-three-desktop.png',
     'h2-desktop.png',
@@ -315,14 +355,16 @@ try {
     'h4-button-pressed-desktop.png',
     'h4-tx-arcs-desktop.png',
     'h5-wiring-desktop.png',
-    'h5-wiring-mobile.png'
+    'h5-wiring-mobile.png',
+    'h5-circuit-modules-desktop.png',
+    'h5-circuit-modules-mobile.png'
   ];
   for (const screenName of expectedScreens) {
     const sPath = path.join(root, 'docs', 'screens', 'hardware', screenName);
     assert.ok(fs.existsSync(sPath), `Screenshot file exists: ${screenName}`);
     assert.ok(fs.statSync(sPath).size > 10000, `Screenshot file is non-empty: ${screenName}`);
   }
-  console.log('  [ PASS ] Pixel assertions and all 10 screenshot files verified.');
+  console.log('  [ PASS ] Pixel assertions and all 12 screenshot files verified.');
 
   assert.equal(errors.length, 0, `Browser errors detected: ${errors.join(' | ')}`);
   await context.close();

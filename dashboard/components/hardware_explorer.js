@@ -8,7 +8,7 @@ const pinX = i => PIN0_X - i * PITCH;
 export class HardwareExplorer {
   constructor(container) {
     this.container = container;
-    this.stage = this.scene = this.wristband = this.T = this.pinMap = null;
+    this.stage = this.scene = this.wristband = this.circuitScene = this.anchors = this.T = this.pinMap = null;
     this.model = 'prototype';
     this.wiringOverlay = this.mobileStage = this.active = this._mounted = false;
     this.onTrigger = this.onNavigate = this.onFault = null;
@@ -34,12 +34,11 @@ export class HardwareExplorer {
     } catch (_) {}
 
     const legendHtml = Object.values(BUS_COLORS).map(b => `<span class="legend-item" style="--bus-color:${b.color}">${b.name}</span>`).join('');
-    const actBtns = [['short', 'Press (Short)'], ['double', 'Double Press'], ['long', 'Long Press'], ['voice', 'Say Setu'], ['strapping', 'Strapping Lock']]
-      .map(([k, t]) => `<button type="button" data-hardware-trigger="${k}">${t}</button>`).join('');
-    const ctrlBtns = [['left','↶','Rotate left'],['right','↷','Rotate right'],['out','−','Zoom out'],['in','+','Zoom in'],['reset','Reset','Reset view']]
-      .map(([k, t, a]) => `<button type="button" data-hardware-action="${k}" aria-label="${a}">${t}</button>`).join('');
+    const bHtml = (list, attr) => list.map(([k, t, a]) => `<button type="button" ${attr}="${k}"${a ? ` aria-label="${a}"` : ''}>${t}</button>`).join('');
+    const actBtns = bHtml([['short', 'Press (Short)'], ['double', 'Double Press'], ['long', 'Long Press'], ['voice', 'Say Setu'], ['strapping', 'Strapping Lock']], 'data-hardware-trigger');
+    const ctrlBtns = bHtml([['left','↶','Rotate left'],['right','↷','Rotate right'],['out','−','Zoom out'],['in','+','Zoom in'],['reset','Reset','Reset view']], 'data-hardware-action');
 
-    this.container.innerHTML = `<section class="hardware-explorer" aria-label="Hardware explorer and digital twin"><div class="hardware-explorer-layout"><div class="hardware-card-column hardware-cards-left" aria-label="Left board part callouts">${this.#cardMarkup('left')}</div><div class="hardware-stage" data-hardware-stage tabindex="0" aria-label="Interactive 3D board model. Use arrow keys to rotate, plus and minus to zoom, and Escape to clear selection."><canvas aria-label="Interactive 3D hardware model"></canvas><div class="hardware-labels"></div><p class="hardware-hint">Drag to turn. Pinch to zoom.</p><div class="hardware-model-toggle" role="group" aria-label="Hardware model selector"><button type="button" data-hardware-model="prototype" aria-pressed="true">DevKitC-1</button><button type="button" data-hardware-model="wristband" aria-pressed="false">Setu Wristband</button><button type="button" data-hardware-view="wiring" aria-pressed="false" title="Inspect DevKitC-1 pin headers">Wiring View</button></div><div class="hardware-wiring-legend" hidden aria-label="Wiring bus color legend">${legendHtml}</div><div class="hardware-live-hud hardware-live" aria-live="polite"><span class="hardware-live-node">Node 1 (survivor)</span><span class="hardware-live-led">LED: idle</span><span class="hardware-live-radio">Radio: idle</span><span class="hardware-live-gnss">GNSS: unavailable</span><span class="hardware-live-battery">Battery: 100%</span></div><div class="hardware-voice-panel" hidden aria-label="Voice trigger listening window"><span class="voice-wave-dot"></span><span class="voice-text">WakeNet Listening: "Say Setu"</span><span class="voice-countdown">10s</span></div><div class="hardware-actions" aria-label="Hardware simulation triggers">${actBtns}</div><div class="hardware-controls" aria-label="Camera orbit controls">${ctrlBtns}</div></div><div class="hardware-card-column hardware-cards-right" aria-label="Right board part callouts">${this.#cardMarkup('right')}</div></div><div class="hardware-explainer-dialog" hidden role="dialog" aria-modal="true" aria-label="Component Educational Explainer"></div></section>`;
+    this.container.innerHTML = `<section class="hardware-explorer" aria-label="Hardware explorer and digital twin"><div class="hardware-explorer-layout"><div class="hardware-card-column hardware-cards-left" aria-label="Left board part callouts">${this.#cardMarkup('left')}</div><div class="hardware-stage" data-hardware-stage tabindex="0" aria-label="Interactive 3D board model"><canvas aria-label="Interactive 3D hardware model"></canvas><div class="hardware-labels"></div><p class="hardware-hint">Drag to turn. Pinch to zoom.</p><div class="hardware-model-toggle" role="group" aria-label="Hardware model selector"><button type="button" data-hardware-model="prototype" aria-pressed="true">DevKitC-1</button><button type="button" data-hardware-model="wristband" aria-pressed="false">Setu Wristband</button><button type="button" data-hardware-view="wiring" aria-pressed="false" title="Inspect DevKitC-1 pin headers">Wiring View</button><button type="button" data-hardware-model="modules" aria-pressed="false" title="3D board views of LoRa, INMP441, MPU-6050 along with ESP32 and jumper connections">Circuit Assembly</button></div><div class="hardware-wiring-legend" hidden aria-label="Wiring bus color legend">${legendHtml}</div><div class="hardware-live-hud hardware-live" aria-live="polite"><span class="hardware-live-node">Node 1 (survivor)</span><span class="hardware-live-led">LED: idle</span><span class="hardware-live-radio">Radio: idle</span><span class="hardware-live-gnss">GNSS: unavailable</span><span class="hardware-live-battery">Battery: 100%</span></div><div class="hardware-voice-panel" hidden aria-label="Voice trigger listening window"><span class="voice-wave-dot"></span><span class="voice-text">WakeNet Listening: "Say Setu"</span><span class="voice-countdown">10s</span></div><div class="hardware-actions" aria-label="Hardware simulation triggers">${actBtns}</div><div class="hardware-controls" aria-label="Camera orbit controls">${ctrlBtns}</div></div><div class="hardware-card-column hardware-cards-right" aria-label="Right board part callouts">${this.#cardMarkup('right')}</div></div><div class="hardware-explainer-dialog" hidden role="dialog" aria-modal="true" aria-label="Educational Explainer"></div></section>`;
 
     if (!this.#canUseWebgl()) {
       this.#showFallback('WebGL is unavailable. Showing the static board preview.');
@@ -58,6 +57,7 @@ export class HardwareExplorer {
       const canvas = box.querySelector('canvas');
       const labels = box.querySelector('.hardware-labels');
       this.T = T;
+      this.anchors = { prototype: sceneModule.PART_ANCHORS, wristband: wristbandModule.WRISTBAND_ANCHORS };
 
       const isMobile = window.innerWidth <= 600 || box.clientWidth <= 600;
       const dprCap = isMobile ? 1.5 : Math.min(window.devicePixelRatio || 1, 2.0);
@@ -65,7 +65,7 @@ export class HardwareExplorer {
       this.stage = new stageModule.Stage3d(T, box, canvas, labels, {
         target: { x: 0.1, y: -0.15, z: 0 },
         radius: 9.5,
-        fitWidth: 7.2,
+        fitWidth: 8.5,
         az: 1.22,
         el: 0.74,
         fov: 30,
@@ -73,7 +73,7 @@ export class HardwareExplorer {
         sway: 0,
         zoom: [0.55, 1.4],
         dragOn: 'canvas',
-        ground: { w: 9.5, d: 4.6, y: -0.82 },
+        ground: { w: 8.0, d: 4.0, y: -0.82 },
         reduce: matchMedia('(prefers-reduced-motion: reduce)').matches
       });
 
@@ -97,10 +97,10 @@ export class HardwareExplorer {
       this.resizeObserver.observe(box);
       this.#bindControls();
 
-      canvas.addEventListener('pointermove', () => this.requestRender());
-      canvas.addEventListener('pointerdown', () => this.requestRender());
-      canvas.addEventListener('pointerup', event => this.#tryModelButton(event));
-      canvas.addEventListener('wheel', () => this.requestRender(), { passive: true });
+      const render = () => this.requestRender();
+      canvas.onpointermove = canvas.onpointerdown = render;
+      canvas.onpointerup = e => this.#tryModelButton(e);
+      canvas.addEventListener('wheel', render, { passive: true });
       this.requestRender();
     } catch (error) {
       console.warn('Hardware explorer initialization error:', error);
@@ -113,6 +113,7 @@ export class HardwareExplorer {
     this.active = Boolean(active);
     if (this.active) {
       this.settledFrames = 0;
+      if (this.stage?.resize) this.stage.resize();
       this.requestRender();
     } else if (this.raf) {
       cancelAnimationFrame(this.raf);
@@ -124,6 +125,7 @@ export class HardwareExplorer {
     if (!node) return;
     this.currentNode = node;
     this.wristband?.update(node);
+    this.circuitScene?.update(node);
 
     let led = 'idle';
     if (node.bootloader_lock) led = 'bootloader lock (GPIO 0 trapped)';
@@ -133,19 +135,12 @@ export class HardwareExplorer {
     else if (node.active_sos) led = 'transmitting SOS';
     else if (node.retry_count > 0) led = `retry ${node.retry_count}`;
 
-    const radio = node.stats?.tx ? `TX ${node.stats.tx} pkts` : 'radio standby';
-    const gnss = node.gnss_status || (node.gnss_on === false ? 'denied / offline' : 'active fix');
-    const batt = typeof node.battery === 'number' ? `${node.battery.toFixed(0)}%` : 'not available';
-
-    const setHud = (cls, text) => {
-      const el = this.q(cls);
-      if (el) el.textContent = text;
-    };
+    const setHud = (cls, text) => { const el = this.q(cls); if (el) el.textContent = text; };
     setHud('.hardware-live-node', `Node ${node.id} (${node.role || 'survivor'})`);
     setHud('.hardware-live-led', `LED: ${led}`);
-    setHud('.hardware-live-radio', `Radio: ${radio}`);
-    setHud('.hardware-live-gnss', `GNSS: ${gnss}`);
-    setHud('.hardware-live-battery', `Battery: ${batt}`);
+    setHud('.hardware-live-radio', `Radio: ${node.stats?.tx ? `TX ${node.stats.tx} pkts` : 'radio standby'}`);
+    setHud('.hardware-live-gnss', `GNSS: ${node.gnss_status || (node.gnss_on === false ? 'denied / offline' : 'active fix')}`);
+    setHud('.hardware-live-battery', `Battery: ${typeof node.battery === 'number' ? `${node.battery.toFixed(0)}%` : 'not available'}`);
 
     const tx = node.stats?.tx || 0;
     if (tx > this.lastTx) {
@@ -187,17 +182,16 @@ export class HardwareExplorer {
     this.resizeObserver?.disconnect();
     document.removeEventListener('visibilitychange', this._onVisibility);
     this.stage?.dispose();
-    this.stage = this.scene = this.wristband = this.T = this.resizeObserver = this._voiceTimer = null;
+    this.stage = this.scene = this.wristband = this.circuitScene = this.anchors = this.T = this.resizeObserver = this._voiceTimer = null;
     this.raf = 0;
     this.container.replaceChildren();
   }
 
   #setupPartsAndMarkers() {
     const isW = (this.model === 'wristband');
-    const list = isW ? WRISTBAND_PARTS : DEVKITC_PARTS;
-    const anchors = isW
-      ? { strap: [-3.2, 0.05, 0], buttons: [-0.85, 0.52, 0.9], rgb: [0, 0.52, -0.22], mic: [0.95, 0.49, 0.72], antenna: [0, 0.45, -0.95], gnss: [1.05, 0.48, -0.55] }
-      : { usb: [-3.3, 0.33, -0.6], buttons: [-2.78, 0.24, 0.86], rgb: [0.3, 0.12, 0.62], module: [1.6, 0.42, -0.2], antenna: [3.18, 0.1, 0.1], headers: [ pinX(16), 0.06, 1.14 ] };
+    const isM = (this.model === 'modules');
+    const list = isW ? WRISTBAND_PARTS : (isM ? (this.circuitScene?.parts || []) : DEVKITC_PARTS);
+    const anchors = (isM ? this.circuitScene?.anchors : this.anchors?.[this.model]) || {};
 
     const leftCol = this.q('.hardware-cards-left');
     const rightCol = this.q('.hardware-cards-right');
@@ -224,21 +218,21 @@ export class HardwareExplorer {
       marker.setAttribute('aria-label', `${part.title}: ${part.what}`);
       this.stage.leader(part.id, point, card);
 
-      const preview = () => this.#previewPart(part.id);
-      const release = () => this.#releasePreview();
-      [card, marker].forEach(el => {
-        el?.addEventListener('pointerenter', preview);
-        el?.addEventListener('pointerleave', release);
-        el?.addEventListener('focus', preview);
-        el?.addEventListener('blur', release);
-        el?.addEventListener('click', () => this.#togglePinPart(part.id));
-      });
-      marker.addEventListener('keydown', event => {
+      const onEnter = () => this.#previewPart(part.id);
+      const onLeave = () => this.#releasePreview();
+      const onClick = () => this.#togglePinPart(part.id);
+      for (const el of [card, marker]) {
+        if (!el) continue;
+        el.onpointerenter = el.onfocus = onEnter;
+        el.onpointerleave = el.onblur = onLeave;
+        el.onclick = onClick;
+      }
+      marker.onkeydown = event => {
         if (event.key === 'Enter' || event.key === ' ') {
           event.preventDefault();
           this.#togglePinPart(part.id);
         }
-      });
+      };
     }
   }
 
@@ -265,59 +259,75 @@ export class HardwareExplorer {
       marker.setAttribute('aria-label', `GPIO ${pin.gpio}: ${pin.module} (${pin.signal}), Bus: ${busDef.name}`);
 
       const showTip = () => marker.setAttribute('title', `GPIO ${pin.gpio} · ${pin.signal} · ${pin.module} (${busDef.name})`);
-      marker.addEventListener('pointerenter', showTip);
-      marker.addEventListener('focus', showTip);
-      marker.addEventListener('click', () => {
+      marker.onpointerenter = marker.onfocus = showTip;
+      marker.onclick = () => {
         this.pinnedPin = (this.pinnedPin === pin.gpio) ? null : pin.gpio;
         const hud = this.q('.hardware-live-node');
         if (hud && this.pinnedPin) hud.textContent = `Pin: GPIO ${pin.gpio} (${pin.signal} / ${pin.module})`;
-      });
+      };
       this.wiringMarkers.push(marker);
     }
   }
 
   #bindControls() {
     const actMap = { left: () => this.stage.rotate(-0.4), right: () => this.stage.rotate(0.4), out: () => this.stage.zoom(1.18), in: () => this.stage.zoom(0.85), reset: () => this.stage.recenter() };
-    this.q('.hardware-controls')?.addEventListener('click', event => {
-      const a = event.target.closest('button')?.dataset.hardwareAction;
+    this.q('.hardware-controls')?.addEventListener('click', e => {
+      const a = e.target.closest('button')?.dataset.hardwareAction;
       if (a && actMap[a]) { actMap[a](); this.requestRender(); }
     });
 
     const keyMap = { ArrowLeft: () => this.stage.rotate(-0.2), ArrowRight: () => this.stage.rotate(0.2), '+': () => this.stage.zoom(0.88), '=': () => this.stage.zoom(0.88), '-': () => this.stage.zoom(1.14) };
-    this.q('[data-hardware-stage]')?.addEventListener('keydown', event => {
+    this.q('[data-hardware-stage]')?.addEventListener('keydown', e => {
       if (!this.stage) return;
-      if (keyMap[event.key]) { keyMap[event.key](); event.preventDefault(); this.requestRender(); }
-      else if (event.key === 'Escape') { this.#pinPart(null); this.#closeExplainerDialog(); this.#toggleWiringView(false); this.requestRender(); }
+      if (keyMap[e.key]) { keyMap[e.key](); e.preventDefault(); this.requestRender(); }
+      else if (e.key === 'Escape') { this.#pinPart(null); this.#closeExplainerDialog(); this.#toggleWiringView(false); this.requestRender(); }
     });
 
-    this.q('.hardware-model-toggle')?.addEventListener('click', event => {
-      const mBtn = event.target.closest('button[data-hardware-model]');
-      if (mBtn) return this.#setModel(mBtn.dataset.hardwareModel);
-      const vBtn = event.target.closest('button[data-hardware-view]');
-      if (vBtn) this.#toggleWiringView(!this.wiringOverlay);
+    this.q('.hardware-model-toggle')?.addEventListener('click', e => {
+      const m = e.target.closest('button[data-hardware-model]')?.dataset.hardwareModel;
+      if (m) return this.#setModel(m);
+      if (e.target.closest('button[data-hardware-view]')) this.#toggleWiringView(!this.wiringOverlay);
     });
 
-    this.q('.hardware-actions')?.addEventListener('click', event => {
-      const btn = event.target.closest('button[data-hardware-trigger]');
-      if (!btn) return;
-      const t = btn.dataset.hardwareTrigger;
+    this.q('.hardware-actions')?.addEventListener('click', e => {
+      const t = e.target.closest('button[data-hardware-trigger]')?.dataset.hardwareTrigger;
       if (t === 'voice') this.#triggerVoiceActivation();
       else if (t === 'strapping') this.#triggerStrappingLock();
-      else if (this.onTrigger) {
-        this.onTrigger(t);
-        this.#animateButtonDepression();
-      }
+      else if (t && this.onTrigger) { this.onTrigger(t); this.#animateButtonDepression(); }
     });
   }
 
-  #setModel(model) {
+  async #loadCircuitScene() {
+    if (this.circuitScene) return this.circuitScene;
+    const { buildCircuitScene } = await import('./circuit_scene.js');
+    this.circuitScene = buildCircuitScene(this.T, this.stage);
+    return this.circuitScene;
+  }
+
+  async #setModel(model) {
     if (!model || model === this.model) return;
+    const prevModel = this.model;
     this.model = model;
-    const isW = (model === 'wristband');
-    if (this.scene?.board) this.scene.board.visible = !isW;
-    if (this.wristband?.group) this.wristband.group.visible = isW;
     this.qa('[data-hardware-model]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.hardwareModel === model)));
-    if (isW && this.wiringOverlay) this.#toggleWiringView(false);
+    if (model !== 'prototype' && this.wiringOverlay) this.#toggleWiringView(false);
+
+    const isW = (model === 'wristband');
+    const isM = (model === 'modules');
+
+    if (isM && !this.circuitScene) {
+      await this.#loadCircuitScene();
+    }
+
+    if (this.scene?.board) this.scene.board.visible = (model === 'prototype' || isM);
+    if (this.wristband?.group) this.wristband.group.visible = isW;
+    if (this.circuitScene?.group) this.circuitScene.group.visible = isM;
+
+    if (isM) {
+      this.stage?.zoom(1.42);
+    } else if (prevModel === 'modules') {
+      this.stage?.recenter();
+    }
+
     this.#setupPartsAndMarkers();
     this.requestRender();
   }
@@ -357,22 +367,19 @@ export class HardwareExplorer {
   }
 
   #triggerStrappingLock() {
-    if (this.currentNode) {
-      this.currentNode.bootloader_lock = !this.currentNode.bootloader_lock;
-      this.currentNode.online = !this.currentNode.bootloader_lock;
-      this.updateNode(this.currentNode);
-      if (this.onFault) this.onFault(this.currentNode.id, { bootloader_lock: this.currentNode.bootloader_lock, online: this.currentNode.online });
-    }
+    if (!this.currentNode) return;
+    const lock = !this.currentNode.bootloader_lock;
+    this.currentNode.bootloader_lock = lock;
+    this.currentNode.online = !lock;
+    this.updateNode(this.currentNode);
+    this.onFault?.(this.currentNode.id, { bootloader_lock: lock, online: !lock });
   }
 
   #animateButtonDepression() {
-    const btnMesh = (this.model === 'wristband') ? this.wristband?.button : null;
-    if (btnMesh) {
-      btnMesh.position.y = 0.44;
-      setTimeout(() => {
-        if (btnMesh) btnMesh.position.y = 0.52;
-        this.requestRender();
-      }, 160);
+    const btn = (this.model === 'wristband') ? this.wristband?.button : null;
+    if (btn) {
+      btn.position.y = 0.44;
+      setTimeout(() => { if (btn) btn.position.y = 0.52; this.requestRender(); }, 160);
     }
     this.requestRender();
   }
@@ -391,7 +398,9 @@ export class HardwareExplorer {
   }
 
   #cardMarkup(side) {
-    const list = (this.model === 'wristband') ? WRISTBAND_PARTS : DEVKITC_PARTS;
+    const isW = (this.model === 'wristband');
+    const isM = (this.model === 'modules');
+    const list = isW ? WRISTBAND_PARTS : (isM ? (this.circuitScene?.parts || []) : DEVKITC_PARTS);
     return list.filter(p => p.side === side).map(p => `<button type="button" class="hardware-card" data-hardware-part="${p.id}" aria-pressed="false" aria-label="${p.title}: ${p.subtitle}"><span class="hardware-card-number">${p.number}</span><span class="hardware-card-copy"><strong>${p.title}</strong><span class="hardware-card-sub">${p.subtitle}</span><span class="hardware-card-desc">${p.what}</span><span class="hardware-card-live" data-live-part="${p.id}">Status: standby</span></span></button>`).join('');
   }
 
@@ -406,7 +415,12 @@ export class HardwareExplorer {
       headers: 'Buses: SPI, UART, I2C, I2S, PWM, ADC',
       gnss: `Fix: ${node.gnss_status || '3D Fix'} · Sats: ${node.satellites || 8}`,
       battery: `Capacity: ${node.battery ? node.battery.toFixed(0) : 100}% · Draw: 22 mA`,
-      mic: 'WakeNet listening 16 kHz I2S'
+      mic: 'WakeNet listening 16 kHz I2S',
+      esp32: `${node.role || 'survivor'} · FreeRTOS active`,
+      imu: `PDR steps: ${node.step_count || 0} · 400 kHz I2C`,
+      power: `3.3V rail nominal · Battery: ${node.battery ? node.battery.toFixed(0) : 100}%`,
+      lora: `TX pkts: ${node.stats?.tx || 0} · SF7/125kHz`,
+      wires: 'Harness intact · 5 signal buses routed'
     };
     this.qa('[data-live-part]').forEach(el => {
       const v = liveMap[el.dataset.livePart];
@@ -414,21 +428,16 @@ export class HardwareExplorer {
     });
   }
 
-  #previewPart(id) {
-    if (this.pinnedPart) return;
+  #previewPart(id) { if (!this.pinnedPart) this.#highlightPart(id, false); }
+  #releasePreview() { if (!this.pinnedPart) this.#highlightPart(null, false); }
+  #pinPart(id) { this.pinnedPart = id; this.#highlightPart(id, Boolean(id)); }
+
+  #highlightPart(id, pinned) {
     this.stage?.focus(id);
     this.scene?.highlight(id);
     this.wristband?.highlight(id);
-    this.#setCardState(id, false);
-    this.requestRender();
-  }
-
-  #releasePreview() {
-    if (this.pinnedPart) return;
-    this.stage?.focus(null);
-    this.scene?.highlight(null);
-    this.wristband?.highlight(null);
-    this.#setCardState(null, false);
+    this.circuitScene?.highlight(id);
+    this.#setCardState(id, pinned);
     this.requestRender();
   }
 
@@ -440,15 +449,6 @@ export class HardwareExplorer {
       this.#pinPart(id);
       this.#openExplainerDialog(id);
     }
-  }
-
-  #pinPart(id) {
-    this.pinnedPart = id;
-    this.stage?.focus(id);
-    this.scene?.highlight(id);
-    this.wristband?.highlight(id);
-    this.#setCardState(id, true);
-    this.requestRender();
   }
 
   #setCardState(id, pinned) {
@@ -463,7 +463,9 @@ export class HardwareExplorer {
   #openExplainerDialog(id) {
     const dialog = this.q('.hardware-explainer-dialog');
     if (!dialog) return;
-    const list = (this.model === 'wristband') ? WRISTBAND_PARTS : DEVKITC_PARTS;
+    const isW = (this.model === 'wristband');
+    const isM = (this.model === 'modules');
+    const list = isW ? WRISTBAND_PARTS : (isM ? (this.circuitScene?.parts || []) : DEVKITC_PARTS);
     const part = list.find(p => p.id === id);
     if (!part) return;
 
@@ -471,7 +473,7 @@ export class HardwareExplorer {
     const chips = (part.chips || []).map(c => `<button type="button" class="explainer-action-chip" data-chip-action="${c.action}" ${c.paramLink ? `data-param-link="${c.paramLink}"` : ''}>${c.label}</button>`).join('');
 
     const sec = (h, b) => `<div class="explainer-section"><h4>${h}</h4>${b}</div>`;
-    dialog.innerHTML = `<div class="explainer-content"><div class="explainer-header"><div><h3>${part.title}</h3><p class="explainer-subtitle">${part.subtitle}</p></div><button type="button" class="explainer-close" aria-label="Close explainer dialog">✕</button></div><div class="explainer-body">${sec('What it is', `<p>${part.what}</p>`)}${sec('Why it matters in Setu', `<p>${part.why}</p>`)}${sec('Pin assignments & buses', `<p class="explainer-code">${part.pins}</p>`)}${sec('What to watch in the simulator', `<p>${part.simulator}</p>`)}${sec('Provenance & physical standards', `<div class="explainer-provenance-list">${prov}</div>`)}${sec('Related views', `<div class="explainer-chips-row">${chips}</div>`)}</div></div>`;
+    dialog.innerHTML = `<div class="explainer-content"><div class="explainer-header"><div><h3>${part.title}</h3><p class="explainer-subtitle">${part.subtitle}</p></div><button type="button" class="explainer-close" aria-label="Close">✕</button></div><div class="explainer-body">${sec('What it is', `<p>${part.what}</p>`)}${sec('Why it matters in Setu', `<p>${part.why}</p>`)}${sec('Pin assignments & buses', `<p class="explainer-code">${part.pins}</p>`)}${sec('What to watch in the simulator', `<p>${part.simulator}</p>`)}${sec('Provenance & physical standards', `<div class="explainer-provenance-list">${prov}</div>`)}${sec('Related views', `<div class="explainer-chips-row">${chips}</div>`)}</div></div>`;
     dialog.hidden = false;
 
     dialog.querySelector('.explainer-close')?.addEventListener('click', () => {
@@ -486,8 +488,7 @@ export class HardwareExplorer {
           this.#toggleWiringView(true);
           this.#closeExplainerDialog();
         } else if (action === 'docs') {
-          const link = btn.dataset.paramLink || 'docs/PARAMETERS.md';
-          window.open(link, '_blank');
+          window.open(btn.dataset.paramLink || 'docs/PARAMETERS.md', '_blank');
         } else if (this.onNavigate) {
           this.onNavigate(action);
         }
@@ -496,17 +497,15 @@ export class HardwareExplorer {
   }
 
   #closeExplainerDialog() {
-    const dialog = this.q('.hardware-explainer-dialog');
-    if (dialog) dialog.hidden = true;
+    const d = this.q('.hardware-explainer-dialog');
+    if (d) d.hidden = true;
   }
 
   #canUseWebgl() {
     try {
       const c = document.createElement('canvas');
       return Boolean(c.getContext('webgl2') || c.getContext('webgl'));
-    } catch (_) {
-      return false;
-    }
+    } catch (_) { return false; }
   }
 
   #showFallback(msg) {

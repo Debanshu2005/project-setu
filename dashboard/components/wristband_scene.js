@@ -24,6 +24,7 @@ export function buildWristbandScene(T, stage) {
   };
   const bG = (w, h, d) => new T.BoxGeometry(w, h, d);
   const cG = (rt, rb, h, s) => new T.CylinderGeometry(rt, rb, h, s);
+  const clr = c => new T.Color(c);
 
   const housing = mesh(bG(3.5, 0.56, 2.15), mat('strap', '#132e2b'), 0, 0.15, 0);
   mesh(bG(3.2, 0.08, 1.85), mat('strap', '#1b433e'), 0, 0.44, 0);
@@ -37,11 +38,12 @@ export function buildWristbandScene(T, stage) {
   const button = mesh(cG(0.32, 0.32, 0.12, 24), mat('buttons', '#f43f5e'), -0.85, 0.52, 0.9);
 
   const leds = [], ledGlows = [];
+  const glowMap = glowTexture(T);
   for (let i = 0; i < 3; i += 1) {
-    const light = mesh(new T.SphereGeometry(0.11, 16, 12), mat('rgb', '#2dd4bf', { emissive: new T.Color('#2dd4bf'), emissiveIntensity: 0.5 }), -0.42 + i * 0.42, 0.52, -0.22);
-    leds.push(light);
-    const sprite = new T.Sprite(new T.SpriteMaterial({ map: glowTexture(T), color: new T.Color('#2dd4bf'), blending: T.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 }));
-    sprite.position.set(-0.42 + i * 0.42, 0.62, -0.22);
+    const x = -0.42 + i * 0.42;
+    leds.push(mesh(new T.SphereGeometry(0.11, 16, 12), mat('rgb', '#2dd4bf', { emissive: clr('#2dd4bf'), emissiveIntensity: 0.5 }), x, 0.52, -0.22));
+    const sprite = new T.Sprite(new T.SpriteMaterial({ map: glowMap, color: clr('#2dd4bf'), blending: T.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.7 }));
+    sprite.position.set(x, 0.62, -0.22);
     sprite.scale.setScalar(0.7);
     group.add(sprite);
     ledGlows.push(sprite);
@@ -56,12 +58,10 @@ export function buildWristbandScene(T, stage) {
 
   mesh(bG(2.8, 0.04, 0.08), mat('antenna', '#38bdf8'), 0, 0.46, -0.98);
   const radioWaves = Array.from({ length: 3 }, () => {
-    const waveMat = new T.MeshBasicMaterial({ color: new T.Color('#38bdf8'), transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false });
-    const waveRing = new T.Mesh(new T.RingGeometry(0.9, 0.96, 36, 1, 0, Math.PI), waveMat);
-    waveRing.rotation.x = -Math.PI / 2;
-    waveRing.position.set(0, 0.5, -1.05);
-    group.add(waveRing);
-    return { ring: waveRing, mat: waveMat };
+    const mat = new T.MeshBasicMaterial({ color: clr('#38bdf8'), transparent: true, opacity: 0, side: T.DoubleSide, depthWrite: false });
+    const ring = mesh(new T.RingGeometry(0.9, 0.96, 36, 1, 0, Math.PI), mat, 0, 0.5, -1.05, false);
+    ring.rotation.x = -Math.PI / 2;
+    return { ring, mat };
   });
 
   const patchCeramic = mat('gnss', '#d9af55');
@@ -74,7 +74,7 @@ export function buildWristbandScene(T, stage) {
   mesh(bG(0.04, 0.12, 0.45), mat('usb', '#020617'), -1.83, 0.16, 0, false);
 
   let activeLitPart = null, isTransmitting = false, isAcousticActive = false, acousticStartTime = 0;
-  const hotspotColor = new T.Color('#2dd4bf'), blackColor = new T.Color(0);
+  const hotspotColor = clr('#2dd4bf'), blackColor = new T.Color(0);
 
   const frame = (t) => {
     radioWaves.forEach(({ ring, mat: rMat }, i) => {
@@ -115,24 +115,9 @@ export function buildWristbandScene(T, stage) {
   return {
     group, button, housing,
     update(node = {}) {
-      let c = '#2dd4bf', i = 0.4;
-      if (!node.online) { c = '#475569'; i = 0.1; }
-      else if (node.bootloader_lock) { c = '#a855f7'; i = 0.8; }
-      else if (node.gave_up) { c = '#fb7185'; i = 0.9; }
-      else if (node.acked) { c = '#34d399'; i = 1.2; }
-      else if (node.active_sos) { c = '#f59e0b'; i = 1.6; }
-      else if (node.retry_count > 0) { c = '#fb923c'; i = 1.1; }
-
-      leds.forEach(l => {
-        l.material.color.set(c);
-        l.material.emissive.set(c);
-        l.material.emissiveIntensity = i;
-      });
-      ledGlows.forEach(s => {
-        s.material.color.set(c);
-        s.material.opacity = node.online ? (node.active_sos ? 0.95 : 0.6) : 0.1;
-        s.scale.setScalar(node.active_sos ? 1.2 : 0.7);
-      });
+      const [c, i] = !node.online ? ['#475569', 0.1] : (node.bootloader_lock ? ['#a855f7', 0.8] : (node.gave_up ? ['#fb7185', 0.9] : (node.acked ? ['#34d399', 1.2] : (node.active_sos ? ['#f59e0b', 1.6] : (node.retry_count > 0 ? ['#fb923c', 1.1] : ['#2dd4bf', 0.4])))));
+      leds.forEach(l => { l.material.color.set(c); l.material.emissive.set(c); l.material.emissiveIntensity = i; });
+      ledGlows.forEach(s => { s.material.color.set(c); s.material.opacity = node.online ? (node.active_sos ? 0.95 : 0.6) : 0.1; s.scale.setScalar(node.active_sos ? 1.2 : 0.7); });
       patchCeramic.color.set((node.gnss_on !== false && node.gnss_status !== 'Lost') ? '#d9af55' : '#64748b');
       const b = typeof node.battery === 'number' ? node.battery : 100;
       battMat.color.set(b < 20 ? '#ef4444' : b < 50 ? '#f59e0b' : '#3b82f6');
